@@ -85,6 +85,7 @@ r_headers_yaml_location_vnfd = {"Location": "/vnfpkgm/v1/vnf_packages_content/",
 r_headers_yaml_location_nsd = {"Location": "/nsd/v1/ns_descriptors_content/", "Content-Type": "application/yaml"}
 r_headers_yaml_location_nst = {"Location": "/nst/v1/netslice_templates_content", "Content-Type": "application/yaml"}
 r_headers_yaml_location_nslcmop = {"Location": "nslcm/v1/ns_lcm_op_occs/", "Content-Type": "application/yaml"}
+r_headers_yaml_location_nsilcmop = {"Location": "/osm/nsilcm/v1/nsi_lcm_op_occs/", "Content-Type": "application/yaml"}
 
 # test ones authorized
 test_authorized_list = (
@@ -1904,12 +1905,39 @@ class TestNetSliceTemplates:
     description = "Upload a NST to OSM"
 
     def __init__(self):
-        self.nst_filenames = ("@./cirros_slice/cirros_slice_vld.yaml")
+        self.vnfd_filename = ("@./slice_shared/vnfd/slice_shared_vnfd.yaml")
+        self.vnfd_filename_middle = ("@./slice_shared/vnfd/slice_shared_middle_vnfd.yaml")
+        self.nsd_filename = ("@./slice_shared/nsd/slice_shared_nsd.yaml")
+        self.nsd_filename_middle = ("@./slice_shared/nsd/slice_shared_middle_nsd.yaml")
+        self.nst_filenames = ("@./slice_shared/slice_shared_nstd.yaml")
 
     def run(self, engine, test_osm, manual_check, test_params=None):
         # nst CREATE
-        engine.set_test_name("NST")
+        engine.set_test_name("NST step ")
         engine.get_autorization()
+        temp_dir = os.path.dirname(os.path.abspath(__file__)) + "/temp/"
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+
+        # Onboard VNFDs
+        engine.test("Onboard edge VNFD", "POST", "/vnfpkgm/v1/vnf_packages_content", headers_yaml,
+                    self.vnfd_filename, 201, r_headers_yaml_location_vnfd, "yaml")
+        self.vnfd_edge_id = engine.last_id
+
+        engine.test("Onboard middle VNFD", "POST", "/vnfpkgm/v1/vnf_packages_content", headers_yaml,
+                    self.vnfd_filename_middle, 201, r_headers_yaml_location_vnfd, "yaml")
+        self.vnfd_middle_id = engine.last_id
+
+        # Onboard NSDs
+        engine.test("Onboard NSD edge", "POST", "/nsd/v1/ns_descriptors_content", headers_yaml,
+                    self.nsd_filename, 201, r_headers_yaml_location_nsd, "yaml")
+        self.nsd_edge_id = engine.last_id
+
+        engine.test("Onboard NSD middle", "POST", "/nsd/v1/ns_descriptors_content", headers_yaml,
+                    self.nsd_filename_middle, 201, r_headers_yaml_location_nsd, "yaml")
+        self.nsd_middle_id = engine.last_id
+
+        # Onboard NST
         engine.test("Onboard NST", "POST", "/nst/v1/netslice_templates_content", headers_yaml, self.nst_filenames,
                     201, r_headers_yaml_location_nst, "yaml")
         nst_id = engine.last_id
@@ -1922,50 +1950,220 @@ class TestNetSliceTemplates:
         engine.test("Delete NSTD", "DELETE", "/nst/v1/netslice_templates/{}".format(nst_id), headers_json, None,
                     204, None, 0)
 
+        # NSDs DELETE
+        test_rest.test("Delete NSD middle", "DELETE", "/nsd/v1/ns_descriptors/{}".format(self.nsd_middle_id),
+                       headers_json, None, 204, None, 0)
+
+        test_rest.test("Delete NSD edge", "DELETE", "/nsd/v1/ns_descriptors/{}".format(self.nsd_edge_id), headers_json,
+                       None, 204, None, 0)
+
+        # VNFDs DELETE
+        test_rest.test("Delete VNFD edge", "DELETE", "/vnfpkgm/v1/vnf_packages/{}".format(self.vnfd_edge_id),
+                       headers_yaml, None, 204, None, 0)
+
+        test_rest.test("Delete VNFD middle", "DELETE", "/vnfpkgm/v1/vnf_packages/{}".format(self.vnfd_middle_id),
+                       headers_yaml, None, 204, None, 0)
+
 
 class TestNetSliceInstances:
+    '''
+    Test procedure:
+    1. Populate databases with VNFD, NSD, NST with the following scenario
+       +-----------------management-----------------+
+       |                     |                      |
+    +--+---+            +----+----+             +---+--+
+    |      |            |         |             |      |
+    | edge +---data1----+  middle +---data2-----+ edge |
+    |      |            |         |             |      |
+    +------+            +---------+             +------+
+                        shared-nss
+    2. Create NSI-1
+    3. Instantiate NSI-1
+    4. Create NSI-2
+    5. Instantiate NSI-2
+        Manual check - Are 2 slices instantiated correctly?
+        NSI-1 3 nss (2 nss-edges + 1 nss-middle)
+        NSI-2 2 nss (2 nss-edge sharing nss-middle)
+    6. Terminate NSI-1
+    7. Delete NSI-1
+        Manual check - Is slice NSI-1 deleted correctly?
+        NSI-2 with 2 nss-edge + 1 nss-middle (The one from NSI-1)
+    8. Create NSI-3
+    9. Instantiate NSI-3
+        Manual check - Is slice NSI-3 instantiated correctly?
+        NSI-3 reuse nss-middle. NSI-3 only create 2 nss-edge
+    10. Delete NSI-2
+    11. Terminate NSI-2
+    12. Delete NSI-3
+    13. Terminate NSI-3
+        Manual check - All cleaned correctly?
+        NSI-2 and NSI-3 were terminated and deleted
+    14. Cleanup database
+    '''
+
     description = "Upload a NST to OSM"
 
     def __init__(self):
         self.vim_id = None
-        self.nst_filenames = ("@./cirros_slice/cirros_slice.yaml")
+        self.vnfd_filename = ("@./slice_shared/vnfd/slice_shared_vnfd.yaml")
+        self.vnfd_filename_middle = ("@./slice_shared/vnfd/slice_shared_middle_vnfd.yaml")
+        self.nsd_filename = ("@./slice_shared/nsd/slice_shared_nsd.yaml")
+        self.nsd_filename_middle = ("@./slice_shared/nsd/slice_shared_middle_nsd.yaml")
+        self.nst_filenames = ("@./slice_shared/slice_shared_nstd.yaml")
+
+    def create_slice(self, engine, nsi_data, name):
+        ns_data_text = yaml.safe_dump(nsi_data, default_flow_style=True, width=256)
+        r = engine.test(name, "POST", "/nsilcm/v1/netslice_instances",
+                        headers_yaml, ns_data_text, 201,
+                        {"Location": "nsilcm/v1/netslice_instances/", "Content-Type": "application/yaml"}, "yaml")
+        return r
+
+    def instantiate_slice(self, engine, nsi_data, nsi_id, name):
+        ns_data_text = yaml.safe_dump(nsi_data, default_flow_style=True, width=256)
+        engine.test(name, "POST",
+                    "/nsilcm/v1/netslice_instances/{}/instantiate".format(nsi_id), headers_yaml, ns_data_text,
+                    201, r_headers_yaml_location_nsilcmop, "yaml")
+
+    def terminate_slice(self, engine, nsi_id, name):
+        engine.test(name, "POST", "/nsilcm/v1/netslice_instances/{}/terminate".format(nsi_id),
+                    headers_yaml, None, 201, r_headers_yaml_location_nsilcmop, "yaml")
+
+    def delete_slice(self, engine, nsi_id, name):
+        engine.test(name, "DELETE", "/nsilcm/v1/netslice_instances/{}".format(nsi_id), headers_yaml, None,
+                    204, None, 0)
 
     def run(self, engine, test_osm, manual_check, test_params=None):
         # nst CREATE
         engine.set_test_name("NSI")
         engine.get_autorization()
-        engine.test("Onboard NST", "POST", "/nst/v1/netslice_templates_content", headers_yaml, self.nst_filenames, 201,
-                    r_headers_yaml_location_nst, "yaml")
+
+        # Onboard VNFDs
+        engine.test("Onboard edge VNFD", "POST", "/vnfpkgm/v1/vnf_packages_content", headers_yaml,
+                    self.vnfd_filename, 201, r_headers_yaml_location_vnfd, "yaml")
+        self.vnfd_edge_id = engine.last_id
+
+        engine.test("Onboard middle VNFD", "POST", "/vnfpkgm/v1/vnf_packages_content", headers_yaml,
+                    self.vnfd_filename_middle, 201, r_headers_yaml_location_vnfd, "yaml")
+        self.vnfd_middle_id = engine.last_id
+
+        # Onboard NSDs
+        engine.test("Onboard NSD edge", "POST", "/nsd/v1/ns_descriptors_content", headers_yaml,
+                    self.nsd_filename, 201, r_headers_yaml_location_nsd, "yaml")
+        self.nsd_edge_id = engine.last_id
+
+        engine.test("Onboard NSD middle", "POST", "/nsd/v1/ns_descriptors_content", headers_yaml,
+                    self.nsd_filename_middle, 201, r_headers_yaml_location_nsd, "yaml")
+        self.nsd_middle_id = engine.last_id
+
+        # Onboard NST
+        engine.test("Onboard NST", "POST", "/nst/v1/netslice_templates_content", headers_yaml, self.nst_filenames,
+                    201, r_headers_yaml_location_nst, "yaml")
         nst_id = engine.last_id
 
-        # nsi CREATE
         self.vim_id = engine.get_create_vim(test_osm)
 
-        ns_data = {"nsiDescription": "default description", "nsiName": "my_slice", "nstId": nst_id,
-                   "vimAccountId": self.vim_id}
-        ns_data_text = yaml.safe_dump(ns_data, default_flow_style=True, width=256)
+        # CREATE NSI-1
+        ns_data = {'nsiName': 'Deploy-NSI-1', 'vimAccountId': self.vim_id, 'nstId': nst_id, 'nsiDescription': 'default'}
+        r = self.create_slice(engine, ns_data, "Create NSI-1 step 1")
+        if not r:
+            return
+        self.nsi_id1 = engine.last_id
 
-        engine.test("Onboard NSI", "POST", "/nsilcm/v1/netslice_instances_content", headers_yaml, ns_data_text, 201,
-                    r_headers_yaml_location_nst, "yaml")
-        nsi_id = engine.last_id
-        
-        # TODO: Improve the wait with a polling if NSI was deployed
-        wait = 120
-        sleep(wait)
+        # INSTANTIATE NSI-1
+        self.instantiate_slice(engine, ns_data, self.nsi_id1, "Instantiate NSI-1 step 2")
+        nsilcmop_id1 = engine.last_id
 
-        # Check deployment
-        engine.test("Wait until NSI is deployed", "GET", "/nsilcm/v1/netslice_instances_content/{}".format(nsi_id),
-                    headers_json, None, 200, r_header_json, "json")
- 
-        # nsi DELETE
-        engine.test("Delete NSI", "DELETE", "/nsilcm/v1/netslice_instances_content/{}".format(nsi_id), headers_json,
-                    None, 202, r_header_json, "json")
+        # Waiting for NSI-1
+        engine.wait_operation_ready("nsi", nsilcmop_id1, timeout_deploy)
+
+        # CREATE NSI-2
+        ns_data = {'nsiName': 'Deploy-NSI-2', 'vimAccountId': self.vim_id, 'nstId': nst_id, 'nsiDescription': 'default'}
+        r = self.create_slice(engine, ns_data, "Create NSI-2 step 1")
+        if not r:
+            return
+        self.nsi_id2 = engine.last_id
+
+        # INSTANTIATE NSI-2
+        self.instantiate_slice(engine, ns_data, self.nsi_id2, "Instantiate NSI-2 step 2")
+        nsilcmop_id2 = engine.last_id
+
+        # Waiting for NSI-2
+        engine.wait_operation_ready("nsi", nsilcmop_id2, timeout_deploy)
+
+        if manual_check:
+            input('NSI-1 AND NSI-2 has been deployed. Perform manual check and press enter to resume')
+
+        # TERMINATE NSI-1
+        self.terminate_slice(engine, self.nsi_id1, "Terminate NSI-1")
+        nsilcmop1_id = engine.last_id
+
+        # Wait terminate NSI-1
+        engine.wait_operation_ready("nsi", nsilcmop1_id, timeout_deploy)
+
+        # DELETE NSI-1
+        self.delete_slice(engine, self.nsi_id1, "Delete NS")
+
+        if manual_check:
+            input('NSI-1 has been deleted. Perform manual check and press enter to resume')
+
+        # CREATE NSI-3
+        ns_data = {'nsiName': 'Deploy-NSI-3', 'vimAccountId': self.vim_id, 'nstId': nst_id, 'nsiDescription': 'default'}
+        r = self.create_slice(engine, ns_data, "Create NSI-3 step 1")
+
+        if not r:
+            return
+        self.nsi_id3 = engine.last_id
+
+        # INSTANTIATE NSI-3
+        self.instantiate_slice(engine, ns_data, self.nsi_id3, "Instantiate NSI-3 step 2")
+        nsilcmop_id3 = engine.last_id
+
+        # Wait Instantiate NSI-3
+        engine.wait_operation_ready("nsi", nsilcmop_id3, timeout_deploy)
+
+        if manual_check:
+            input('NSI-3 has been deployed. Perform manual check and press enter to resume')
+
+        # TERMINATE NSI-2
+        self.terminate_slice(engine, self.nsi_id2, "Terminate NSI-2")
+        nsilcmop2_id = engine.last_id
+
+        # Wait terminate NSI-2
+        engine.wait_operation_ready("nsi", nsilcmop2_id, timeout_deploy)
         
-        sleep(60)
+        # DELETE NSI-2
+        self.delete_slice(engine, self.nsi_id2, "DELETE NSI-2")
+
+        # TERMINATE NSI-3
+        self. terminate_slice(engine, self.nsi_id3, "Terminate NSI-3")
+        nsilcmop3_id = engine.last_id
+        
+        # Wait terminate NSI-3
+        engine.wait_operation_ready("nsi", nsilcmop3_id, timeout_deploy)
+
+        # DELETE NSI-3
+        self.delete_slice(engine, self.nsi_id3, "DELETE NSI-3")
+
+        if manual_check:
+            input('NSI-2 and NSI-3 has been deleted. Perform manual check and press enter to resume')
 
         # nstd DELETE
         engine.test("Delete NSTD", "DELETE", "/nst/v1/netslice_templates/{}".format(nst_id), headers_json, None,
                     204, None, 0)
+
+        # NSDs DELETE
+        test_rest.test("Delete NSD middle", "DELETE", "/nsd/v1/ns_descriptors/{}".format(self.nsd_middle_id),
+                       headers_json, None, 204, None, 0)
+
+        test_rest.test("Delete NSD edge", "DELETE", "/nsd/v1/ns_descriptors/{}".format(self.nsd_edge_id), headers_json,
+                       None, 204, None, 0)
+
+        # VNFDs DELETE
+        test_rest.test("Delete VNFD edge", "DELETE", "/vnfpkgm/v1/vnf_packages/{}".format(self.vnfd_edge_id),
+                       headers_yaml, None, 204, None, 0)
+
+        test_rest.test("Delete VNFD middle", "DELETE", "/vnfpkgm/v1/vnf_packages/{}".format(self.vnfd_middle_id),
+                       headers_yaml, None, 204, None, 0)
 
 
 if __name__ == "__main__":
@@ -2007,8 +2205,8 @@ if __name__ == "__main__":
             # "Deploy-MultiVIM": TestDeployMultiVIM,
             "DeploySingleVdu": TestDeploySingleVdu,
             "DeployHnfd": TestDeployHnfd,
-            # "Upload-Slice-Template": TestNetSliceTemplates,
-            # "Deploy-Slice-Instance": TestNetSliceInstances,
+            "Upload-Slice-Template": TestNetSliceTemplates,
+            "Deploy-Slice-Instance": TestNetSliceInstances,
             "TestDeploySimpleCharm": TestDeploySimpleCharm,
             "TestDeploySimpleCharm2": TestDeploySimpleCharm2,
         }

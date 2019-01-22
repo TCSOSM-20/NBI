@@ -22,6 +22,7 @@ from validation import validate_input, ValidationError, ns_instantiate, ns_actio
 from base_topic import BaseTopic, EngineException, get_iterable
 from descriptor_topics import DescriptorTopic
 from yaml import safe_dump
+from osm_common.dbbase import DbException
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
@@ -857,6 +858,24 @@ class NsiTopic(BaseTopic):
         if dry_run:
             return
 
+        # Deleting the nsrs belonging to nsir
+        nsir = self.db.get_one("nsis", {"_id": _id})
+        for nsrs_detailed_item in nsir["_admin"]["nsrs-detailed-list"]:
+            nsr_id = nsrs_detailed_item["nsrId"]
+            if nsrs_detailed_item.get("shared"):
+                _filter = {"_admin.nsrs-detailed-list.ANYINDEX.shared": True,
+                           "_admin.nsrs-detailed-list.ANYINDEX.nsrId": nsr_id,
+                           "_id.ne": nsir["_id"]}
+                nsi = self.db.get_one("nsis", _filter, fail_on_empty=False, fail_on_more=False)
+                if nsi:  # last one using nsr
+                    continue
+            try:
+                self.nsrTopic.delete(session, nsr_id, force=force, dry_run=False)
+            except (DbException, EngineException) as e:
+                if e.http_code == HTTPStatus.NOT_FOUND:
+                    pass
+                else:
+                    raise
         # deletes NetSlice instance object
         v = self.db.del_one("nsis", {"_id": _id})
 
@@ -864,15 +883,14 @@ class NsiTopic(BaseTopic):
         _filter = {"netsliceInstanceId": _id} 
         self.db.del_list("nsilcmops", _filter)
 
-        _filter = {"operationParams.netsliceInstanceId": _id}
-        nslcmops_list = self.db.get_list("nslcmops", _filter)
-
-        for id_item in nslcmops_list:
-            _filter = {"_id": id_item}
-            nslcmop = self.db.get_one("nslcmops", _filter)
-            nsr_id = nslcmop["operationParams"]["nsr_id"]
-            self.nsrTopic.delete(session, nsr_id, force=False, dry_run=False)
-        self._send_msg("deleted", {"_id": _id})
+        # Search if nst is being used by other nsi
+        nsir_admin = nsir.get("_admin")
+        if nsir_admin:
+            if nsir_admin.get("nst-id"):
+                nsis_list = self.db.get_one("nsis", {"nst-id": nsir_admin["nst-id"]},
+                                            fail_on_empty=False, fail_on_more=False)
+                if not nsis_list:
+                    self.db.set_one("nsts", {"_id": nsir_admin["nst-id"]}, {"_admin.usageState": "NOT_IN_USE"})
         return v
 
     def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
@@ -901,7 +919,7 @@ class NsiTopic(BaseTopic):
             _filter.update(BaseTopic._get_project_filter(session, write=False, show_all=True))
             nstd = self.db.get_one("nsts", _filter)
             nstd.pop("_admin", None)
-            nstd.pop("_id", None)
+            nstd_id = nstd.pop("_id", None)
             nsi_id = str(uuid4())
             step = "filling nsi_descriptor with input data"
 
@@ -924,55 +942,30 @@ class NsiTopic(BaseTopic):
             self.format_on_new(nsi_descriptor, session["project_id"], make_public=make_public)
             nsi_descriptor["_admin"]["nsiState"] = "NOT_INSTANTIATED"
             nsi_descriptor["_admin"]["netslice-subnet"] = None
-            
+            nsi_descriptor["_admin"]["deployed"] = {}
+            nsi_descriptor["_admin"]["deployed"]["RO"] = []
+            nsi_descriptor["_admin"]["nst-id"] = nstd_id
+
             # Creating netslice-vld for the RO.
             step = "creating netslice-vld at database"
-            instantiation_parameters = slice_request
 
             # Building the vlds list to be deployed
             # From netslice descriptors, creating the initial list
-            nsi_vlds = []           
-            if nstd.get("netslice-vld"):
-                # Building VLDs from NST
-                for netslice_vlds in nstd["netslice-vld"]:
-                    nsi_vld = {}
-                    # Adding nst vld name and global vimAccountId for netslice vld creation
-                    nsi_vld["name"] = netslice_vlds["name"]
-                    nsi_vld["vimAccountId"] = slice_request["vimAccountId"]
-                    # Getting template Instantiation parameters from NST
-                    for netslice_vld in netslice_vlds["nss-connection-point-ref"]:
-                        for netslice_subnet in nstd["netslice-subnet"]:
-                            nsi_vld["nsd-ref"] = netslice_subnet["nsd-ref"]
-                            nsi_vld["nsd-connection-point-ref"] = netslice_vld["nsd-connection-point-ref"]
-                            # Obtaining the vimAccountId from template instantiation parameter            
-                            if netslice_subnet.get("instantiation-parameters"):
-                                # Taking the vimAccountId from NST netslice-subnet instantiation parameters
-                                if netslice_subnet["instantiation-parameters"].get("vimAccountId"):
-                                    netsn = netslice_subnet["instantiation-parameters"]["vimAccountId"]
-                                    nsi_vld["vimAccountId"] = netsn
-                            # Obtaining the vimAccountId from user instantiation parameter
-                            if instantiation_parameters.get("netslice-subnet"):
-                                for ins_param in instantiation_parameters["netslice-subnet"]:
-                                    if ins_param.get("id") == netslice_vld["nss-ref"]:
-                                        if ins_param.get("vimAccountId"):
-                                            nsi_vld["vimAccountId"] = ins_param["vimAccountId"]
-                    # Adding vim-network-name / vim-network-id defined by the user to vld
-                    if instantiation_parameters.get("netslice-vld"):
-                        for ins_param in instantiation_parameters["netslice-vld"]:
-                            if ins_param["name"] == netslice_vlds["name"]:
-                                if ins_param.get("vim-network-name"):
-                                    nsi_vld["vim-network-name"] = ins_param.get("vim-network-name")
-                                if ins_param.get("vim-network-id"):
-                                    nsi_vld["vim-network-id"] = ins_param.get("vim-network-id")
-                    if netslice_vlds.get("mgmt-network"):
-                        nsi_vld["mgmt-network"] = netslice_vlds.get("mgmt-network")
-                    nsi_vlds.append(nsi_vld)
+            nsi_vlds = []
+
+            for netslice_vlds in get_iterable(nstd.get("netslice-vld")):
+                # Getting template Instantiation parameters from NST
+                nsi_vld = deepcopy(netslice_vlds)
+                nsi_vld["shared-nsrs-list"] = []
+                nsi_vld["vimAccountId"] = slice_request["vimAccountId"]
+                nsi_vlds.append(nsi_vld)
 
             nsi_descriptor["_admin"]["netslice-vld"] = nsi_vlds
             # Creating netslice-subnet_record. 
             needed_nsds = {}
             services = []
 
+            # Updating the nstd with the nsd["_id"] associated to the nss -> services list
             for member_ns in nstd["netslice-subnet"]:
                 nsd_id = member_ns["nsd-ref"]
                 step = "getting nstd id='{}' constituent-nsd='{}' from database".format(
@@ -982,86 +975,63 @@ class NsiTopic(BaseTopic):
                     nsd = DescriptorTopic.get_one_by_id(self.db, session, "nsds", nsd_id)
                     nsd.pop("_admin")
                     needed_nsds[nsd_id] = nsd
-                    member_ns["_id"] = needed_nsds[nsd_id].get("_id")
-                    services.append(member_ns)
                 else:
                     nsd = needed_nsds[nsd_id]
-                    member_ns["_id"] = needed_nsds[nsd_id].get("_id")
-                    services.append(member_ns)
+                member_ns["_id"] = needed_nsds[nsd_id].get("_id")
+                services.append(member_ns)
 
                 step = "filling nsir nsd-id='{}' constituent-nsd='{}' from database".format(
                     member_ns["nsd-ref"], member_ns["id"])
 
-            # check additionalParamsForSubnet contains a valid id
-            if slice_request.get("additionalParamsForSubnet"):
-                for additional_params_subnet in get_iterable(slice_request.get("additionalParamsForSubnet")):
-                    for service in services:
-                        if additional_params_subnet["id"] == service["id"]:
-                            break
-                    else:
-                        raise EngineException("Error at additionalParamsForSubnet:id='{}' not match any "
-                                              "netslice-subnet:id".format(additional_params_subnet["id"]))
-
             # creates Network Services records (NSRs)
             step = "creating nsrs at database using NsrTopic.new()"
             ns_params = slice_request.get("netslice-subnet")
-
             nsrs_list = []
             nsi_netslice_subnet = []
             for service in services:
+                # Check if the netslice-subnet is shared and if it is share if the nss exists
+                _id_nsr = None
                 indata_ns = {}
-                indata_ns["nsdId"] = service["_id"]
-                indata_ns["nsName"] = slice_request.get("nsiName") + "." + service["id"]
-                indata_ns["vimAccountId"] = slice_request.get("vimAccountId")
-                indata_ns["nsDescription"] = service["description"]
-                indata_ns["key-pair-ref"] = None
-
-                # NsrTopic(rollback, session, indata_ns, kwargs, headers, force)
-                # Overwriting ns_params filtering by nsName == netslice-subnet.id
-
-                if ns_params:
-                    for ns_param in ns_params:
-                        if ns_param.get("id") == service["id"]:
-                            copy_ns_param = deepcopy(ns_param)
-                            del copy_ns_param["id"]
-                            indata_ns.update(copy_ns_param)
-                            break
+                # Is the nss shared and instantiated?
+                _filter = {"_admin.nsrs-detailed-list.ANYINDEX.shared": True,
+                           "_admin.nsrs-detailed-list.ANYINDEX.nsd-id": service["nsd-ref"]}
+                nsi = self.db.get_one("nsis", _filter, fail_on_empty=False, fail_on_more=False)
                 
-                # Override the instantiation parameters for netslice-vld provided by user
-                if nsi_vlds:
-                    indata_ns_list = []
-                    for nsi_vld in nsi_vlds:
-                        nsd = self.db.get_one("nsds", {"id": nsi_vld["nsd-ref"]})
-                        if nsd["connection-point"]:
-                            for cp_item in nsd["connection-point"]:
-                                if cp_item["name"] == nsi_vld["nsd-connection-point-ref"]:
-                                    vld_id_ref = cp_item["vld-id-ref"]
-                                    # Mapping the vim-network-name or vim-network-id instantiation parameters
-                                    if nsi_vld.get("vim-network-id"):
-                                        vnid = nsi_vld.get("vim-network-id")
-                                        if type(vnid) is not dict:
-                                            vim_network_id = {slice_request.get("vimAccountId"): vnid}
-                                        else:  # is string
-                                            vim_network_id = vnid
-                                        indata_ns_list.append({"name": vld_id_ref, "vim-network-id": vim_network_id})
-                                    # Case not vim-network-name instantiation parameter
-                                    elif nsi_vld.get("vim-network-name"):
-                                        vnm = nsi_vld.get("vim-network-name")
-                                        if type(vnm) is not dict:
-                                            vim_network_name = {slice_request.get("vimAccountId"): vnm}
-                                        else:  # is string
-                                            vim_network_name = vnm
-                                        indata_ns_list.append({"name": vld_id_ref,
-                                                              "vim-network-name": vim_network_name})
-                                    # Case neither vim-network-name nor vim-network-id provided
-                                    else:
-                                        indata_ns_list.append({"name": vld_id_ref})
-                    if indata_ns_list:
-                        indata_ns["vld"] = indata_ns_list
+                if nsi and service.get("is-shared-nss"):
+                    nsrs_detailed_list = nsi["_admin"]["nsrs-detailed-list"]
+                    for nsrs_detailed_item in nsrs_detailed_list:
+                        if nsrs_detailed_item["nsd-id"] == service["nsd-ref"]:
+                            _id_nsr = nsrs_detailed_item["nsrId"]
+                            break
+                    for netslice_subnet in nsi["_admin"]["netslice-subnet"]:
+                        if netslice_subnet["nss-id"] == service["id"]:
+                            indata_ns = netslice_subnet
+                            break
+                else:
+                    indata_ns = {}
+                    if service.get("instantiation-parameters"):
+                        indata_ns = deepcopy(service["instantiation-parameters"])
+                        # del service["instantiation-parameters"]
+                        
+                    indata_ns["nsdId"] = service["_id"]
+                    indata_ns["nsName"] = slice_request.get("nsiName") + "." + service["id"]
+                    indata_ns["vimAccountId"] = slice_request.get("vimAccountId")
+                    indata_ns["nsDescription"] = service["description"]
+                    indata_ns["key-pair-ref"] = slice_request.get("key-pair-ref")
 
-                # Creates Nsr objects
-                _id_nsr = self.nsrTopic.new(rollback, session, indata_ns, kwargs, headers, force)
-                nsrs_item = {"nsrId": _id_nsr}
+                    if ns_params:
+                        for ns_param in ns_params:
+                            if ns_param.get("id") == service["id"]:
+                                copy_ns_param = deepcopy(ns_param)
+                                del copy_ns_param["id"]
+                                indata_ns.update(copy_ns_param)
+                                break                   
+
+                    # Creates Nsr objects
+                    _id_nsr = self.nsrTopic.new(rollback, session, indata_ns, kwargs, headers, force)
+                nsrs_item = {"nsrId": _id_nsr, "shared": service.get("is-shared-nss"), "nsd-id": service["nsd-ref"], 
+                             "nslcmop_instantiate": None}
+                indata_ns["nss-id"] = service["id"]
                 nsrs_list.append(nsrs_item)
                 nsi_netslice_subnet.append(indata_ns)
                 nsr_ref = {"nsr-ref": _id_nsr}
@@ -1070,6 +1040,8 @@ class NsiTopic(BaseTopic):
             # Adding the nsrs list to the nsi
             nsi_descriptor["_admin"]["nsrs-detailed-list"] = nsrs_list
             nsi_descriptor["_admin"]["netslice-subnet"] = nsi_netslice_subnet
+            self.db.set_one("nsts", {"_id": slice_request["nstId"]}, {"_admin.usageState": "IN_USE"})
+
             # Creating the entry in the database
             self.db.create("nsis", nsi_descriptor)
             rollback.append({"topic": "nsis", "_id": nsi_id})
@@ -1091,9 +1063,10 @@ class NsiLcmOpTopic(BaseTopic):
         "instantiate": nsi_instantiate,
         "terminate": None
     }
-
+    
     def __init__(self, db, fs, msg):
         BaseTopic.__init__(self, db, fs, msg)
+        self.nsi_NsLcmOpTopic = NsLcmOpTopic(self.db, self.fs, self.msg)
 
     def _check_nsi_operation(self, session, nsir, operation, indata):
         """
@@ -1143,6 +1116,20 @@ class NsiLcmOpTopic(BaseTopic):
         }
         return nsilcmop
 
+    def add_shared_nsr_2vld(self, nsir, nsr_item):
+        for nst_sb_item in nsir["network-slice-template"].get("netslice-subnet"):
+            if nst_sb_item.get("is-shared-nss"):
+                for admin_subnet_item in nsir["_admin"].get("netslice-subnet"):
+                    if admin_subnet_item["nss-id"] == nst_sb_item["id"]:
+                        for admin_vld_item in nsir["_admin"].get("netslice-vld"):
+                            for admin_vld_nss_cp_ref_item in admin_vld_item["nss-connection-point-ref"]:
+                                if admin_subnet_item["nss-id"] == admin_vld_nss_cp_ref_item["nss-ref"]:
+                                    if not nsr_item["nsrId"] in admin_vld_item["shared-nsrs-list"]:
+                                        admin_vld_item["shared-nsrs-list"].append(nsr_item["nsrId"])
+                                    break
+        # self.db.set_one("nsis", {"_id": nsir["_id"]}, nsir)
+        self.db.set_one("nsis", {"_id": nsir["_id"]}, {"_admin.netslice-vld": nsir["_admin"].get("netslice-vld")})
+
     def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
         """
         Performs a new operation over a ns
@@ -1186,24 +1173,60 @@ class NsiLcmOpTopic(BaseTopic):
             # Get service list from db
             nsrs_list = nsir["_admin"]["nsrs-detailed-list"]
             nslcmops = []
-            for nsr_item in nsrs_list:
-                service = self.db.get_one("nsrs", {"_id": nsr_item["nsrId"]})
-                indata_ns = {}
-                indata_ns = service["instantiate_params"]
-                indata_ns["lcmOperationType"] = operation
-                indata_ns["nsInstanceId"] = service["_id"]
-                # Including netslice_id in the ns instantiate Operation
-                indata_ns["netsliceInstanceId"] = nsiInstanceId
-                del indata_ns["key-pair-ref"]
-                nsi_NsLcmOpTopic = NsLcmOpTopic(self.db, self.fs, self.msg)
-                # Creating NS_LCM_OP with the flag slice_object=True to not trigger the service instantiation 
-                # message via kafka bus
-                nslcmop = nsi_NsLcmOpTopic.new(rollback, session, indata_ns, kwargs, headers, force, slice_object=True)
-                nslcmops.append(nslcmop)
+            # nslcmops_item = None
+            for index, nsr_item in enumerate(nsrs_list):
+                nsi = None
+                if nsr_item.get("shared"):
+                    _filter = {"_admin.nsrs-detailed-list.ANYINDEX.shared": True, 
+                               "_admin.nsrs-detailed-list.ANYINDEX.nsrId": nsr_item["nsrId"],
+                               "_admin.nsrs-detailed-list.ANYINDEX.nslcmop_instantiate.ne": None,
+                               "_id.ne": nsiInstanceId}
+
+                    nsi = self.db.get_one("nsis", _filter, fail_on_empty=False, fail_on_more=False)
+                    # looks the first nsi fulfilling the conditions but not being the current NSIR
+                    if nsi:
+                        nsi_admin_shared = nsi["_admin"]["nsrs-detailed-list"]
+                        for nsi_nsr_item in nsi_admin_shared:
+                            if nsi_nsr_item["nsd-id"] == nsr_item["nsd-id"] and nsi_nsr_item["shared"]:
+                                self.add_shared_nsr_2vld(nsir, nsr_item)
+                                nslcmops.append(nsi_nsr_item["nslcmop_instantiate"])
+                                _update = {"_admin.nsrs-detailed-list.{}".format(index): nsi_nsr_item}
+                                self.db.set_one("nsis", {"_id": nsir["_id"]}, _update)
+                                break
+                        # continue to not create nslcmop since nsrs is shared and nsrs was created
+                        continue
+                    else:
+                        self.add_shared_nsr_2vld(nsir, nsr_item)
+
+                try:
+                    service = self.db.get_one("nsrs", {"_id": nsr_item["nsrId"]})
+                    indata_ns = {}
+                    indata_ns = service["instantiate_params"]
+                    indata_ns["lcmOperationType"] = operation
+                    indata_ns["nsInstanceId"] = service["_id"]
+                    # Including netslice_id in the ns instantiate Operation
+                    indata_ns["netsliceInstanceId"] = nsiInstanceId
+                    del indata_ns["key-pair-ref"]
+                    # Creating NS_LCM_OP with the flag slice_object=True to not trigger the service instantiation 
+                    # message via kafka bus
+                    nslcmop = self.nsi_NsLcmOpTopic.new(rollback, session, indata_ns, kwargs, headers, force, 
+                                                        slice_object=True)
+                    nslcmops.append(nslcmop)
+                    if operation == "terminate":
+                        nslcmop = None
+                    _update = {"_admin.nsrs-detailed-list.{}.nslcmop_instantiate".format(index): nslcmop}
+                    self.db.set_one("nsis", {"_id": nsir["_id"]}, _update)
+                except (DbException, EngineException) as e:
+                    if e.http_code == HTTPStatus.NOT_FOUND:
+                        self.logger.info("HTTPStatus.NOT_FOUND")
+                        pass
+                    else:
+                        raise
 
             # Creates nsilcmop
             indata["nslcmops_ids"] = nslcmops
             self._check_nsi_operation(session, nsir, operation, indata)
+
             nsilcmop_desc = self._create_nsilcmop(session, nsiInstanceId, operation, indata)
             self.format_on_new(nsilcmop_desc, session["project_id"], make_public=make_public)
             _id = self.db.create("nsilcmops", nsilcmop_desc)
@@ -1212,8 +1235,6 @@ class NsiLcmOpTopic(BaseTopic):
             return _id
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
-        # except DbException as e:
-        #     raise EngineException("Cannot get nsi_instance '{}': {}".format(e), HTTPStatus.NOT_FOUND)
 
     def delete(self, session, _id, force=False, dry_run=False):
         raise EngineException("Method delete called directly", HTTPStatus.INTERNAL_SERVER_ERROR)

@@ -266,6 +266,7 @@ ns_instantiate = {
                     "name": string_schema,
                     "vim-network-name": {"OneOf": [string_schema, object_schema]},
                     "vim-network-id": {"OneOf": [string_schema, object_schema]},
+                    "ns-net": object_schema,
                     "wimAccountId": {"OneOf": [id_schema, bool_schema, null_schema]},
                     "ip-profile": object_schema,
                     "vnfd-connection-point-ref": {

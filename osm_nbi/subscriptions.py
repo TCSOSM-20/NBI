@@ -99,7 +99,7 @@ class SubscriptionThread(threading.Thread):
         self.logger.debug("Starting")
         while True:
             try:
-                self.aiomain_task = asyncio.ensure_future(self.msg.aioread("ns", loop=self.loop,
+                self.aiomain_task = asyncio.ensure_future(self.msg.aioread(("ns", "nsi"), loop=self.loop,
                                                                            callback=self._msg_callback),
                                                           loop=self.loop)
                 self.loop.run_until_complete(self.aiomain_task)
@@ -122,11 +122,18 @@ class SubscriptionThread(threading.Thread):
         """
         try:
             if topic == "ns":
-                if command == "terminated":
+                if command == "terminated" and params["operationState"] in ("COMPLETED", "PARTIALLY_COMPLETED"):
                     self.logger.debug("received ns terminated {}".format(params))
                     if params.get("autoremove"):
                         self.engine.del_item(self.internal_session, "nsrs", _id=params["nsr_id"])
                         self.logger.debug("ns={} deleted from database".format(params["nsr_id"]))
+                    return
+            if topic == "nsi":
+                if command == "terminated" and params["operationState"] in ("COMPLETED", "PARTIALLY_COMPLETED"):
+                    self.logger.debug("received nsi terminated {}".format(params))
+                    if params.get("autoremove"):
+                        self.engine.del_item(self.internal_session, "nsis", _id=params["nsir_id"])
+                        self.logger.debug("nsis={} deleted from database".format(params["nsir_id"]))
                     return
         except (EngineException, DbException, MsgException) as e:
             self.logger.error("Error while processing topic={} command={}: {}".format(topic, command, e))
