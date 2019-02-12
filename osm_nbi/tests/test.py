@@ -596,6 +596,134 @@ class TestUsersProjects:
         engine.remove_authorization()   # To finish
 
 
+class TestProjectsDescriptors:
+    description = "test descriptors visibility among projects"
+
+    @staticmethod
+    def run(engine, test_osm, manual_check, test_params=None):
+        vnfd_ids = []
+        engine.set_test_name("ProjectDescriptors")
+        engine.get_autorization()
+        engine.test("Create project Padmin", "POST", "/admin/v1/projects", headers_json,
+                    {"name": "Padmin", "admin": True}, (201, 204),
+                    {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
+        engine.test("Create project P2", "POST", "/admin/v1/projects", headers_json, {"name": "P2"},
+                    (201, 204), {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
+        engine.test("Create project P3", "POST", "/admin/v1/projects", headers_json, {"name": "P3"},
+                    (201, 204), {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
+
+        engine.test("Create user U1", "POST", "/admin/v1/users", headers_json,
+                    {"username": "U1", "projects": ["Padmin", "P2", "P3"], "password": "pw1"}, 201,
+                    {"Location": "/admin/v1/users/", "Content-Type": "application/json"}, "json")
+
+        engine.test("Onboard VNFD id1", "POST", "/vnfpkgm/v1/vnf_packages_content?id=id1", headers_yaml,
+                    TestDescriptors.vnfd_empty, 201, r_headers_yaml_location_vnfd, "yaml")
+        vnfd_ids.append(engine.last_id)
+        engine.test("Onboard VNFD id2 PUBLIC", "POST", "/vnfpkgm/v1/vnf_packages_content?id=id2&PUBLIC=TRUE",
+                    headers_yaml, TestDescriptors.vnfd_empty, 201, r_headers_yaml_location_vnfd, "yaml")
+        vnfd_ids.append(engine.last_id)
+        engine.test("Onboard VNFD id3", "POST", "/vnfpkgm/v1/vnf_packages_content?id=id3&PUBLIC=FALSE", headers_yaml,
+                    TestDescriptors.vnfd_empty, 201, r_headers_yaml_location_vnfd, "yaml")
+        vnfd_ids.append(engine.last_id)
+
+        res = engine.test("Get VNFD descriptors", "GET", "/vnfpkgm/v1/vnf_packages?id=id1,id2,id3",
+                          headers_json, None, 200, r_header_json, "json")
+        response = res.json()
+        if len(response) != 3:
+            logger.error("Only 3 vnfds should be present for project admin. {} listed".format(len(response)))
+            engine.failed_tests += 1
+
+        # Change to other project Padmin
+        res = engine.test("Change to user U1 project Padmin", "POST", "/admin/v1/tokens", headers_json,
+                          {"username": "U1", "password": "pw1", "project_id": "Padmin"}, (200, 201),
+                          r_header_json, "json")
+        if res:
+            response = res.json()
+            engine.set_header({"Authorization": "Bearer {}".format(response["id"])})
+
+        # list vnfds
+        res = engine.test("List VNFD descriptors for Padmin", "GET", "/vnfpkgm/v1/vnf_packages",
+                          headers_json, None, 200, r_header_json, "json")
+        response = res.json()
+        if len(response) != 0:
+            logger.error("Only 0 vnfds should be present for project Padmin. {} listed".format(len(response)))
+            engine.failed_tests += 1
+
+        # list Public vnfds
+        res = engine.test("List VNFD public descriptors", "GET", "/vnfpkgm/v1/vnf_packages?PUBLIC=True",
+                          headers_json, None, 200, r_header_json, "json")
+        response = res.json()
+        if len(response) != 1:
+            logger.error("Only 1 vnfds should be present for project Padmin. {} listed".format(len(response)))
+            engine.failed_tests += 1
+
+        # list vnfds belonging to project "admin"
+        res = engine.test("List VNFD of admin project", "GET", "/vnfpkgm/v1/vnf_packages?ADMIN=admin",
+                          headers_json, None, 200, r_header_json, "json")
+        response = res.json()
+        if len(response) != 3:
+            logger.error("Only 3 vnfds should be present for project Padmin. {} listed".format(len(response)))
+            engine.failed_tests += 1
+
+        # Get Public vnfds
+        engine.test("Get VNFD public descriptors", "GET", "/vnfpkgm/v1/vnf_packages/{}".format(vnfd_ids[1]),
+                    headers_json, None, 200, r_header_json, "json")
+        # Edit not owned vnfd
+        engine.test("Edit VNFD ", "PATCH", "/vnfpkgm/v1/vnf_packages/{}".format(vnfd_ids[0]),
+                    headers_yaml, '{name: pepe}', 404, r_header_yaml, "yaml")
+
+        # Add to my catalog
+        engine.test("Add VNFD id2 to my catalog", "PATCH", "/vnfpkgm/v1/vnf_packages/{}?SET_PROJECT".
+                    format(vnfd_ids[1]), headers_json, None, 204, None, 0)
+
+        # Add a new vnfd
+        engine.test("Onboard VNFD id4", "POST", "/vnfpkgm/v1/vnf_packages_content?id=id4", headers_yaml,
+                    TestDescriptors.vnfd_empty, 201, r_headers_yaml_location_vnfd, "yaml")
+        vnfd_ids.append(engine.last_id)
+
+        # list vnfds
+        res = engine.test("List VNFD public descriptors", "GET", "/vnfpkgm/v1/vnf_packages",
+                          headers_json, None, 200, r_header_json, "json")
+        response = res.json()
+        if len(response) != 2:
+            logger.error("Only 2 vnfds should be present for project Padmin. {} listed".format(len(response)))
+            engine.failed_tests += 1
+
+        if manual_check:
+            input('VNFDs have been omboarded. Perform manual check and press enter to resume')
+
+        test_rest.test("Delete VNFD id2", "DELETE", "/vnfpkgm/v1/vnf_packages/{}".format(vnfd_ids[1]),
+                       headers_yaml, None, 204, None, 0)
+
+        # change to admin project
+        engine.remove_authorization()   # To force get authorization
+        engine.get_autorization()
+        test_rest.test("Delete VNFD id1", "DELETE", "/vnfpkgm/v1/vnf_packages/{}".format(vnfd_ids[0]),
+                       headers_yaml, None, 204, None, 0)
+        test_rest.test("Delete VNFD id2", "DELETE", "/vnfpkgm/v1/vnf_packages/{}".format(vnfd_ids[1]),
+                       headers_yaml, None, 204, None, 0)
+        test_rest.test("Delete VNFD id3", "DELETE", "/vnfpkgm/v1/vnf_packages/{}".format(vnfd_ids[2]),
+                       headers_yaml, None, 204, None, 0)
+        test_rest.test("Delete VNFD id4", "DELETE", "/vnfpkgm/v1/vnf_packages/{}".format(vnfd_ids[3]),
+                       headers_yaml, None, 404, r_header_yaml, "yaml")
+        test_rest.test("Delete VNFD id4", "DELETE", "/vnfpkgm/v1/vnf_packages/{}?ADMIN".format(vnfd_ids[3]),
+                       headers_yaml, None, 204, None, 0)
+        # Get Public vnfds
+        engine.test("Get VNFD deleted id1", "GET", "/vnfpkgm/v1/vnf_packages/{}?ADMIN".format(vnfd_ids[0]),
+                    headers_json, None, 404, r_header_json, "json")
+        engine.test("Get VNFD deleted id2", "GET", "/vnfpkgm/v1/vnf_packages/{}?ADMIN".format(vnfd_ids[1]),
+                    headers_json, None, 404, r_header_json, "json")
+        engine.test("Get VNFD deleted id3", "GET", "/vnfpkgm/v1/vnf_packages/{}?ADMIN".format(vnfd_ids[2]),
+                    headers_json, None, 404, r_header_json, "json")
+        engine.test("Get VNFD deleted id4", "GET", "/vnfpkgm/v1/vnf_packages/{}?ADMIN".format(vnfd_ids[3]),
+                    headers_json, None, 404, r_header_json, "json")
+
+        engine.test("Delete user U1", "DELETE", "/admin/v1/users/U1", headers_json, None, 204, None, None)
+        engine.test("Delete project Padmin", "DELETE", "/admin/v1/projects/Padmin", headers_json, None, 204, None, None)
+        engine.test("Delete project P2", "DELETE", "/admin/v1/projects/P2", headers_json, None, 204, None, None)
+        engine.test("Delete project P3", "DELETE", "/admin/v1/projects/P3", headers_json, None, 204, None, None)
+
+
 class TestFakeVim:
     description = "Creates/edit/delete fake VIMs and SDN controllers"
 
@@ -1323,7 +1451,7 @@ class TestDeployHackfest3Charmed(TestDeploy):
         self.users = {'1': "ubuntu", '2': "ubuntu"}
         self.passwords = {'1': "osm4u", '2': "osm4u"}
         self.descriptor_edit = {
-            "vnfd0": yaml.full_load(
+            "vnfd0": yaml.safe_load(
                 """
                 vnf-configuration:
                     terminate-config-primitive:
@@ -1845,6 +1973,31 @@ class TestDeployHnfd(TestDeployHackfest3Charmed):
 
 class TestDescriptors:
     description = "Test VNFD, NSD, PDU descriptors CRUD and dependencies"
+    vnfd_empty = """vnfd:vnfd-catalog:
+        vnfd:
+        -   name: prova
+            short-name: prova
+            id: prova
+    """
+    vnfd_prova = """vnfd:vnfd-catalog:
+        vnfd:
+        -   connection-point:
+            -   name: cp_0h8m
+                type: VPORT
+            id: prova
+            name: prova
+            short-name: prova
+            vdu:
+            -   id: vdu_z4bm
+                image: ubuntu
+                interface:
+                -   external-connection-point-ref: cp_0h8m
+                    name: eth0
+                    virtual-interface:
+                    type: VIRTIO
+                name: vdu_z4bm
+            version: '1.0'
+    """
 
     def __init__(self):
         self.vnfd_filename = "hackfest_3charmed_vnfd.tar.gz"
@@ -1852,31 +2005,6 @@ class TestDescriptors:
         self.descriptor_url = "https://osm-download.etsi.org/ftp/osm-3.0-three/2nd-hackfest/packages/"
         self.vnfd_id = None
         self.nsd_id = None
-        self.vnfd_empty = """vnfd:vnfd-catalog:
-            vnfd:
-            -   name: prova
-                short-name: prova
-                id: prova
-        """
-        self.vnfd_prova = """vnfd:vnfd-catalog:
-            vnfd:
-            -   connection-point:
-                -   name: cp_0h8m
-                    type: VPORT
-                id: prova
-                name: prova
-                short-name: prova
-                vdu:
-                -   id: vdu_z4bm
-                    image: ubuntu
-                    interface:
-                    -   external-connection-point-ref: cp_0h8m
-                        name: eth0
-                        virtual-interface:
-                        type: VIRTIO
-                    name: vdu_z4bm
-                version: '1.0'
-        """
 
     def run(self, engine, test_osm, manual_check, test_params=None):
         engine.set_test_name("Descriptors")
@@ -2295,7 +2423,8 @@ if __name__ == "__main__":
         test_classes = {
             "NonAuthorized": TestNonAuthorized,
             "FakeVIM": TestFakeVim,
-            "TestUsersProjects": TestUsersProjects,
+            "Users-Projects": TestUsersProjects,
+            "Projects-Descriptors": TestProjectsDescriptors,
             "VIM-SDN": TestVIMSDN,
             "Deploy-Custom": TestDeploy,
             "Deploy-Hackfest-Cirros": TestDeployHackfestCirros,
@@ -2305,15 +2434,15 @@ if __name__ == "__main__":
             "Deploy-Hackfest-3Charmed3": TestDeployHackfest3Charmed3,
             "Deploy-Hackfest-4": TestDeployHackfest4,
             "Deploy-CirrosMacIp": TestDeployIpMac,
-            "TestDescriptors": TestDescriptors,
-            "TestDeployHackfest1": TestDeployHackfest1,
+            "Descriptors": TestDescriptors,
+            "Deploy-Hackfest1": TestDeployHackfest1,
             # "Deploy-MultiVIM": TestDeployMultiVIM,
-            "DeploySingleVdu": TestDeploySingleVdu,
-            "DeployHnfd": TestDeployHnfd,
+            "Deploy-SingleVdu": TestDeploySingleVdu,
+            "Deploy-Hnfd": TestDeployHnfd,
             "Upload-Slice-Template": TestNetSliceTemplates,
             "Deploy-Slice-Instance": TestNetSliceInstances,
-            "TestDeploySimpleCharm": TestDeploySimpleCharm,
-            "TestDeploySimpleCharm2": TestDeploySimpleCharm2,
+            "Deploy-SimpleCharm": TestDeploySimpleCharm,
+            "Deploy-SimpleCharm2": TestDeploySimpleCharm2,
         }
         test_to_do = []
         test_params = {}

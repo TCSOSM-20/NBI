@@ -54,8 +54,8 @@ class NsrTopic(BaseTopic):
         BaseTopic.format_on_new(content, project_id=project_id, make_public=make_public)
         content["_admin"]["nsState"] = "NOT_INSTANTIATED"
 
-    def check_conflict_on_del(self, session, _id, force=False):
-        if force:
+    def check_conflict_on_del(self, session, _id):
+        if session["force"]:
             return
         nsr = self.db.get_one("nsrs", {"_id": _id})
         if nsr["_admin"].get("nsState") == "INSTANTIATED":
@@ -63,29 +63,13 @@ class NsrTopic(BaseTopic):
                                   "Launch 'terminate' operation first; or force deletion".format(_id),
                                   http_code=HTTPStatus.CONFLICT)
 
-    def delete(self, session, _id, force=False, dry_run=False):
-        """
-        Delete item by its internal _id
-        :param session: contains the used login username, working project, and admin rights
-        :param _id: server internal id
-        :param force: indicates if deletion must be forced in case of conflict
-        :param dry_run: make checking but do not delete
-        :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
-        """
-        # TODO add admin to filter, validate rights
-        BaseTopic.delete(self, session, _id, force, dry_run=True)
-        if dry_run:
-            return
-
+    def delete_extra(self, session, _id):
         self.fs.file_delete(_id, ignore_non_exist=True)
-        v = self.db.del_one("nsrs", {"_id": _id})
         self.db.del_list("nslcmops", {"nsInstanceId": _id})
         self.db.del_list("vnfrs", {"nsr-id-ref": _id})
         # set all used pdus as free
         self.db.set_list("pdus", {"_admin.usage.nsr_id": _id},
                          {"_admin.usageState": "NOT_IN_USE", "_admin.usage": None})
-        self._send_msg("deleted", {"_id": _id})
-        return v
 
     @staticmethod
     def _format_ns_request(ns_request):
@@ -148,16 +132,14 @@ class NsrTopic(BaseTopic):
 
         return additional_params
 
-    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
         Creates a new nsr into database. It also creates needed vnfrs
         :param rollback: list to append the created items at database in case a rollback must be done
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: params to be used for the nsr
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :param force: If True avoid some dependence checks
-        :param make_public: Make the created item public to all projects
         :return: the _id of nsr descriptor created at database
         """
 
@@ -165,13 +147,13 @@ class NsrTopic(BaseTopic):
             ns_request = self._remove_envelop(indata)
             # Override descriptor with query string kwargs
             self._update_input_with_kwargs(ns_request, kwargs)
-            self._validate_input_new(ns_request, force)
+            self._validate_input_new(ns_request, session["force"])
 
             step = ""
             # look for nsr
             step = "getting nsd id='{}' from database".format(ns_request.get("nsdId"))
             _filter = {"_id": ns_request["nsdId"]}
-            _filter.update(BaseTopic._get_project_filter(session, write=False, show_all=True))
+            _filter.update(BaseTopic._get_project_filter(session))
             nsd = self.db.get_one("nsds", _filter)
 
             nsr_id = str(uuid4())
@@ -196,7 +178,7 @@ class NsrTopic(BaseTopic):
                 "orchestration-progress": {},
                 # {"networks": {"active": 0, "total": 0}, "vms": {"active": 0, "total": 0}},
 
-                "crete-time": now,
+                "create-time": now,
                 "nsd-name-ref": nsd["name"],
                 "operational-events": [],   # "id", "timestamp", "description", "event",
                 "nsd-ref": nsd["id"],
@@ -338,13 +320,13 @@ class NsrTopic(BaseTopic):
                     member_vnf["vnfd-id-ref"], member_vnf["member-vnf-index"])
 
                 # add at database
-                BaseTopic.format_on_new(vnfr_descriptor, session["project_id"], make_public=make_public)
+                BaseTopic.format_on_new(vnfr_descriptor, session["project_id"], make_public=session["public"])
                 self.db.create("vnfrs", vnfr_descriptor)
                 rollback.append({"topic": "vnfrs", "_id": vnfr_id})
                 nsr_descriptor["constituent-vnfr-ref"].append(vnfr_id)
 
             step = "creating nsr at database"
-            self.format_on_new(nsr_descriptor, session["project_id"], make_public=make_public)
+            self.format_on_new(nsr_descriptor, session["project_id"], make_public=session["public"])
             self.db.create("nsrs", nsr_descriptor)
             rollback.append({"topic": "nsrs", "_id": nsr_id})
 
@@ -358,7 +340,7 @@ class NsrTopic(BaseTopic):
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
-    def edit(self, session, _id, indata=None, kwargs=None, force=False, content=None):
+    def edit(self, session, _id, indata=None, kwargs=None, content=None):
         raise EngineException("Method edit called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
@@ -369,13 +351,13 @@ class VnfrTopic(BaseTopic):
     def __init__(self, db, fs, msg):
         BaseTopic.__init__(self, db, fs, msg)
 
-    def delete(self, session, _id, force=False, dry_run=False):
+    def delete(self, session, _id, dry_run=False):
         raise EngineException("Method delete called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
 
-    def edit(self, session, _id, indata=None, kwargs=None, force=False, content=None):
+    def edit(self, session, _id, indata=None, kwargs=None, content=None):
         raise EngineException("Method edit called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
 
-    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         # Not used because vnfrs are created and deleted by NsrTopic class directly
         raise EngineException("Method new called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
 
@@ -396,7 +378,7 @@ class NsLcmOpTopic(BaseTopic):
     def _check_ns_operation(self, session, nsr, operation, indata):
         """
         Check that user has enter right parameters for the operation
-        :param session:
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param operation: it can be: instantiate, terminate, action, TODO: update, heal
         :param indata: descriptor with the parameters of the operation
         :return: None
@@ -469,7 +451,7 @@ class NsLcmOpTopic(BaseTopic):
             if vim_account in vim_accounts:
                 return
             try:
-                db_filter = self._get_project_filter(session, write=False, show_all=True)
+                db_filter = self._get_project_filter(session)
                 db_filter["_id"] = vim_account
                 self.db.get_one("vim_accounts", db_filter)
             except Exception:
@@ -551,7 +533,7 @@ class NsLcmOpTopic(BaseTopic):
         (ip_address, ...) information.
         Modifies PDU _admin.usageState to 'IN_USE'
         
-        :param session: client session information
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param rollback: list with the database modifications to rollback if needed
         :param vnfr: vnfr to be updated. It is modified with pdu interface info if pdu is found
         :param vim_account: vim_account where this vnfr should be deployed
@@ -572,7 +554,7 @@ class NsLcmOpTopic(BaseTopic):
             if not vdur.get("pdu-type"):
                 continue
             pdu_type = vdur.get("pdu-type")
-            pdu_filter = self._get_project_filter(session, write=True, show_all=True)
+            pdu_filter = self._get_project_filter(session)
             pdu_filter["vim_accounts"] = vim_account
             pdu_filter["type"] = pdu_type
             pdu_filter["_admin.operationalState"] = "ENABLED"
@@ -727,19 +709,16 @@ class NsLcmOpTopic(BaseTopic):
         }
         return nslcmop
 
-    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False,
-            slice_object=False):
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None, slice_object=False):
         """
         Performs a new operation over a ns
         :param rollback: list to append created items at database in case a rollback must to be done
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: descriptor with the parameters of the operation. It must contains among others
             nsInstanceId: _id of the nsr to perform the operation
             operation: it can be: instantiate, terminate, action, TODO: update, heal
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :param force: If True avoid some dependence checks
-        :param make_public: Make the created item public to all projects
         :return: id of the nslcmops
         """
         try:
@@ -750,7 +729,7 @@ class NsLcmOpTopic(BaseTopic):
 
             validate_input(indata, self.operation_schema[operation])
             # get ns from nsr_id
-            _filter = BaseTopic._get_project_filter(session, write=True, show_all=False)
+            _filter = BaseTopic._get_project_filter(session)
             _filter["_id"] = nsInstanceId
             nsr = self.db.get_one("nsrs", _filter)
 
@@ -763,7 +742,7 @@ class NsLcmOpTopic(BaseTopic):
                     raise EngineException("ns_instance '{}' cannot be '{}' because it is not instantiated".format(
                         nsInstanceId, operation), HTTPStatus.CONFLICT)
             else:
-                if operation == "instantiate" and not indata.get("force"):
+                if operation == "instantiate" and not session["force"]:
                     raise EngineException("ns_instance '{}' cannot be '{}' because it is already instantiated".format(
                         nsInstanceId, operation), HTTPStatus.CONFLICT)
             self._check_ns_operation(session, nsr, operation, indata)
@@ -772,7 +751,7 @@ class NsLcmOpTopic(BaseTopic):
                 self._update_vnfrs(session, rollback, nsr, indata)
 
             nslcmop_desc = self._create_nslcmop(nsInstanceId, operation, indata)
-            self.format_on_new(nslcmop_desc, session["project_id"], make_public=make_public)
+            self.format_on_new(nslcmop_desc, session["project_id"], make_public=session["public"])
             _id = self.db.create("nslcmops", nslcmop_desc)
             rollback.append({"topic": "nslcmops", "_id": _id})
             if not slice_object:
@@ -783,10 +762,10 @@ class NsLcmOpTopic(BaseTopic):
         # except DbException as e:
         #     raise EngineException("Cannot get ns_instance '{}': {}".format(e), HTTPStatus.NOT_FOUND)
 
-    def delete(self, session, _id, force=False, dry_run=False):
+    def delete(self, session, _id, dry_run=False):
         raise EngineException("Method delete called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
 
-    def edit(self, session, _id, indata=None, kwargs=None, force=False, content=None):
+    def edit(self, session, _id, indata=None, kwargs=None, content=None):
         raise EngineException("Method edit called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
@@ -827,7 +806,7 @@ class NsiTopic(BaseTopic):
     def _check_descriptor_dependencies(self, session, descriptor):
         """
         Check that the dependent descriptors exist on a new descriptor or edition
-        :param session: client session information
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param descriptor: descriptor to be inserted or edit
         :return: None or raises exception
         """
@@ -838,12 +817,8 @@ class NsiTopic(BaseTopic):
             raise EngineException("Descriptor error at nst-ref='{}' references a non exist nstd".format(nstd_id),
                                   http_code=HTTPStatus.CONFLICT)
 
-    @staticmethod
-    def format_on_new(content, project_id=None, make_public=False):
-        BaseTopic.format_on_new(content, project_id=project_id, make_public=make_public)
-
-    def check_conflict_on_del(self, session, _id, force=False):
-        if force:
+    def check_conflict_on_del(self, session, _id, ):
+        if session["force"]:
             return
         nsi = self.db.get_one("nsis", {"_id": _id})
         if nsi["_admin"].get("nsiState") == "INSTANTIATED":
@@ -851,17 +826,16 @@ class NsiTopic(BaseTopic):
                                   "Launch 'terminate' operation first; or force deletion".format(_id),
                                   http_code=HTTPStatus.CONFLICT)
 
-    def delete(self, session, _id, force=False, dry_run=False):
+    def delete(self, session, _id, dry_run=False):
         """
         Delete item by its internal _id
-        :param session: contains the used login username, working project, and admin rights
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
-        :param force: indicates if deletion must be forced in case of conflict
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
         # TODO add admin to filter, validate rights
-        BaseTopic.delete(self, session, _id, force, dry_run=True)
+        BaseTopic.delete(self, session, _id, dry_run=True)
         if dry_run:
             return
 
@@ -877,7 +851,7 @@ class NsiTopic(BaseTopic):
                 if nsi:  # last one using nsr
                     continue
             try:
-                self.nsrTopic.delete(session, nsr_id, force=force, dry_run=False)
+                self.nsrTopic.delete(session, nsr_id, dry_run=False)
             except (DbException, EngineException) as e:
                 if e.http_code == HTTPStatus.NOT_FOUND:
                     pass
@@ -900,16 +874,14 @@ class NsiTopic(BaseTopic):
                     self.db.set_one("nsts", {"_id": nsir_admin["nst-id"]}, {"_admin.usageState": "NOT_IN_USE"})
         return v
 
-    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
         Creates a new netslice instance record into database. It also creates needed nsrs and vnfrs
         :param rollback: list to append the created items at database in case a rollback must be done
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: params to be used for the nsir
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :param force: If True avoid some dependence checks
-        :param make_public: Make the created item public to all projects
         :return: the _id of nsi descriptor created at database
         """
 
@@ -917,13 +889,13 @@ class NsiTopic(BaseTopic):
             slice_request = self._remove_envelop(indata)
             # Override descriptor with query string kwargs
             self._update_input_with_kwargs(slice_request, kwargs)
-            self._validate_input_new(slice_request, force)
+            self._validate_input_new(slice_request, session["force"])
 
             step = ""
             # look for nstd
             step = "getting nstd id='{}' from database".format(slice_request.get("nstId"))
             _filter = {"_id": slice_request["nstId"]}
-            _filter.update(BaseTopic._get_project_filter(session, write=False, show_all=True))
+            _filter.update(BaseTopic._get_project_filter(session))
             nstd = self.db.get_one("nsts", _filter)
             nstd.pop("_admin", None)
             nstd_id = nstd.pop("_id", None)
@@ -946,7 +918,7 @@ class NsiTopic(BaseTopic):
             }
 
             step = "creating nsi at database"
-            self.format_on_new(nsi_descriptor, session["project_id"], make_public=make_public)
+            self.format_on_new(nsi_descriptor, session["project_id"], make_public=session["public"])
             nsi_descriptor["_admin"]["nsiState"] = "NOT_INSTANTIATED"
             nsi_descriptor["_admin"]["netslice-subnet"] = None
             nsi_descriptor["_admin"]["deployed"] = {}
@@ -1035,7 +1007,7 @@ class NsiTopic(BaseTopic):
                                 break                   
 
                     # Creates Nsr objects
-                    _id_nsr = self.nsrTopic.new(rollback, session, indata_ns, kwargs, headers, force)
+                    _id_nsr = self.nsrTopic.new(rollback, session, indata_ns, kwargs, headers)
                 nsrs_item = {"nsrId": _id_nsr, "shared": service.get("is-shared-nss"), "nsd-id": service["nsd-ref"], 
                              "nslcmop_instantiate": None}
                 indata_ns["nss-id"] = service["id"]
@@ -1059,7 +1031,7 @@ class NsiTopic(BaseTopic):
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
-    def edit(self, session, _id, indata=None, kwargs=None, force=False, content=None):
+    def edit(self, session, _id, indata=None, kwargs=None, content=None):
         raise EngineException("Method edit called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
 
 
@@ -1078,7 +1050,7 @@ class NsiLcmOpTopic(BaseTopic):
     def _check_nsi_operation(self, session, nsir, operation, indata):
         """
         Check that user has enter right parameters for the operation
-        :param session:
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param operation: it can be: instantiate, terminate, action, TODO: update, heal
         :param indata: descriptor with the parameters of the operation
         :return: None
@@ -1137,18 +1109,16 @@ class NsiLcmOpTopic(BaseTopic):
         # self.db.set_one("nsis", {"_id": nsir["_id"]}, nsir)
         self.db.set_one("nsis", {"_id": nsir["_id"]}, {"_admin.netslice-vld": nsir["_admin"].get("netslice-vld")})
 
-    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
         Performs a new operation over a ns
         :param rollback: list to append created items at database in case a rollback must to be done
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: descriptor with the parameters of the operation. It must contains among others
             nsiInstanceId: _id of the nsir to perform the operation
             operation: it can be: instantiate, terminate, action, TODO: update, heal
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :param force: If True avoid some dependence checks
-        :param make_public: Make the created item public to all projects
         :return: id of the nslcmops
         """
         try:
@@ -1159,7 +1129,7 @@ class NsiLcmOpTopic(BaseTopic):
             validate_input(indata, self.operation_schema[operation])
 
             # get nsi from nsiInstanceId
-            _filter = BaseTopic._get_project_filter(session, write=True, show_all=False)
+            _filter = BaseTopic._get_project_filter(session)
             _filter["_id"] = nsiInstanceId
             nsir = self.db.get_one("nsis", _filter)
 
@@ -1172,7 +1142,7 @@ class NsiLcmOpTopic(BaseTopic):
                     raise EngineException("netslice_instance '{}' cannot be '{}' because it is not instantiated".format(
                         nsiInstanceId, operation), HTTPStatus.CONFLICT)
             else:
-                if operation == "instantiate" and not indata.get("force"):
+                if operation == "instantiate" and not session["force"]:
                     raise EngineException("netslice_instance '{}' cannot be '{}' because it is already instantiated".
                                           format(nsiInstanceId, operation), HTTPStatus.CONFLICT)
             
@@ -1216,7 +1186,7 @@ class NsiLcmOpTopic(BaseTopic):
                     del indata_ns["key-pair-ref"]
                     # Creating NS_LCM_OP with the flag slice_object=True to not trigger the service instantiation 
                     # message via kafka bus
-                    nslcmop = self.nsi_NsLcmOpTopic.new(rollback, session, indata_ns, kwargs, headers, force, 
+                    nslcmop = self.nsi_NsLcmOpTopic.new(rollback, session, indata_ns, kwargs, headers, 
                                                         slice_object=True)
                     nslcmops.append(nslcmop)
                     if operation == "terminate":
@@ -1235,7 +1205,7 @@ class NsiLcmOpTopic(BaseTopic):
             self._check_nsi_operation(session, nsir, operation, indata)
 
             nsilcmop_desc = self._create_nsilcmop(session, nsiInstanceId, operation, indata)
-            self.format_on_new(nsilcmop_desc, session["project_id"], make_public=make_public)
+            self.format_on_new(nsilcmop_desc, session["project_id"], make_public=session["public"])
             _id = self.db.create("nsilcmops", nsilcmop_desc)
             rollback.append({"topic": "nsilcmops", "_id": _id})
             self.msg.write("nsi", operation, nsilcmop_desc)
@@ -1243,8 +1213,8 @@ class NsiLcmOpTopic(BaseTopic):
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
-    def delete(self, session, _id, force=False, dry_run=False):
+    def delete(self, session, _id, dry_run=False):
         raise EngineException("Method delete called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
 
-    def edit(self, session, _id, indata=None, kwargs=None, force=False, content=None):
+    def edit(self, session, _id, indata=None, kwargs=None, content=None):
         raise EngineException("Method edit called directly", HTTPStatus.INTERNAL_SERVER_ERROR)

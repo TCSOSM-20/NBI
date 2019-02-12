@@ -55,6 +55,7 @@ class Authenticator:
     Authorization. Initially it should support Openstack Keystone as a
     backend through a plugin model where more backends can be added and a
     RBAC model to manage permissions on operations.
+    This class must be threading safe
     """
 
     periodin_db_pruning = 60 * 30  # for the internal backend only. every 30 minutes expired tokens will be pruned
@@ -480,7 +481,8 @@ class Authenticator:
             now = time()
             session = self.tokens_cache.get(token_id)
             if session and session["expires"] < now:
-                del self.tokens_cache[token_id]
+                # delete token. MUST be done with care, as another thread maybe already delete it. Do not use del
+                self.tokens_cache.pop(token_id, None)
                 session = None
             if session:
                 return session
@@ -501,7 +503,7 @@ class Authenticator:
             if self.config["global"].get("test.user_not_authorized"):
                 return {"id": "fake-token-id-for-test",
                         "project_id": self.config["global"].get("test.project_not_authorized", "admin"),
-                        "username": self.config["global"]["test.user_not_authorized"]}
+                        "username": self.config["global"]["test.user_not_authorized"], "admin": True}
             else:
                 raise
 

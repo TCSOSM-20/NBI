@@ -158,6 +158,12 @@ query string:
         exclude_default and include=<list>	… all attributes except those complex attributes with a minimum cardinality
         of zero that are not conditionally mandatory and that are part of the "default exclude set" defined in the
         present specification for the particular resource, but that are not part of <list>
+    Additionally it admits some administrator values:
+        FORCE: To force operations skipping dependency checkings
+        ADMIN: To act as an administrator or a different project
+        PUBLIC: To get public descriptors or set a descriptor as public
+        SET_PROJECT: To make a descriptor available for other project
+        
 Header field name	Reference	Example	Descriptions
     Accept	IETF RFC 7231 [19]	application/json	Content-Types that are acceptable for the response.
     This header field shall be present if the response is expected to have a non-empty message body.
@@ -697,6 +703,78 @@ class Server(object):
         cherrypy.response.headers["Location"] = "/osm/{}/{}/{}/{}".format(main_topic, version, topic, id)
         return
 
+    @staticmethod
+    def _manage_admin_query(session, kwargs, method, _id):
+        """
+        Processes the administrator query inputs (if any) of FORCE, ADMIN, PUBLIC, SET_PROJECT
+        Check that users has rights to use them and returs the admin_query
+        :param session: session rights obtained by token
+        :param kwargs: query string input.
+        :param method: http method: GET, POSST, PUT, ...
+        :param _id:
+        :return: admin_query dictionary with keys:
+            public: True, False or None
+            force: True or False
+            project_id: tuple with projects used for accessing an element
+            set_project: tuple with projects that a created element will belong to
+            method: show, list, delete, write
+        """
+        admin_query = {"force": False, "project_id": (session["project_id"], ), "username": session["username"],
+                       "admin": session["admin"], "public": None}
+        if kwargs:
+            # FORCE
+            if "FORCE" in kwargs:
+                if kwargs["FORCE"].lower() != "false":  # if None or True set force to True
+                    admin_query["force"] = True
+                del kwargs["FORCE"]
+            # PUBLIC
+            if "PUBLIC" in kwargs:
+                if kwargs["PUBLIC"].lower() != "false":  # if None or True set public to True
+                    admin_query["public"] = True
+                else:
+                    admin_query["public"] = False
+                del kwargs["PUBLIC"]
+            # ADMIN
+            if "ADMIN" in kwargs:
+                behave_as = kwargs.pop("ADMIN")
+                if behave_as.lower() != "false":
+                    if not session["admin"]:
+                        raise NbiException("Only admin projects can use 'ADMIN' query string", HTTPStatus.UNAUTHORIZED)
+                    if not behave_as or behave_as.lower() == "true":  # convert True, None to empty list
+                        admin_query["project_id"] = ()
+                    elif isinstance(behave_as, (list, tuple)):
+                        admin_query["project_id"] = behave_as
+                    else:   # isinstance(behave_as, str)
+                        admin_query["project_id"] = (behave_as, )
+            if "SET_PROJECT" in kwargs:
+                set_project = kwargs.pop("SET_PROJECT")
+                if not set_project:
+                    admin_query["set_project"] = list(admin_query["project_id"])
+                else:
+                    if isinstance(set_project, str):
+                        set_project = (set_project, )
+                    if admin_query["project_id"]:
+                        for p in set_project:
+                            if p not in admin_query["project_id"]:
+                                raise NbiException("Unauthorized for 'SET_PROJECT={p}'. Try with 'ADMIN=True' or "
+                                                   "'ADMIN='{p}'".format(p=p), HTTPStatus.UNAUTHORIZED)
+                    admin_query["set_project"] = set_project
+
+            # PROJECT_READ
+            # if "PROJECT_READ" in kwargs:
+            #     admin_query["project"] = kwargs.pop("project")
+            #     if admin_query["project"] == session["project_id"]:
+        if method == "GET":
+            if _id:
+                admin_query["method"] = "show"
+            else:
+                admin_query["method"] = "list"
+        elif method == "DELETE":
+            admin_query["method"] = "delete"
+        else:
+            admin_query["method"] = "write"
+        return admin_query
+
     @cherrypy.expose
     def default(self, main_topic=None, version=None, topic=None, _id=None, item=None, *args, **kwargs):
         session = None
@@ -720,16 +798,15 @@ class Server(object):
                 method = kwargs.pop("METHOD")
             else:
                 method = cherrypy.request.method
-            if kwargs and "FORCE" in kwargs:
-                force = kwargs.pop("FORCE")
-            else:
-                force = False
+
             self._check_valid_url_method(method, main_topic, version, topic, _id, item, *args)
+
             if main_topic == "admin" and topic == "tokens":
                 return self.token(method, _id, kwargs)
 
             # self.engine.load_dbase(cherrypy.request.app.config)
             session = self.authenticator.authorize()
+            session = self._manage_admin_query(session, kwargs, method, _id)
             indata = self._format_in(kwargs)
             engine_topic = topic
             if topic == "subscriptions":
@@ -755,7 +832,7 @@ class Server(object):
                     engine_topic = "nsilcmops"
             elif main_topic == "pdu":
                 engine_topic = "pdus"
-            if engine_topic == "vims":   # TODO this is for backward compatibility, it will remove in the future
+            if engine_topic == "vims":   # TODO this is for backward compatibility, it will be removed in the future
                 engine_topic = "vim_accounts"
 
             if method == "GET":
@@ -782,10 +859,9 @@ class Server(object):
                 if topic in ("ns_descriptors_content", "vnf_packages_content", "netslice_templates_content"):
                     _id = cherrypy.request.headers.get("Transaction-Id")
                     if not _id:
-                        _id = self.engine.new_item(rollback, session, engine_topic, {}, None, cherrypy.request.headers,
-                                                   force=force)
+                        _id = self.engine.new_item(rollback, session, engine_topic, {}, None, cherrypy.request.headers)
                     completed = self.engine.upload_content(session, engine_topic, _id, indata, kwargs,
-                                                           cherrypy.request.headers, force=force)
+                                                           cherrypy.request.headers)
                     if completed:
                         self._set_location_header(main_topic, version, topic, _id)
                     else:
@@ -793,7 +869,7 @@ class Server(object):
                     outdata = {"id": _id}
                 elif topic == "ns_instances_content":
                     # creates NSR
-                    _id = self.engine.new_item(rollback, session, engine_topic, indata, kwargs, force=force)
+                    _id = self.engine.new_item(rollback, session, engine_topic, indata, kwargs)
                     # creates nslcmop
                     indata["lcmOperationType"] = "instantiate"
                     indata["nsInstanceId"] = _id
@@ -809,7 +885,7 @@ class Server(object):
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
                 elif topic == "netslice_instances_content":
                     # creates NetSlice_Instance_record (NSIR)
-                    _id = self.engine.new_item(rollback, session, engine_topic, indata, kwargs, force=force)
+                    _id = self.engine.new_item(rollback, session, engine_topic, indata, kwargs)
                     self._set_location_header(main_topic, version, topic, _id)
                     indata["lcmOperationType"] = "instantiate"
                     indata["nsiInstanceId"] = _id
@@ -825,7 +901,7 @@ class Server(object):
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
                 else:
                     _id = self.engine.new_item(rollback, session, engine_topic, indata, kwargs,
-                                               cherrypy.request.headers, force=force)
+                                               cherrypy.request.headers)
                     self._set_location_header(main_topic, version, topic, _id)
                     outdata = {"id": _id}
                     # TODO form NsdInfo when topic in ("ns_descriptors", "vnf_packages")
@@ -837,7 +913,7 @@ class Server(object):
                     cherrypy.response.status = HTTPStatus.OK.value
                 else:  # len(args) > 1
                     delete_in_process = False
-                    if topic == "ns_instances_content" and not force:
+                    if topic == "ns_instances_content" and not session["force"]:
                         nslcmop_desc = {
                             "lcmOperationType": "terminate",
                             "nsInstanceId": _id,
@@ -848,7 +924,7 @@ class Server(object):
                             delete_in_process = True
                             outdata = {"_id": opp_id}
                             cherrypy.response.status = HTTPStatus.ACCEPTED.value
-                    elif topic == "netslice_instances_content" and not force:
+                    elif topic == "netslice_instances_content" and not session["force"]:
                         nsilcmop_desc = {
                             "lcmOperationType": "terminate",
                             "nsiInstanceId": _id,
@@ -860,23 +936,23 @@ class Server(object):
                             outdata = {"_id": opp_id}
                             cherrypy.response.status = HTTPStatus.ACCEPTED.value
                     if not delete_in_process:
-                        self.engine.del_item(session, engine_topic, _id, force)
+                        self.engine.del_item(session, engine_topic, _id)
                         cherrypy.response.status = HTTPStatus.NO_CONTENT.value
                 if engine_topic in ("vim_accounts", "wim_accounts", "sdns"):
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
 
             elif method in ("PUT", "PATCH"):
                 outdata = None
-                if not indata and not kwargs:
+                if not indata and not kwargs and not session.get("set_project"):
                     raise NbiException("Nothing to update. Provide payload and/or query string",
                                        HTTPStatus.BAD_REQUEST)
                 if item in ("nsd_content", "package_content", "nst_content") and method == "PUT":
                     completed = self.engine.upload_content(session, engine_topic, _id, indata, kwargs,
-                                                           cherrypy.request.headers, force=force)
+                                                           cherrypy.request.headers)
                     if not completed:
                         cherrypy.response.headers["Transaction-Id"] = id
                 else:
-                    self.engine.edit_item(session, engine_topic, _id, indata, kwargs, force=force)
+                    self.engine.edit_item(session, engine_topic, _id, indata, kwargs)
                 cherrypy.response.status = HTTPStatus.NO_CONTENT.value
             else:
                 raise NbiException("Method {} not allowed".format(method), HTTPStatus.METHOD_NOT_ALLOWED)
@@ -1032,7 +1108,8 @@ def _stop_service():
     TODO: Ending database connections.
     """
     global subscription_thread
-    subscription_thread.terminate()
+    if subscription_thread:
+        subscription_thread.terminate()
     subscription_thread = None
     cherrypy.tree.apps['/osm'].root.engine.stop()
     cherrypy.log.error("Stopping osm_nbi")

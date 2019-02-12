@@ -36,7 +36,8 @@ class DescriptorTopic(BaseTopic):
     def __init__(self, db, fs, msg):
         BaseTopic.__init__(self, db, fs, msg)
 
-    def check_conflict_on_edit(self, session, final_content, edit_content, _id, force=False):
+    def check_conflict_on_edit(self, session, final_content, edit_content, _id):
+        super().check_conflict_on_edit(session, final_content, edit_content, _id)
         # 1. validate again with pyangbind
         # 1.1. remove internal keys
         internal_keys = {}
@@ -44,7 +45,7 @@ class DescriptorTopic(BaseTopic):
             if k in final_content:
                 internal_keys[k] = final_content.pop(k)
         storage_params = internal_keys["_admin"].get("storage")
-        serialized = self._validate_input_new(final_content, storage_params, force)
+        serialized = self._validate_input_new(final_content, storage_params, session["force"])
         # 1.2. modify final_content with a serialized version
         final_content.clear()
         final_content.update(serialized)
@@ -52,11 +53,11 @@ class DescriptorTopic(BaseTopic):
         for k, v in internal_keys.items():
             final_content[k] = v
 
-        if force:
+        if session["force"]:
             return
         # 2. check that this id is not present
         if "id" in edit_content:
-            _filter = self._get_project_filter(session, write=False, show_all=False)
+            _filter = self._get_project_filter(session)
             _filter["id"] = final_content["id"]
             _filter["_id.neq"] = _id
             if self.db.get_one(self.topic, _filter, fail_on_empty=False):
@@ -71,29 +72,14 @@ class DescriptorTopic(BaseTopic):
         content["_admin"]["operationalState"] = "DISABLED"
         content["_admin"]["usageState"] = "NOT_IN_USE"
 
-    def delete(self, session, _id, force=False, dry_run=False):
-        """
-        Delete item by its internal _id
-        :param session: contains the used login username, working project, and admin rights
-        :param _id: server internal id
-        :param force: indicates if deletion must be forced in case of conflict
-        :param dry_run: make checking but do not delete
-        :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
-        """
-        # TODO add admin to filter, validate rights
-        v = BaseTopic.delete(self, session, _id, force, dry_run=True)
-        if dry_run:
-            return
-        v = self.db.del_one(self.topic, {"_id": _id})
+    def delete_extra(self, session, _id):
         self.fs.file_delete(_id, ignore_non_exist=True)
         self.fs.file_delete(_id + "_", ignore_non_exist=True)  # remove temp folder
-        self._send_msg("delete", {"_id": _id})
-        return v
 
     @staticmethod
     def get_one_by_id(db, session, topic, id):
         # find owned by this project
-        _filter = BaseTopic._get_project_filter(session, write=False, show_all=False)
+        _filter = BaseTopic._get_project_filter(session)
         _filter["id"] = id
         desc_list = db.get_list(topic, _filter)
         if len(desc_list) == 1:
@@ -103,7 +89,7 @@ class DescriptorTopic(BaseTopic):
                               HTTPStatus.CONFLICT)
 
         # not found any: try to find public
-        _filter = BaseTopic._get_project_filter(session, write=False, show_all=True)
+        _filter = BaseTopic._get_project_filter(session)
         _filter["id"] = id
         desc_list = db.get_list(topic, _filter)
         if not desc_list:
@@ -114,18 +100,16 @@ class DescriptorTopic(BaseTopic):
             raise DbException("Found more than one public {} with id='{}'; and no one belonging to this project".format(
                 topic[:-1], id), HTTPStatus.CONFLICT)
 
-    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
         Creates a new almost empty DISABLED  entry into database. Due to SOL005, it does not follow normal procedure.
         Creating a VNFD or NSD is done in two steps: 1. Creates an empty descriptor (this step) and 2) upload content
         (self.upload_content)
         :param rollback: list to append created items at database in case a rollback may to be done
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :param force: If True avoid some dependence checks
-        :param make_public: Make the created descriptor public to all projects
         :return: _id: identity of the inserted data.
         """
 
@@ -139,25 +123,24 @@ class DescriptorTopic(BaseTopic):
             self._update_input_with_kwargs(indata, kwargs)
             # uncomment when this method is implemented.
             # Avoid override in this case as the target is userDefinedData, but not vnfd,nsd descriptors
-            # indata = DescriptorTopic._validate_input_new(self, indata, force=force)
+            # indata = DescriptorTopic._validate_input_new(self, indata, project_id=session["force"])
 
             content = {"_admin": {"userDefinedData": indata}}
-            self.format_on_new(content, session["project_id"], make_public=make_public)
+            self.format_on_new(content, session["project_id"], make_public=session["public"])
             _id = self.db.create(self.topic, content)
             rollback.append({"topic": self.topic, "_id": _id})
             return _id
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
-    def upload_content(self, session, _id, indata, kwargs, headers, force=False):
+    def upload_content(self, session, _id, indata, kwargs, headers):
         """
         Used for receiving content by chunks (with a transaction_id header and/or gzip file. It will store and extract)
-        :param session: session
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id : the nsd,vnfd is already created, this is the id
         :param indata: http body request
         :param kwargs: user query string to override parameters. NOT USED
         :param headers:  http request headers
-        :param force: to be more tolerant with validation
         :return: True if package is completely uploaded or False if partial content has been uploded
             Raise exception on error
         """
@@ -283,10 +266,10 @@ class DescriptorTopic(BaseTopic):
             if kwargs:
                 self._update_input_with_kwargs(indata, kwargs)
             # it will call overrides method at VnfdTopic or NsdTopic
-            # indata = self._validate_input_edit(indata, force=force)
+            # indata = self._validate_input_edit(indata, force=session["force"])
 
             deep_update_rfc7396(current_desc, indata)
-            self.check_conflict_on_edit(session, current_desc, indata, _id=_id, force=force)
+            self.check_conflict_on_edit(session, current_desc, indata, _id=_id)
             self.db.replace(self.topic, _id, current_desc)
             self.fs.dir_rename(temp_folder, _id)
 
@@ -317,7 +300,7 @@ class DescriptorTopic(BaseTopic):
     def get_file(self, session, _id, path=None, accept_header=None):
         """
         Return the file content of a vnfd or nsd
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: Identity of the vnfd, nsd
         :param path: artifact path or "$DESCRIPTOR" or None
         :param accept_header: Content of Accept header. Must contain applition/zip or/and text/plain
@@ -426,8 +409,8 @@ class VnfdTopic(DescriptorTopic):
             clean_indata = clean_indata['vnfd:vnfd'][0]
         return clean_indata
 
-    def check_conflict_on_edit(self, session, final_content, edit_content, _id, force=False):
-        super().check_conflict_on_edit(session, final_content, edit_content, _id, force=force)
+    def check_conflict_on_edit(self, session, final_content, edit_content, _id):
+        super().check_conflict_on_edit(session, final_content, edit_content, _id)
 
         # set type of vnfd
         contains_pdu = False
@@ -443,24 +426,23 @@ class VnfdTopic(DescriptorTopic):
             final_content["_admin"]["type"] = "vnfd"
         # if neither vud nor pdu do not fill type
 
-    def check_conflict_on_del(self, session, _id, force=False):
+    def check_conflict_on_del(self, session, _id):
         """
         Check that there is not any NSD that uses this VNFD. Only NSDs belonging to this project are considered. Note
         that VNFD can be public and be used by NSD of other projects. Also check there are not deployments, or vnfr
         that uses this vnfd
-        :param session:
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: vnfd inernal id
-        :param force: Avoid this checking
         :return: None or raises EngineException with the conflict
         """
-        if force:
+        if session["force"]:
             return
         descriptor = self.db.get_one("vnfds", {"_id": _id})
         descriptor_id = descriptor.get("id")
         if not descriptor_id:  # empty vnfd not uploaded
             return
 
-        _filter = self._get_project_filter(session, write=False, show_all=False)
+        _filter = self._get_project_filter(session)
         # check vnfrs using this vnfd
         _filter["vnfd-id"] = _id
         if self.db.get_list("vnfrs", _filter):
@@ -469,7 +451,7 @@ class VnfdTopic(DescriptorTopic):
         # check NSD using this VNFD
         _filter["constituent-vnfd.ANYINDEX.vnfd-id-ref"] = descriptor_id
         if self.db.get_list("nsds", _filter):
-            raise EngineException("There is soame NSD that depends on this VNFD", http_code=HTTPStatus.CONFLICT)
+            raise EngineException("There is at least a NSD that depends on this VNFD", http_code=HTTPStatus.CONFLICT)
 
     def _validate_input_new(self, indata, storage_params, force=False):
         indata = self.pyangbind_validation("vnfds", indata, force)
@@ -713,22 +695,21 @@ class NsdTopic(DescriptorTopic):
         # not needed to validate with pyangbind becuase it will be validated at check_conflict_on_edit
         return indata
 
-    def _check_descriptor_dependencies(self, session, descriptor, force=False):
+    def _check_descriptor_dependencies(self, session, descriptor):
         """
         Check that the dependent descriptors exist on a new descriptor or edition. Also checks references to vnfd
         connection points are ok
-        :param session: client session information
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param descriptor: descriptor to be inserted or edit
-        :param force: if true skip dependencies checking
         :return: None or raises exception
         """
-        if force:
+        if session["force"]:
             return
         member_vnfd_index = {}
-        if descriptor.get("constituent-vnfd") and not force:
+        if descriptor.get("constituent-vnfd") and not session["force"]:
             for vnf in descriptor["constituent-vnfd"]:
                 vnfd_id = vnf["vnfd-id-ref"]
-                filter_q = self._get_project_filter(session, write=False, show_all=True)
+                filter_q = self._get_project_filter(session)
                 filter_q["id"] = vnfd_id
                 vnf_list = self.db.get_list("vnfds", filter_q)
                 if not vnf_list:
@@ -760,23 +741,22 @@ class NsdTopic(DescriptorTopic):
                                 referenced_vnfd_cp["vnfd-connection-point-ref"], vnfd["id"]),
                         http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
 
-    def check_conflict_on_edit(self, session, final_content, edit_content, _id, force=False):
-        super().check_conflict_on_edit(session, final_content, edit_content, _id, force=force)
+    def check_conflict_on_edit(self, session, final_content, edit_content, _id):
+        super().check_conflict_on_edit(session, final_content, edit_content, _id)
 
-        self._check_descriptor_dependencies(session, final_content, force)
+        self._check_descriptor_dependencies(session, final_content)
 
-    def check_conflict_on_del(self, session, _id, force=False):
+    def check_conflict_on_del(self, session, _id):
         """
         Check that there is not any NSR that uses this NSD. Only NSRs belonging to this project are considered. Note
         that NSD can be public and be used by other projects.
-        :param session:
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: vnfd inernal id
-        :param force: Avoid this checking
         :return: None or raises EngineException with the conflict
         """
-        if force:
+        if session["force"]:
             return
-        _filter = self._get_project_filter(session, write=False, show_all=False)
+        _filter = self._get_project_filter(session)
         _filter["nsdId"] = _id
         if self.db.get_list("nsrs", _filter):
             raise EngineException("There is some NSR that depends on this NSD", http_code=HTTPStatus.CONFLICT)
@@ -816,7 +796,7 @@ class NstTopic(DescriptorTopic):
     def _check_descriptor_dependencies(self, session, descriptor):
         """
         Check that the dependent descriptors exist on a new descriptor or edition
-        :param session: client session information
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param descriptor: descriptor to be inserted or edit
         :return: None or raises exception
         """
@@ -824,36 +804,35 @@ class NstTopic(DescriptorTopic):
             return
         for nsd in descriptor["netslice-subnet"]:
             nsd_id = nsd["nsd-ref"]
-            filter_q = self._get_project_filter(session, write=False, show_all=True)
+            filter_q = self._get_project_filter(session)
             filter_q["id"] = nsd_id
             if not self.db.get_list("nsds", filter_q):
                 raise EngineException("Descriptor error at 'netslice-subnet':'nsd-ref'='{}' references a non "
                                       "existing nsd".format(nsd_id), http_code=HTTPStatus.CONFLICT)
 
-    def check_conflict_on_edit(self, session, final_content, edit_content, _id, force=False):
-        super().check_conflict_on_edit(session, final_content, edit_content, _id, force=force)
+    def check_conflict_on_edit(self, session, final_content, edit_content, _id):
+        super().check_conflict_on_edit(session, final_content, edit_content, _id)
 
         self._check_descriptor_dependencies(session, final_content)
 
-    def check_conflict_on_del(self, session, _id, force=False):
+    def check_conflict_on_del(self, session, _id):
         """
         Check that there is not any NSIR that uses this NST. Only NSIRs belonging to this project are considered. Note
         that NST can be public and be used by other projects.
-        :param session:
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: nst internal id
-        :param force: Avoid this checking
         :return: None or raises EngineException with the conflict
         """
         # TODO: Check this method
-        if force:
+        if session["force"]:
             return
         # Get Network Slice Template from Database
-        _filter = self._get_project_filter(session, write=False, show_all=False)
+        _filter = self._get_project_filter(session)
         _filter["_id"] = _id
         nst = self.db.get_one("nsts", _filter)
         
         # Search NSIs using NST via nst-ref
-        _filter = self._get_project_filter(session, write=False, show_all=False)
+        _filter = self._get_project_filter(session)
         _filter["nst-ref"] = nst["id"]
         nsis_list = self.db.get_list("nsis", _filter)
         for nsi_item in nsis_list:
@@ -877,8 +856,8 @@ class PduTopic(BaseTopic):
         content["_admin"]["operationalState"] = "ENABLED"
         content["_admin"]["usageState"] = "NOT_IN_USE"
 
-    def check_conflict_on_del(self, session, _id, force=False):
-        if force:
+    def check_conflict_on_del(self, session, _id):
+        if session["force"]:
             return
         # TODO Is it needed to check descriptors _admin.project_read/project_write??
         _filter = {"vdur.pdu-id": _id}

@@ -166,25 +166,24 @@ class Engine(object):
         except (DbException, FsException, MsgException) as e:
             raise EngineException(str(e), http_code=e.http_code)
 
-    def new_item(self, rollback, session, topic, indata=None, kwargs=None, headers=None, force=False):
+    def new_item(self, rollback, session, topic, indata=None, kwargs=None, headers=None):
         """
         Creates a new entry into database. For nsds and vnfds it creates an almost empty DISABLED  entry,
         that must be completed with a call to method upload_content
         :param rollback: list to append created items at database in case a rollback must to be done
-        :param session: contains the used login username and working project
+        :param session: contains the used login username and working project, force to avoid checkins, public
         :param topic: it can be: users, projects, vim_accounts, sdns, nsrs, nsds, vnfds
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :param force: If True avoid some dependence checks
         :return: _id: identity of the inserted data.
         """
         if topic not in self.map_topic:
             raise EngineException("Unknown topic {}!!!".format(topic), HTTPStatus.INTERNAL_SERVER_ERROR)
         with self.write_lock:
-            return self.map_topic[topic].new(rollback, session, indata, kwargs, headers, force)
+            return self.map_topic[topic].new(rollback, session, indata, kwargs, headers)
 
-    def upload_content(self, session, topic, _id, indata, kwargs, headers, force=False):
+    def upload_content(self, session, topic, _id, indata, kwargs, headers):
         """
         Upload content for an already created entry (_id)
         :param session: contains the used login username and working project
@@ -193,13 +192,12 @@ class Engine(object):
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :param force: If True avoid some dependence checks
         :return: _id: identity of the inserted data.
         """
         if topic not in self.map_topic:
             raise EngineException("Unknown topic {}!!!".format(topic), HTTPStatus.INTERNAL_SERVER_ERROR)
         with self.write_lock:
-            return self.map_topic[topic].upload_content(session, _id, indata, kwargs, headers, force)
+            return self.map_topic[topic].upload_content(session, _id, indata, kwargs, headers)
 
     def get_item_list(self, session, topic, filter_q=None):
         """
@@ -252,21 +250,20 @@ class Engine(object):
         with self.write_lock:
             return self.map_topic[topic].delete_list(session, _filter)
 
-    def del_item(self, session, topic, _id, force=False):
+    def del_item(self, session, topic, _id):
         """
         Delete item by its internal id
         :param session: contains the used login username and working project
         :param topic: it can be: users, projects, vnfds, nsds, ...
         :param _id: server id of the item
-        :param force: indicates if deletion must be forced in case of conflict
         :return: dictionary with deleted item _id. It raises exception if not found.
         """
         if topic not in self.map_topic:
             raise EngineException("Unknown topic {}!!!".format(topic), HTTPStatus.INTERNAL_SERVER_ERROR)
         with self.write_lock:
-            return self.map_topic[topic].delete(session, _id, force)
+            return self.map_topic[topic].delete(session, _id)
 
-    def edit_item(self, session, topic, _id, indata=None, kwargs=None, force=False):
+    def edit_item(self, session, topic, _id, indata=None, kwargs=None):
         """
         Update an existing entry at database
         :param session: contains the used login username and working project
@@ -274,13 +271,12 @@ class Engine(object):
         :param _id: identifier to be updated
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
-        :param force: If True avoid some dependence checks
         :return: dictionary, raise exception if not found.
         """
         if topic not in self.map_topic:
             raise EngineException("Unknown topic {}!!!".format(topic), HTTPStatus.INTERNAL_SERVER_ERROR)
         with self.write_lock:
-            return self.map_topic[topic].edit(session, _id, indata, kwargs, force)
+            return self.map_topic[topic].edit(session, _id, indata, kwargs)
 
     def create_admin_project(self):
         """
@@ -292,9 +288,9 @@ class Engine(object):
         if projects:
             return None
         project_desc = {"name": "admin"}
-        fake_session = {"project_id": "admin", "username": "admin", "admin": True}
+        fake_session = {"project_id": "admin", "username": "admin", "admin": True, "force": True, "public": None}
         rollback_list = []
-        _id = self.map_topic["projects"].new(rollback_list, fake_session, project_desc, force=True)
+        _id = self.map_topic["projects"].new(rollback_list, fake_session, project_desc)
         return _id
 
     def create_admin_user(self):
@@ -307,9 +303,9 @@ class Engine(object):
             return None
             # raise EngineException("Unauthorized. Database users is not empty", HTTPStatus.UNAUTHORIZED)
         user_desc = {"username": "admin", "password": "admin", "projects": ["admin"]}
-        fake_session = {"project_id": "admin", "username": "admin", "admin": True}
+        fake_session = {"project_id": "admin", "username": "admin", "admin": True, "force": True, "public": None}
         roolback_list = []
-        _id = self.map_topic["users"].new(roolback_list, fake_session, user_desc, force=True)
+        _id = self.map_topic["users"].new(roolback_list, fake_session, user_desc)
         return _id
 
     def create_admin(self):

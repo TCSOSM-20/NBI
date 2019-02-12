@@ -34,18 +34,17 @@ class UserTopic(BaseTopic):
     topic_msg = "users"
     schema_new = user_new_schema
     schema_edit = user_edit_schema
+    multiproject = False
 
     def __init__(self, db, fs, msg):
         BaseTopic.__init__(self, db, fs, msg)
 
     @staticmethod
-    def _get_project_filter(session, write=False, show_all=True):
+    def _get_project_filter(session):
         """
         Generates a filter dictionary for querying database users.
         Current policy is admin can show all, non admin, only its own user.
-        :param session: contains "username", if user is "admin" and the working "project_id"
-        :param write: if operation is for reading (False) or writing (True)
-        :param show_all:  if True it will show public or
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :return:
         """
         if session["admin"]:  # allows all
@@ -53,21 +52,19 @@ class UserTopic(BaseTopic):
         else:
             return {"username": session["username"]}
 
-    def check_conflict_on_new(self, session, indata, force=False):
+    def check_conflict_on_new(self, session, indata):
         # check username not exists
         if self.db.get_one(self.topic, {"username": indata.get("username")}, fail_on_empty=False, fail_on_more=False):
             raise EngineException("username '{}' exists".format(indata["username"]), HTTPStatus.CONFLICT)
         # check projects
-        if not force:
-            for p in indata["projects"]:
-                if p == "admin":
-                    continue
+        if not session["force"]:
+            for p in indata.get("projects"):
                 # To allow project addressing by Name as well as ID
                 if not self.db.get_one("projects", {BaseTopic.id_field("projects", p): p}, fail_on_empty=False,
                                        fail_on_more=False):
                     raise EngineException("project '{}' does not exist".format(p), HTTPStatus.CONFLICT)
 
-    def check_conflict_on_del(self, session, _id, force=False):
+    def check_conflict_on_del(self, session, _id):
         if _id == session["username"]:
             raise EngineException("You cannot delete your own user", http_code=HTTPStatus.CONFLICT)
 
@@ -90,7 +87,7 @@ class UserTopic(BaseTopic):
             final_content["password"] = sha256(edit_content["password"].encode('utf-8') +
                                                salt.encode('utf-8')).hexdigest()
 
-    def edit(self, session, _id, indata=None, kwargs=None, force=False, content=None):
+    def edit(self, session, _id, indata=None, kwargs=None, content=None):
         if not session["admin"]:
             raise EngineException("needed admin privileges", http_code=HTTPStatus.UNAUTHORIZED)
         # Names that look like UUIDs are not allowed
@@ -98,9 +95,9 @@ class UserTopic(BaseTopic):
         if is_valid_uuid(name):
             raise EngineException("Usernames that look like UUIDs are not allowed",
                                   http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
-        return BaseTopic.edit(self, session, _id, indata=indata, kwargs=kwargs, force=force, content=content)
+        return BaseTopic.edit(self, session, _id, indata=indata, kwargs=kwargs, content=content)
 
-    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         if not session["admin"]:
             raise EngineException("needed admin privileges", http_code=HTTPStatus.UNAUTHORIZED)
         # Names that look like UUIDs are not allowed
@@ -108,8 +105,7 @@ class UserTopic(BaseTopic):
         if is_valid_uuid(name):
             raise EngineException("Usernames that look like UUIDs are not allowed",
                                   http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
-        return BaseTopic.new(self, rollback, session, indata=indata, kwargs=kwargs, headers=headers, force=force,
-                             make_public=make_public)
+        return BaseTopic.new(self, rollback, session, indata=indata, kwargs=kwargs, headers=headers)
 
 
 class ProjectTopic(BaseTopic):
@@ -117,11 +113,25 @@ class ProjectTopic(BaseTopic):
     topic_msg = "projects"
     schema_new = project_new_schema
     schema_edit = project_edit_schema
+    multiproject = False
 
     def __init__(self, db, fs, msg):
         BaseTopic.__init__(self, db, fs, msg)
 
-    def check_conflict_on_new(self, session, indata, force=False):
+    @staticmethod
+    def _get_project_filter(session):
+        """
+        Generates a filter dictionary for querying database users.
+        Current policy is admin can show all, non admin, only its own user.
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :return:
+        """
+        if session["admin"]:  # allows all
+            return {}
+        else:
+            return {"_id.cont": session["project_id"]}
+
+    def check_conflict_on_new(self, session, indata):
         if not indata.get("name"):
             raise EngineException("missing 'name'")
         # check name not exists
@@ -134,16 +144,16 @@ class ProjectTopic(BaseTopic):
         # Removed so that the UUID is kept, to allow Project Name modification
         # content["_id"] = content["name"]
 
-    def check_conflict_on_del(self, session, _id, force=False):
-        if _id == session["project_id"]:
+    def check_conflict_on_del(self, session, _id):
+        if _id in session["project_id"]:
             raise EngineException("You cannot delete your own project", http_code=HTTPStatus.CONFLICT)
-        if force:
+        if session["force"]:
             return
         _filter = {"projects": _id}
         if self.db.get_list("users", _filter):
             raise EngineException("There is some USER that contains this project", http_code=HTTPStatus.CONFLICT)
 
-    def edit(self, session, _id, indata=None, kwargs=None, force=False, content=None):
+    def edit(self, session, _id, indata=None, kwargs=None, content=None):
         if not session["admin"]:
             raise EngineException("needed admin privileges", http_code=HTTPStatus.UNAUTHORIZED)
         # Names that look like UUIDs are not allowed
@@ -151,9 +161,9 @@ class ProjectTopic(BaseTopic):
         if is_valid_uuid(name):
             raise EngineException("Project names that look like UUIDs are not allowed",
                                   http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
-        return BaseTopic.edit(self, session, _id, indata=indata, kwargs=kwargs, force=force, content=content)
+        return BaseTopic.edit(self, session, _id, indata=indata, kwargs=kwargs, content=content)
 
-    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         if not session["admin"]:
             raise EngineException("needed admin privileges", http_code=HTTPStatus.UNAUTHORIZED)
         # Names that look like UUIDs are not allowed
@@ -161,8 +171,7 @@ class ProjectTopic(BaseTopic):
         if is_valid_uuid(name):
             raise EngineException("Project names that look like UUIDs are not allowed",
                                   http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
-        return BaseTopic.new(self, rollback, session, indata=indata, kwargs=kwargs, headers=headers, force=force,
-                             make_public=make_public)
+        return BaseTopic.new(self, rollback, session, indata=indata, kwargs=kwargs, headers=headers)
 
 
 class VimAccountTopic(BaseTopic):
@@ -171,15 +180,16 @@ class VimAccountTopic(BaseTopic):
     schema_new = vim_account_new_schema
     schema_edit = vim_account_edit_schema
     vim_config_encrypted = ("admin_password", "nsx_password", "vcenter_password")
+    multiproject = True
 
     def __init__(self, db, fs, msg):
         BaseTopic.__init__(self, db, fs, msg)
 
-    def check_conflict_on_new(self, session, indata, force=False):
+    def check_conflict_on_new(self, session, indata):
         self.check_unique_name(session, indata["name"], _id=None)
 
-    def check_conflict_on_edit(self, session, final_content, edit_content, _id, force=False):
-        if not force and edit_content.get("name"):
+    def check_conflict_on_edit(self, session, final_content, edit_content, _id):
+        if not session["force"] and edit_content.get("name"):
             self.check_unique_name(session, edit_content["name"], _id=_id)
 
         # encrypt passwords
@@ -210,20 +220,19 @@ class VimAccountTopic(BaseTopic):
 
         content["_admin"]["operationalState"] = "PROCESSING"
 
-    def delete(self, session, _id, force=False, dry_run=False):
+    def delete(self, session, _id, dry_run=False):
         """
         Delete item by its internal _id
-        :param session: contains the used login username, working project, and admin rights
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
-        :param force: indicates if deletion must be forced in case of conflict
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
         # TODO add admin to filter, validate rights
-        if dry_run or force:    # delete completely
-            return BaseTopic.delete(self, session, _id, force, dry_run)
+        if dry_run or session["force"]:    # delete completely
+            return BaseTopic.delete(self, session, _id, dry_run)
         else:  # if not, sent to kafka
-            v = BaseTopic.delete(self, session, _id, force, dry_run=True)
+            v = BaseTopic.delete(self, session, _id, dry_run=True)
             self.db.set_one("vim_accounts", {"_id": _id}, {"_admin.to_delete": True})  # TODO change status
             self._send_msg("delete", {"_id": _id})
             return v  # TODO indicate an offline operation to return 202 ACCEPTED
@@ -234,16 +243,17 @@ class WimAccountTopic(BaseTopic):
     topic_msg = "wim_account"
     schema_new = wim_account_new_schema
     schema_edit = wim_account_edit_schema
+    multiproject = True
     wim_config_encrypted = ()
 
     def __init__(self, db, fs, msg):
         BaseTopic.__init__(self, db, fs, msg)
 
-    def check_conflict_on_new(self, session, indata, force=False):
+    def check_conflict_on_new(self, session, indata):
         self.check_unique_name(session, indata["name"], _id=None)
 
-    def check_conflict_on_edit(self, session, final_content, edit_content, _id, force=False):
-        if not force and edit_content.get("name"):
+    def check_conflict_on_edit(self, session, final_content, edit_content, _id):
+        if not session["force"] and edit_content.get("name"):
             self.check_unique_name(session, edit_content["name"], _id=_id)
 
         # encrypt passwords
@@ -274,20 +284,19 @@ class WimAccountTopic(BaseTopic):
 
         content["_admin"]["operationalState"] = "PROCESSING"
 
-    def delete(self, session, _id, force=False, dry_run=False):
+    def delete(self, session, _id, dry_run=False):
         """
         Delete item by its internal _id
-        :param session: contains the used login username, working project, and admin rights
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
-        :param force: indicates if deletion must be forced in case of conflict
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
         # TODO add admin to filter, validate rights
-        if dry_run or force:    # delete completely
-            return BaseTopic.delete(self, session, _id, force, dry_run)
+        if dry_run or session["force"]:    # delete completely
+            return BaseTopic.delete(self, session, _id, dry_run)
         else:  # if not, sent to kafka
-            v = BaseTopic.delete(self, session, _id, force, dry_run=True)
+            v = BaseTopic.delete(self, session, _id, dry_run=True)
             self.db.set_one("wim_accounts", {"_id": _id}, {"_admin.to_delete": True})  # TODO change status
             self._send_msg("delete", {"_id": _id})
             return v  # TODO indicate an offline operation to return 202 ACCEPTED
@@ -298,15 +307,16 @@ class SdnTopic(BaseTopic):
     topic_msg = "sdn"
     schema_new = sdn_new_schema
     schema_edit = sdn_edit_schema
+    multiproject = True
 
     def __init__(self, db, fs, msg):
         BaseTopic.__init__(self, db, fs, msg)
 
-    def check_conflict_on_new(self, session, indata, force=False):
+    def check_conflict_on_new(self, session, indata):
         self.check_unique_name(session, indata["name"], _id=None)
 
-    def check_conflict_on_edit(self, session, final_content, edit_content, _id, force=False):
-        if not force and edit_content.get("name"):
+    def check_conflict_on_edit(self, session, final_content, edit_content, _id):
+        if not session["force"] and edit_content.get("name"):
             self.check_unique_name(session, edit_content["name"], _id=_id)
 
         # encrypt passwords
@@ -325,41 +335,39 @@ class SdnTopic(BaseTopic):
 
         content["_admin"]["operationalState"] = "PROCESSING"
 
-    def delete(self, session, _id, force=False, dry_run=False):
+    def delete(self, session, _id, dry_run=False):
         """
         Delete item by its internal _id
-        :param session: contains the used login username, working project, and admin rights
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
-        :param force: indicates if deletion must be forced in case of conflict
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
-        if dry_run or force:  # delete completely
-            return BaseTopic.delete(self, session, _id, force, dry_run)
+        if dry_run or session["force"]:  # delete completely
+            return BaseTopic.delete(self, session, _id, dry_run)
         else:  # if not sent to kafka
-            v = BaseTopic.delete(self, session, _id, force, dry_run=True)
+            v = BaseTopic.delete(self, session, _id, dry_run=True)
             self.db.set_one("sdns", {"_id": _id}, {"_admin.to_delete": True})  # TODO change status
             self._send_msg("delete", {"_id": _id})
             return v   # TODO indicate an offline operation to return 202 ACCEPTED
 
 
 class UserTopicAuth(UserTopic):
-    topic = "users"
-    topic_msg = "users"
-    schema_new = user_new_schema
-    schema_edit = user_edit_schema
+    # topic = "users"
+    # topic_msg = "users"
+    # schema_new = user_new_schema
+    # schema_edit = user_edit_schema
 
     def __init__(self, db, fs, msg, auth):
         UserTopic.__init__(self, db, fs, msg)
         self.auth = auth
 
-    def check_conflict_on_new(self, session, indata, force=False):
+    def check_conflict_on_new(self, session, indata):
         """
         Check that the data to be inserted is valid
 
-        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: data to be inserted
-        :param force: boolean. With force it is more tolerant
         :return: None or raises EngineException
         """
         username = indata.get("username")
@@ -368,15 +376,14 @@ class UserTopicAuth(UserTopic):
         if username in user_list:
             raise EngineException("username '{}' exists".format(username), HTTPStatus.CONFLICT)
 
-    def check_conflict_on_edit(self, session, final_content, edit_content, _id, force=False):
+    def check_conflict_on_edit(self, session, final_content, edit_content, _id):
         """
         Check that the data to be edited/uploaded is valid
 
-        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param final_content: data once modified
         :param edit_content: incremental data that contains the modifications to apply
         :param _id: internal _id
-        :param force: boolean. With force it is more tolerant
         :return: None or raises EngineException
         """
         users = self.auth.get_user_list()
@@ -391,13 +398,12 @@ class UserTopicAuth(UserTopic):
                 raise EngineException("You cannot remove system_admin role from admin user", 
                                       http_code=HTTPStatus.FORBIDDEN)
 
-    def check_conflict_on_del(self, session, _id, force=False):
+    def check_conflict_on_del(self, session, _id):
         """
         Check if deletion can be done because of dependencies if it is not force. To override
 
-        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: internal _id
-        :param force: Avoid this checking
         :return: None if ok or raises EngineException with the conflict
         """
         if _id == session["username"]:
@@ -437,19 +443,17 @@ class UserTopicAuth(UserTopic):
         else:
             final_content["project_role_mappings"] = edit_content["project_role_mappings"]
 
-    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
         Creates a new entry into the authentication backend.
 
         NOTE: Overrides BaseTopic functionality because it doesn't require access to database.
 
         :param rollback: list to append created items at database in case a rollback may to be done
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :param force: If True avoid some dependence checks
-        :param make_public: Make the created item public to all projects
         :return: _id: identity of the inserted data.
         """
         try:
@@ -457,9 +461,9 @@ class UserTopicAuth(UserTopic):
 
             # Override descriptor with query string kwargs
             BaseTopic._update_input_with_kwargs(content, kwargs)
-            content = self._validate_input_new(content, force)
-            self.check_conflict_on_new(session, content, force=force)
-            self.format_on_new(content, project_id=session["project_id"], make_public=make_public)
+            content = self._validate_input_new(content, session["force"])
+            self.check_conflict_on_new(session, content)
+            self.format_on_new(content, session["project_id"], make_public=session["public"])
             _id = self.auth.create_user(content["username"], content["password"])
             rollback.append({"topic": self.topic, "_id": _id})
             del content["password"]
@@ -472,7 +476,7 @@ class UserTopicAuth(UserTopic):
         """
         Get complete information on an topic
 
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :return: dictionary, raise exception if not found.
         """
@@ -485,15 +489,14 @@ class UserTopicAuth(UserTopic):
         else:
             raise EngineException("User not found", HTTPStatus.NOT_FOUND)
 
-    def edit(self, session, _id, indata=None, kwargs=None, force=False, content=None):
+    def edit(self, session, _id, indata=None, kwargs=None, content=None):
         """
         Updates an user entry.
 
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id:
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
-        :param force: If True avoid some dependence checks
         :param content:
         :return: _id: identity of the inserted data.
         """
@@ -503,11 +506,11 @@ class UserTopicAuth(UserTopic):
         if kwargs:
             BaseTopic._update_input_with_kwargs(indata, kwargs)
         try:
-            indata = self._validate_input_edit(indata, force=force)
+            indata = self._validate_input_edit(indata, force=session["force"])
 
             if not content:
                 content = self.show(session, _id)
-            self.check_conflict_on_edit(session, content, indata, _id=_id, force=force)
+            self.check_conflict_on_edit(session, content, indata, _id=_id)
             self.format_on_edit(content, indata)
 
             if "password" in content:
@@ -552,23 +555,23 @@ class UserTopicAuth(UserTopic):
     def list(self, session, filter_q=None):
         """
         Get a list of the topic that matches a filter
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param filter_q: filter of data to be applied
         :return: The list, it can be empty if no one match the filter.
         """
         return self.auth.get_user_list()
 
-    def delete(self, session, _id, force=False, dry_run=False):
+    def delete(self, session, _id, dry_run=False):
         """
         Delete item by its internal _id
 
-        :param session: contains the used login username, working project, and admin rights
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :param force: indicates if deletion must be forced in case of conflict
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
-        self.check_conflict_on_del(session, _id, force)
+        self.check_conflict_on_del(session, _id)
         if not dry_run:
             v = self.auth.delete_user(_id)
             return v
@@ -576,22 +579,21 @@ class UserTopicAuth(UserTopic):
 
 
 class ProjectTopicAuth(ProjectTopic):
-    topic = "projects"
-    topic_msg = "projects"
-    schema_new = project_new_schema
-    schema_edit = project_edit_schema
+    # topic = "projects"
+    # topic_msg = "projects"
+    # schema_new = project_new_schema
+    # schema_edit = project_edit_schema
 
     def __init__(self, db, fs, msg, auth):
         ProjectTopic.__init__(self, db, fs, msg)
         self.auth = auth
 
-    def check_conflict_on_new(self, session, indata, force=False):
+    def check_conflict_on_new(self, session, indata):
         """
         Check that the data to be inserted is valid
 
-        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: data to be inserted
-        :param force: boolean. With force it is more tolerant
         :return: None or raises EngineException
         """
         project = indata.get("name")
@@ -600,13 +602,12 @@ class ProjectTopicAuth(ProjectTopic):
         if project in project_list:
             raise EngineException("project '{}' exists".format(project), HTTPStatus.CONFLICT)
 
-    def check_conflict_on_del(self, session, _id, force=False):
+    def check_conflict_on_del(self, session, _id):
         """
         Check if deletion can be done because of dependencies if it is not force. To override
 
-        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: internal _id
-        :param force: Avoid this checking
         :return: None if ok or raises EngineException with the conflict
         """
         projects = self.auth.get_project_list()
@@ -616,19 +617,17 @@ class ProjectTopicAuth(ProjectTopic):
         if _id == current_project["_id"]:
             raise EngineException("You cannot delete your own project", http_code=HTTPStatus.CONFLICT)
 
-    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
         Creates a new entry into the authentication backend.
 
         NOTE: Overrides BaseTopic functionality because it doesn't require access to database.
 
         :param rollback: list to append created items at database in case a rollback may to be done
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :param force: If True avoid some dependence checks
-        :param make_public: Make the created item public to all projects
         :return: _id: identity of the inserted data.
         """
         try:
@@ -636,9 +635,9 @@ class ProjectTopicAuth(ProjectTopic):
 
             # Override descriptor with query string kwargs
             BaseTopic._update_input_with_kwargs(content, kwargs)
-            content = self._validate_input_new(content, force)
-            self.check_conflict_on_new(session, content, force=force)
-            self.format_on_new(content, project_id=session["project_id"], make_public=make_public)
+            content = self._validate_input_new(content, session["force"])
+            self.check_conflict_on_new(session, content)
+            self.format_on_new(content, project_id=session["project_id"], make_public=session["public"])
             _id = self.auth.create_project(content["name"])
             rollback.append({"topic": self.topic, "_id": _id})
             # self._send_msg("create", content)
@@ -650,7 +649,7 @@ class ProjectTopicAuth(ProjectTopic):
         """
         Get complete information on an topic
 
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :return: dictionary, raise exception if not found.
         """
@@ -667,23 +666,22 @@ class ProjectTopicAuth(ProjectTopic):
         """
         Get a list of the topic that matches a filter
 
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param filter_q: filter of data to be applied
         :return: The list, it can be empty if no one match the filter.
         """
         return self.auth.get_project_list()
 
-    def delete(self, session, _id, force=False, dry_run=False):
+    def delete(self, session, _id, dry_run=False):
         """
         Delete item by its internal _id
 
-        :param session: contains the used login username, working project, and admin rights
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
-        :param force: indicates if deletion must be forced in case of conflict
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
-        self.check_conflict_on_del(session, _id, force)
+        self.check_conflict_on_del(session, _id)
         if not dry_run:
             v = self.auth.delete_project(_id)
             return v
@@ -695,6 +693,7 @@ class RoleTopicAuth(BaseTopic):
     topic_msg = "roles"
     schema_new = roles_new_schema
     schema_edit = roles_edit_schema
+    multiproject = False
 
     def __init__(self, db, fs, msg, auth, ops):
         BaseTopic.__init__(self, db, fs, msg)
@@ -750,13 +749,12 @@ class RoleTopicAuth(BaseTopic):
             self.validate_role_definition(self.operations, input["definition"])
         return input
 
-    def check_conflict_on_new(self, session, indata, force=False):
+    def check_conflict_on_new(self, session, indata):
         """
         Check that the data to be inserted is valid
 
-        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: data to be inserted
-        :param force: boolean. With force it is more tolerant
         :return: None or raises EngineException
         """
         role = indata.get("name")
@@ -765,15 +763,14 @@ class RoleTopicAuth(BaseTopic):
         if role in role_list:
             raise EngineException("role '{}' exists".format(role), HTTPStatus.CONFLICT)
 
-    def check_conflict_on_edit(self, session, final_content, edit_content, _id, force=False):
+    def check_conflict_on_edit(self, session, final_content, edit_content, _id):
         """
         Check that the data to be edited/uploaded is valid
 
-        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param final_content: data once modified
         :param edit_content: incremental data that contains the modifications to apply
         :param _id: internal _id
-        :param force: boolean. With force it is more tolerant
         :return: None or raises EngineException
         """
         roles = self.auth.get_role_list()
@@ -783,13 +780,12 @@ class RoleTopicAuth(BaseTopic):
         if _id == system_admin_role["_id"]:
             raise EngineException("You cannot edit system_admin role", http_code=HTTPStatus.FORBIDDEN)
 
-    def check_conflict_on_del(self, session, _id, force=False):
+    def check_conflict_on_del(self, session, _id):
         """
         Check if deletion can be done because of dependencies if it is not force. To override
 
-        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: internal _id
-        :param force: Avoid this checking
         :return: None if ok or raises EngineException with the conflict
         """
         roles = self.auth.get_role_list()
@@ -886,7 +882,7 @@ class RoleTopicAuth(BaseTopic):
         """
         Get complete information on an topic
 
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :return: dictionary, raise exception if not found.
         """
@@ -903,7 +899,7 @@ class RoleTopicAuth(BaseTopic):
         """
         Get a list of the topic that matches a filter
 
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param filter_q: filter of data to be applied
         :return: The list, it can be empty if no one match the filter.
         """
@@ -920,17 +916,15 @@ class RoleTopicAuth(BaseTopic):
 
         return new_roles
 
-    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
         Creates a new entry into database.
 
         :param rollback: list to append created items at database in case a rollback may to be done
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :param force: If True avoid some dependence checks
-        :param make_public: Make the created item public to all projects
         :return: _id: identity of the inserted data.
         """
         try:
@@ -938,9 +932,9 @@ class RoleTopicAuth(BaseTopic):
 
             # Override descriptor with query string kwargs
             BaseTopic._update_input_with_kwargs(content, kwargs)
-            content = self._validate_input_new(content, force)
-            self.check_conflict_on_new(session, content, force=force)
-            self.format_on_new(content, project_id=session["project_id"], make_public=make_public)
+            content = self._validate_input_new(content, session["force"])
+            self.check_conflict_on_new(session, content)
+            self.format_on_new(content, project_id=session["project_id"], make_public=session["public"])
             role_name = content["name"]
             role = self.auth.create_role(role_name)
             content["_id"] = role["_id"]
@@ -951,17 +945,16 @@ class RoleTopicAuth(BaseTopic):
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
-    def delete(self, session, _id, force=False, dry_run=False):
+    def delete(self, session, _id, dry_run=False):
         """
         Delete item by its internal _id
 
-        :param session: contains the used login username, working project, and admin rights
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
-        :param force: indicates if deletion must be forced in case of conflict
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
-        self.check_conflict_on_del(session, _id, force)
+        self.check_conflict_on_del(session, _id)
         filter_q = self._get_project_filter(session, write=True, show_all=True)
         filter_q["_id"] = _id
         if not dry_run:
@@ -970,15 +963,14 @@ class RoleTopicAuth(BaseTopic):
             return v
         return None
 
-    def edit(self, session, _id, indata=None, kwargs=None, force=False, content=None):
+    def edit(self, session, _id, indata=None, kwargs=None, content=None):
         """
         Updates a role entry.
 
-        :param session: contains the used login username and working project
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id:
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
-        :param force: If True avoid some dependence checks
         :param content:
         :return: _id: identity of the inserted data.
         """
@@ -988,11 +980,11 @@ class RoleTopicAuth(BaseTopic):
         if kwargs:
             BaseTopic._update_input_with_kwargs(indata, kwargs)
         try:
-            indata = self._validate_input_edit(indata, force=force)
+            indata = self._validate_input_edit(indata, force=session["force"])
 
             if not content:
                 content = self.show(session, _id)
-            self.check_conflict_on_edit(session, content, indata, _id=_id, force=force)
+            self.check_conflict_on_edit(session, content, indata, _id=_id)
             self.format_on_edit(content, indata)
             self.db.replace(self.topic, _id, content)
             return id

@@ -48,7 +48,7 @@ class SubscriptionThread(threading.Thread):
         :param engine: an instance of Engine class, used for deleting instances
         """
         threading.Thread.__init__(self)
-
+        self.to_terminate = False
         self.config = config
         self.db = None
         self.msg = None
@@ -97,16 +97,17 @@ class SubscriptionThread(threading.Thread):
             raise SubscriptionException(str(e), http_code=e.http_code)
 
         self.logger.debug("Starting")
-        while True:
+        while not self.to_terminate:
             try:
                 self.aiomain_task = asyncio.ensure_future(self.msg.aioread(("ns", "nsi"), loop=self.loop,
                                                                            callback=self._msg_callback),
                                                           loop=self.loop)
                 self.loop.run_until_complete(self.aiomain_task)
-            except asyncio.CancelledError:
-                break  # if cancelled it should end, breaking loop
+            # except asyncio.CancelledError:
+            #     break  # if cancelled it should end, breaking loop
             except Exception as e:
-                self.logger.exception("Exception '{}' at messaging read loop".format(e), exc_info=True)
+                if not self.to_terminate:
+                    self.logger.exception("Exception '{}' at messaging read loop".format(e), exc_info=True)
 
         self.logger.debug("Finishing")
         self._stop()
@@ -160,4 +161,5 @@ class SubscriptionThread(threading.Thread):
         but not immediately.
         :return: None
         """
+        self.to_terminate = True
         self.loop.call_soon_threadsafe(self.aiomain_task.cancel)
