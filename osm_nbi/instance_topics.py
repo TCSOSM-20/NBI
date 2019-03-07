@@ -192,6 +192,7 @@ class NsrTopic(BaseTopic):
                 "nsd-name-ref": nsd["name"],
                 "operational-events": [],   # "id", "timestamp", "description", "event",
                 "nsd-ref": nsd["id"],
+                "nsd-id": nsd["_id"],
                 "instantiate_params": self._format_ns_request(ns_request),
                 "additionalParamsForNs": self._format_addional_params(ns_request),
                 "ns-instance-config-ref": nsr_id,

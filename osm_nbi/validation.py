@@ -302,6 +302,7 @@ ns_action = {   # TODO for the moment it is only contemplated the vnfd primitive
         "member_vnf_index": name_schema,
         "vnf_member_index": name_schema,  # TODO for backward compatibility. To remove in future
         "vdu_id": name_schema,
+        "vdu_count_index": integer0_schema,
         "primitive": name_schema,
         "primitive_params": {"type": "object"},
     },
@@ -420,7 +421,12 @@ wim_account_new_schema = {
         "wim_url": description_schema,
         "user": shortname_schema,
         "password": passwd_schema,
-        "config": {"type": "object"}
+        "config": {
+            "type": "object",
+            "patternProperties": {
+                ".": {"not": {"type": "null"}}
+            }
+        }
     },
     "required": ["name", "wim_url", "wim_type"],
     "additionalProperties": False
