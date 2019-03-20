@@ -174,7 +174,7 @@ class Authenticator:
                                         .format(role_with_operations["role"]))
                     continue
 
-                operations = {}
+                role_ops = {}
                 root = None
 
                 if not role_with_operations["operations"]:
@@ -195,8 +195,8 @@ class Authenticator:
                         continue
 
                     operation_key = operation.replace(".", ":")
-                    if operation_key not in operations.keys():
-                        operations[operation_key] = is_allowed
+                    if operation_key not in role_ops.keys():
+                        role_ops[operation_key] = is_allowed
                     else:
                         self.logger.info("In role {0}, the operation {1} with the value {2} was discarded due to "
                                          "repetition.".format(role_with_operations["role"], operation, is_allowed))
@@ -217,7 +217,7 @@ class Authenticator:
                     "root": root
                 }
 
-                for operation, value in operations.items():
+                for operation, value in role_ops.items():
                     operation_to_roles_item[operation] = value
 
                 self.db.create("roles_operations", operation_to_roles_item)
@@ -426,7 +426,9 @@ class Authenticator:
             tmp_keys = []
             for tmp_key in filtered_keys:
                 splitted = tmp_key.split()[1].split("/")
-                if "<" in splitted[idx] and ">" in splitted[idx]:
+                if idx >= len(splitted):
+                    continue
+                elif "<" in splitted[idx] and ">" in splitted[idx]:
                     if splitted[idx] == "<artifactPath>":
                         tmp_keys.append(tmp_key)
                         continue
