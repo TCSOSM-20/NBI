@@ -395,6 +395,7 @@ class NsLcmOpTopic(BaseTopic):
         """
         vnfds = {}
         vim_accounts = []
+        wim_accounts = []
         nsd = nsr["nsd"]
 
         def check_valid_vnf_member_index(member_vnf_index):
@@ -467,6 +468,19 @@ class NsLcmOpTopic(BaseTopic):
                 raise EngineException("Invalid vimAccountId='{}' not present for the project".format(vim_account))
             vim_accounts.append(vim_account)
 
+        def check_valid_wim_account(wim_account):
+            if not isinstance(wim_account, str):
+                return
+            elif wim_account in wim_accounts:
+                return
+            try:
+                db_filter = self._get_project_filter(session, write=False, show_all=True)
+                db_filter["_id"] = wim_account
+                self.db.get_one("wim_accounts", db_filter)
+            except Exception:
+                raise EngineException("Invalid wimAccountId='{}' not present for the project".format(wim_account))
+            wim_accounts.append(wim_account)
+
         if operation == "action":
             # check vnf_member_index
             if indata.get("vnf_member_index"):
@@ -507,6 +521,7 @@ class NsLcmOpTopic(BaseTopic):
         if operation == "instantiate":
             # check vim_account
             check_valid_vim_account(indata["vimAccountId"])
+            check_valid_wim_account(indata.get("wimAccountId"))
             for in_vnf in get_iterable(indata.get("vnf")):
                 vnfd = check_valid_vnf_member_index(in_vnf["member-vnf-index"])
                 _check_vnf_instantiation_params(in_vnf, vnfd)
@@ -514,6 +529,7 @@ class NsLcmOpTopic(BaseTopic):
                     check_valid_vim_account(in_vnf["vimAccountId"])
 
             for in_vld in get_iterable(indata.get("vld")):
+                check_valid_wim_account(in_vld.get("wimAccountId"))
                 for vldd in get_iterable(nsd.get("vld")):
                     if in_vld["name"] == vldd["name"] or in_vld["name"] == vldd["id"]:
                         break
