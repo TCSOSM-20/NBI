@@ -1015,13 +1015,6 @@ class NsiTopic(BaseTopic):
                 indata_ns["vimAccountId"] = slice_request.get("vimAccountId")
                 indata_ns["nsDescription"] = service["description"]
                 indata_ns["key-pair-ref"] = None
-                for additional_params_subnet in get_iterable(slice_request.get("additionalParamsForSubnet")):
-                    if additional_params_subnet["id"] == service["id"]:
-                        if additional_params_subnet.get("additionalParamsForNs"):
-                            indata_ns["additionalParamsForNs"] = additional_params_subnet["additionalParamsForNs"]
-                        if additional_params_subnet.get("additionalParamsForVnf"):
-                            indata_ns["additionalParamsForVnf"] = additional_params_subnet["additionalParamsForVnf"]
-                        break
 
                 # NsrTopic(rollback, session, indata_ns, kwargs, headers, force)
                 # Overwriting ns_params filtering by nsName == netslice-subnet.id
@@ -1032,7 +1025,8 @@ class NsiTopic(BaseTopic):
                             copy_ns_param = deepcopy(ns_param)
                             del copy_ns_param["id"]
                             indata_ns.update(copy_ns_param)
-                # TODO: Improve network selection via networkID
+                            break
+                
                 # Override the instantiation parameters for netslice-vld provided by user
                 if nsi_vlds:
                     indata_ns_list = []

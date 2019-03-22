@@ -638,26 +638,10 @@ nbi_edit_input_schemas = {
 }
 
 # NETSLICE SCHEMAS
-nsi_slice_instantiate = deepcopy(ns_instantiate)
-nsi_slice_instantiate["title"] = "netslice subnet instantiation params input schema"
-nsi_slice_instantiate["properties"]["id"] = name_schema
-nsi_slice_instantiate["properties"]["additionalParamsForNsi"] = object_schema
-nsi_slice_instantiate["properties"]["additionalParamsForSubnet"] = {
-    "type": "array",
-    "items": {
-        "type": "object",
-        "properties": {
-            "id": name_schema,
-            "additionalParamsForNs": object_schema,
-            "additionalParamsForVnf": additional_params_for_vnf
-        },
-        "required": ["id"],
-        "additionalProperties": False
-    }
-}
-del nsi_slice_instantiate["required"]
-del nsi_slice_instantiate["properties"]["additionalParamsForNs"]
-del nsi_slice_instantiate["properties"]["additionalParamsForVnf"]
+nsi_subnet_instantiate = deepcopy(ns_instantiate)
+nsi_subnet_instantiate["title"] = "netslice subnet instantiation params input schema"
+nsi_subnet_instantiate["properties"]["id"] = name_schema
+del nsi_subnet_instantiate["required"]
 
 nsi_vld_instantiate = {
     "title": "netslice vld instantiation params input schema",
@@ -686,10 +670,11 @@ nsi_instantiate = {
         "vimAccountId": id_schema,
         "ssh_keys": {"type": "string"},
         "nsi_id": id_schema,
+        "additionalParamsForNsi": object_schema,
         "netslice-subnet": {
             "type": "array",
             "minItems": 1,
-            "items": nsi_slice_instantiate
+            "items": nsi_subnet_instantiate
         },
         "netslice-vld": {
             "type": "array",

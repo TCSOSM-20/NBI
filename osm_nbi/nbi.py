@@ -94,7 +94,7 @@ URL: /osm                                                       GET     POST    
                 /<subscriptionId>                               5                       X
 
         /pdu/v1
-            /pdu_descriptor                                     O       O
+            /pdu_descriptors                                    O       O
                 /<id>                                           O               O       O       O
 
         /admin/v1
