@@ -527,7 +527,17 @@ class VnfdTopic(DescriptorTopic):
                 if not self._validate_package_folders(storage_params, 'charms'):
                     raise EngineException("Charm defined in vnf[id={}] but not present in "
                                           "package".format(indata["id"]))
+        vld_names = []  # For detection of duplicated VLD names
         for ivld in get_iterable(indata.get("internal-vld")):
+            # BEGIN Detection of duplicated VLD names
+            ivld_name = ivld["name"]
+            if ivld_name in vld_names:
+                raise EngineException("Duplicated VLD name '{}' in vnfd[id={}]:internal-vld[id={}]"
+                                      .format(ivld["name"], indata["id"], ivld["id"]),
+                                      http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
+            else:
+                vld_names.append(ivld_name)
+            # END Detection of duplicated VLD names
             for icp in get_iterable(ivld.get("internal-connection-point")):
                 icp_mark = False
                 for vdu in get_iterable(indata.get("vdu")):
