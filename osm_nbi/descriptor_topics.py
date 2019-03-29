@@ -677,6 +677,10 @@ class NsdTopic(DescriptorTopic):
         # Cross references validation in the descriptor
         # TODO validata that if contains cloud-init-file or charms, have artifacts _admin.storage."pkg-dir" is not none
         for vld in get_iterable(indata.get("vld")):
+            if vld.get("mgmt-network") and vld.get("ip-profile-ref"):
+                raise EngineException("Error at vld[id='{}']:ip-profile-ref"
+                                      " You cannot set an ip-profile when mgmt-network is True"
+                                      .format(vld["id"]), http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
             for vnfd_cp in get_iterable(vld.get("vnfd-connection-point-ref")):
                 for constituent_vnfd in get_iterable(indata.get("constituent-vnfd")):
                     if vnfd_cp["member-vnf-index-ref"] == constituent_vnfd["member-vnf-index"]:
