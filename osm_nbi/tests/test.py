@@ -1813,7 +1813,20 @@ class TestDescriptors:
 
         queries = ["mgmt-interface.cp=mgmt", "vdu.0.interface.0.external-connection-point-ref=mgmt",
                    "vdu.0.interface.1.internal-connection-point-ref=internal",
-                   "internal-vld.0.internal-connection-point.0.id-ref=internal"]
+                   "internal-vld.0.internal-connection-point.0.id-ref=internal",
+                   # Detection of duplicated VLD names in VNF Descriptors
+                   # URL: internal-vld=[
+                   #        {id: internal1, name: internal, type:ELAN,
+                   #            internal-connection-point: [{id-ref: mgmtVM-internal}, {id-ref: dataVM-internal}]},
+                   #        {id: internal2, name: internal, type:ELAN,
+                   #            internal-connection-point: [{id-ref: mgmtVM-internal}, {id-ref: dataVM-internal}]}
+                   #        ]
+                   "internal-vld=%5B%7Bid%3A%20internal1%2C%20name%3A%20internal%2C%20type%3A%20ELAN%2C%20"
+                   "internal-connection-point%3A%20%5B%7Bid-ref%3A%20mgmtVM-internal%7D%2C%20%7Bid-ref%3A%20"
+                   "dataVM-internal%7D%5D%7D%2C%20%7Bid%3A%20internal2%2C%20name%3A%20internal%2C%20type%3A%20"
+                   "ELAN%2C%20internal-connection-point%3A%20%5B%7Bid-ref%3A%20mgmtVM-internal%7D%2C%20%7B"
+                   "id-ref%3A%20dataVM-internal%7D%5D%7D%5D"
+                   ]
         for query in queries:
             engine.test("Upload invalid VNFD ", "PUT",
                         "/vnfpkgm/v1/vnf_packages/{}/package_content?{}".format(self.vnfd_id, query),
