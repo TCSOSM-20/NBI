@@ -211,7 +211,8 @@ class Server(object):
                               "<ID>": {"METHODS": ("GET", "POST", "DELETE", "PATCH", "PUT")}
                               },
                     "projects": {"METHODS": ("GET", "POST"),
-                                 "<ID>": {"METHODS": ("GET", "DELETE")}
+                                 # Added PUT to allow Project Name modification
+                                 "<ID>": {"METHODS": ("GET", "DELETE", "PUT")}
                                  },
                     "roles": {"METHODS": ("GET", "POST"),
                               "<ID>": {"METHODS": ("GET", "POST", "DELETE")}
@@ -740,7 +741,7 @@ class Server(object):
             elif main_topic == "nsilcm":
                 engine_topic = "nsis"
                 if topic == "nsi_lcm_op_occs":
-                    engine_topic = "nsilcmops" 
+                    engine_topic = "nsilcmops"
             elif main_topic == "pdu":
                 engine_topic = "pdus"
             if engine_topic == "vims":   # TODO this is for backward compatibility, it will remove in the future
@@ -800,7 +801,7 @@ class Server(object):
                     indata["nsiInstanceId"] = _id
                     self.engine.new_item(rollback, session, "nsilcmops", indata, kwargs)
                     outdata = {"id": _id}
-                    
+
                 elif topic == "netslice_instances" and item:
                     indata["lcmOperationType"] = item
                     indata["nsiInstanceId"] = _id

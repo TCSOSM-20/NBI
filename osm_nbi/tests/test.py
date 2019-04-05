@@ -131,7 +131,7 @@ class TestRest:
         self.test_name = test_name
         self.step = 0
         self.last_id = ""
-        
+
     def set_header(self, header):
         self.s.headers.update(header)
 
@@ -460,7 +460,7 @@ class TestUsersProjects:
         engine.test("Create project admin", "POST", "/admin/v1/projects", headers_json,
                     {"name": "Padmin", "admin": True}, (201, 204),
                     {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
-        engine.test("Create project bad format", "POST", "/admin/v1/projects", headers_json, {"name": 1}, 422,
+        engine.test("Create project bad format", "POST", "/admin/v1/projects", headers_json, {"name": 1}, (400, 422),
                     r_header_json, "json")
         engine.test("Create user with bad project", "POST", "/admin/v1/users", headers_json,
                     {"username": "U1", "projects": ["P1", "P2", "Padmin"], "password": "pw1"}, 409,
@@ -544,10 +544,56 @@ class TestUsersProjects:
         # change to admin
         engine.remove_authorization()   # To force get authorization
         engine.get_autorization()
-        engine.test("Delete user U1", "DELETE", "/admin/v1/users/U1", headers_json, None, 204, None, None)
-        engine.test("Delete project P1", "DELETE", "/admin/v1/projects/P1", headers_json, None, 204, None, None)
-        engine.test("Delete project Padmin", "DELETE", "/admin/v1/projects/Padmin", headers_json, None, 204,
+        engine.test("Delete user U1 by Name", "DELETE", "/admin/v1/users/U1", headers_json, None, 204, None, None)
+        engine.test("Delete project P1 by Name", "DELETE", "/admin/v1/projects/P1", headers_json, None, 204, None, None)
+        engine.test("Delete project Padmin by Name", "DELETE", "/admin/v1/projects/Padmin", headers_json, None, 204,
                     None, None)
+
+        # BEGIN New Tests - Addressing Projects/Users by Name/ID
+        res = engine.test("Create new project P1", "POST", "/admin/v1/projects", headers_json, {"name": "P1"},
+                          201, {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
+        if res:
+            pid1 = res.json()["id"]
+            # print("# pid =", pid1)
+        res = engine.test("Create new project P2", "POST", "/admin/v1/projects", headers_json, {"name": "P2"},
+                          201, {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
+        if res:
+            pid2 = res.json()["id"]
+            # print("# pid =", pid2)
+        res = engine.test("Create new user U1", "POST", "/admin/v1/users", headers_json,
+                          {"username": "U1", "projects": ["P1"], "password": "pw1"}, 201,
+                          {"Location": "/admin/v1/users/", "Content-Type": "application/json"}, "json")
+        if res:
+            uid1 = res.json()["id"]
+            # print("# uid =", uid1)
+        res = engine.test("Create new user U2", "POST", "/admin/v1/users", headers_json,
+                          {"username": "U2", "projects": ["P2"], "password": "pw2"}, 201,
+                          {"Location": "/admin/v1/users/", "Content-Type": "application/json"}, "json")
+        if res:
+            uid2 = res.json()["id"]
+            # print("# uid =", uid2)
+        engine.test("Get Project P1 by Name", "GET", "/admin/v1/projects/P1", headers_json, None, 200, None, "json")
+        engine.test("Get Project P1 by ID", "GET", "/admin/v1/projects/"+pid1, headers_json, None, 200, None, "json")
+        engine.test("Get User U1 by Name", "GET", "/admin/v1/users/U1", headers_json, None, 200, None, "json")
+        engine.test("Get User U1 by ID", "GET", "/admin/v1/users/"+uid1, headers_json, None, 200, None, "json")
+        engine.test("Rename Project P1 by Name", "PUT", "/admin/v1/projects/P1", headers_json,
+                    {"name": "P3"}, 204, None, None)
+        engine.test("Rename Project P2 by ID", "PUT", "/admin/v1/projects/"+pid2, headers_json,
+                    {"name": "P4"}, 204, None, None)
+        engine.test("Rename User U1 by Name", "PUT", "/admin/v1/users/U1", headers_json,
+                    {"username": "U3"}, 204, None, None)
+        engine.test("Rename User U2 by ID", "PUT", "/admin/v1/users/"+uid2, headers_json,
+                    {"username": "U4"}, 204, None, None)
+        engine.test("Get Project P1 by new Name", "GET", "/admin/v1/projects/P3", headers_json, None, 200, None, "json")
+        engine.test("Get User U1 by new Name", "GET", "/admin/v1/users/U3", headers_json, None, 200, None, "json")
+        engine.test("Delete User U1 by Name", "DELETE", "/admin/v1/users/U3", headers_json, None, 204, None, None)
+        engine.test("Delete User U2 by ID", "DELETE", "/admin/v1/users/"+uid2, headers_json, None, 204, None, None)
+        engine.test("Delete Project P1 by Name", "DELETE", "/admin/v1/projects/P3", headers_json, None, 204, None,
+                    None)
+        engine.test("Delete Project P2 by ID", "DELETE", "/admin/v1/projects/"+pid2, headers_json, None, 204, None,
+                    None)
+        # END New Tests - Addressing Projects/Users by Name
+        engine.remove_authorization()   # To finish
 
 
 class TestFakeVim:
@@ -2338,7 +2384,7 @@ if __name__ == "__main__":
                 test_class = test_classes[test]
                 test_class().run(test_rest, test_osm, manual_check, test_params.get(text_index))
         else:
-            for test, test_class in test_classes.items():
+            for test, test_class in sorted(test_classes.items()):
                 if fail_fast and test_rest.failed_tests:
                     break
                 test_class().run(test_rest, test_osm, manual_check, test_params.get(0))

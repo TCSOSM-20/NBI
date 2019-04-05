@@ -40,6 +40,7 @@ from http import HTTPStatus
 from random import choice as random_choice
 from time import time
 from os import path
+from base_topic import BaseTopic    # To allow project names in project_id
 
 from authconn import AuthException
 from authconn_keystone import AuthconnKeystone
@@ -531,17 +532,21 @@ class Authenticator:
 
         token_id = ''.join(random_choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
                            for _ in range(0, 32))
-        if indata.get("project_id"):
-            project_id = indata.get("project_id")
-            if project_id not in user_content["projects"]:
-                raise AuthException("project {} not allowed for this user"
-                                    .format(project_id), http_code=HTTPStatus.UNAUTHORIZED)
+        project_id = indata.get("project_id")
+        if project_id:
+            if project_id != "admin":
+                # To allow project names in project_id
+                proj = self.db.get_one("projects", {BaseTopic.id_field("projects", project_id): project_id})
+                if proj["_id"] not in user_content["projects"] and proj["name"] not in user_content["projects"]:
+                    raise AuthException("project {} not allowed for this user"
+                                        .format(project_id), http_code=HTTPStatus.UNAUTHORIZED)
         else:
             project_id = user_content["projects"][0]
         if project_id == "admin":
             session_admin = True
         else:
-            project = self.db.get_one("projects", {"_id": project_id})
+            # To allow project names in project_id
+            project = self.db.get_one("projects", {BaseTopic.id_field("projects", project_id): project_id})
             session_admin = project.get("admin", False)
         new_session = {"issued_at": now, "expires": now + 3600,
                        "_id": token_id, "id": token_id, "project_id": project_id, "username": user_content["username"],

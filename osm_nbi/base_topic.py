@@ -18,7 +18,7 @@ from uuid import uuid4
 from http import HTTPStatus
 from time import time
 from osm_common.dbbase import deep_update_rfc7396
-from validation import validate_input, ValidationError
+from validation import validate_input, ValidationError, is_valid_uuid
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
@@ -56,11 +56,25 @@ class BaseTopic:
     schema_new = None   # to_override
     schema_edit = None  # to_override
 
+    # Alternative ID Fields for some Topics
+    alt_id_field = {
+        "projects": "name",
+        "users": "username"
+    }
+
     def __init__(self, db, fs, msg):
         self.db = db
         self.fs = fs
         self.msg = msg
         self.logger = logging.getLogger("nbi.engine")
+
+    @staticmethod
+    def id_field(topic, value):
+        "Returns ID Field for given topic and field value"
+        if topic in ["projects", "users"] and not is_valid_uuid(value):
+            return BaseTopic.alt_id_field[topic]
+        else:
+            return "_id"
 
     @staticmethod
     def _remove_envelop(indata=None):
@@ -201,7 +215,7 @@ class BaseTopic:
         Update descriptor with the kwargs. It contains dot separated keys
         :param desc: dictionary to be updated
         :param kwargs: plain dictionary to be used for updating.
-        :return: None, 'desc' is modified. It raises EngineException.  
+        :return: None, 'desc' is modified. It raises EngineException.
         """
         if not kwargs:
             return
@@ -239,7 +253,8 @@ class BaseTopic:
         :return: dictionary, raise exception if not found.
         """
         filter_db = self._get_project_filter(session, write=False, show_all=True)
-        filter_db["_id"] = _id
+        # To allow project&user addressing by name AS WELL AS _id
+        filter_db[BaseTopic.id_field(self.topic, _id)] = _id
         return self.db.get_one(self.topic, filter_db)
         # TODO transform data for SOL005 URL requests
         # TODO remove _admin if not admin
@@ -339,7 +354,8 @@ class BaseTopic:
         # data = self.get_item(topic, _id)
         self.check_conflict_on_del(session, _id, force)
         filter_q = self._get_project_filter(session, write=True, show_all=True)
-        filter_q["_id"] = _id
+        # To allow project addressing by name AS WELL AS _id
+        filter_q[BaseTopic.id_field(self.topic, _id)] = _id
         if not dry_run:
             v = self.db.del_one(self.topic, filter_q)
             self._send_msg("deleted", {"_id": _id})
@@ -361,7 +377,10 @@ class BaseTopic:
             deep_update_rfc7396(content, indata)
             self.check_conflict_on_edit(session, content, indata, _id=_id, force=force)
             self.format_on_edit(content, indata)
-            self.db.replace(self.topic, _id, content)
+            # To allow project addressing by name AS WELL AS _id
+            # self.db.replace(self.topic, _id, content)
+            cid = content.get("_id")
+            self.db.replace(self.topic, cid if cid else _id, content)
 
             indata.pop("_admin", None)
             indata["_id"] = _id

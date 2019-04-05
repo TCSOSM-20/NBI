@@ -278,7 +278,22 @@ class Engine(object):
         with self.write_lock:
             return self.map_topic[topic].edit(session, _id, indata, kwargs, force)
 
-    def create_admin(self):
+    def create_admin_project(self):
+        """
+        Creates a new project 'admin' into database if database is empty. Useful for initialization.
+        :return: _id identity of the inserted data, or None
+        """
+
+        projects = self.db.get_one("projects", fail_on_empty=False, fail_on_more=False)
+        if projects:
+            return None
+        project_desc = {"name": "admin"}
+        fake_session = {"project_id": "admin", "username": "admin", "admin": True}
+        rollback_list = []
+        _id = self.map_topic["projects"].new(rollback_list, fake_session, project_desc, force=True)
+        return _id
+
+    def create_admin_user(self):
         """
         Creates a new user admin/admin into database if database is empty. Useful for initialization
         :return: _id identity of the inserted data, or None
@@ -292,6 +307,18 @@ class Engine(object):
         roolback_list = []
         _id = self.map_topic["users"].new(roolback_list, fake_session, user_desc, force=True)
         return _id
+
+    def create_admin(self):
+        """
+        Creates new 'admin' user and project into database if database is empty. Useful for initialization.
+        :return: _id identity of the inserted data, or None
+        """
+        project_id = self.create_admin_project()
+        user_id = self.create_admin_user()
+        if not project_id and not user_id:
+            return None
+        else:
+            return {'project_id': project_id, 'user_id': user_id}
 
     def upgrade_db(self, current_version, target_version):
         if not target_version or current_version == target_version:

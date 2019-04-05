@@ -16,6 +16,7 @@
 from jsonschema import validate as js_v, exceptions as js_e
 from http import HTTPStatus
 from copy import deepcopy
+from uuid import UUID   # To test for valid UUID
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 __version__ = "0.1"
@@ -599,6 +600,7 @@ user_edit_schema = {
     "type": "object",
     "properties": {
         "password": passwd_schema,
+        "username": shortname_schema,     # To allow User Name modification
         "projects": {
             "oneOf": [
                 nameshort_list_schema,
@@ -633,6 +635,7 @@ project_edit_schema = {
     "type": "object",
     "properties": {
         "admin": bool_schema,
+        "name": shortname_schema,     # To allow Project Name modification
     },
     "additionalProperties": False,
     "minProperties": 1
@@ -701,7 +704,7 @@ nsi_vld_instantiate = {
         "vim-network-id": {"OneOf": [string_schema, object_schema]},
         "ip-profile": object_schema,
     },
-    "required": ["name"], 
+    "required": ["name"],
     "additionalProperties": False
 }
 
@@ -739,7 +742,7 @@ nsi_action = {
 }
 
 nsi_terminate = {
-    
+
 }
 
 
@@ -768,3 +771,16 @@ def validate_input(indata, schema_to_use):
         raise ValidationError("Format error {} '{}' ".format(error_pos, e.message))
     except js_e.SchemaError:
         raise ValidationError("Bad json schema {}".format(schema_to_use), http_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+
+def is_valid_uuid(x):
+    """
+    Test for a valid UUID
+    :param x: string to test
+    :return: True if x is a valid uuid, False otherwise
+    """
+    try:
+        if UUID(x):
+            return True
+    except (TypeError, ValueError):
+        return False
