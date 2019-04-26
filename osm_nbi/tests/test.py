@@ -716,6 +716,7 @@ class TestDeploy:
         self.timeout = 120
         self.qforce = ""
         self.ns_params = None
+        self.vnfr_ip_list = {}
 
     def create_descriptors(self, engine):
         temp_dir = os.path.dirname(os.path.abspath(__file__)) + "/temp/"
@@ -875,6 +876,7 @@ class TestDeploy:
         _keys = keys if keys is not None else self.keys
         _timeout = timeout if timeout != 0 else self.timeout
 
+        # vnfr_list=[d8272263-6bd3-4680-84ca-6a4be23b3f2d, 88b22e2f-994a-4b61-94fd-4a3c90de3dc4]
         for vnfr_id in vnfr_list:
             r = engine.test("Get VNFR to get IP_ADDRESS", "GET",
                             "/nslcm/v1/vnfrs/{}".format(vnfr_id), headers_json, None,
@@ -884,37 +886,36 @@ class TestDeploy:
             vnfr_data = r.json()
 
             vnf_index = str(vnfr_data["member-vnf-index-ref"])
-            if not _commands.get(vnf_index):
-                continue
-            if vnfr_data.get("ip-address"):
-                description = "Exec command='{}' at VNFR={} IP={}".format(_commands.get(vnf_index)[0], vnf_index,
-                                                                          vnfr_data['ip-address'])
-                engine.step += 1
-                test_description = "{}{} {}".format(engine.test_name, engine.step, description)
-                logger.warning(test_description)
-                while _timeout >= time:
-                    result, message = self.do_checks([vnfr_data["ip-address"]],
-                                                     vnf_index=vnfr_data["member-vnf-index-ref"],
-                                                     commands=_commands.get(vnf_index), user=_users.get(vnf_index),
-                                                     passwd=_passwds.get(vnf_index), key=_keys.get(vnf_index))
-                    if result == 1:
-                        engine.passed_tests += 1
-                        logger.debug(message)
-                        break
-                    elif result == 0:
-                        time += 20
-                        sleep(20)
-                    elif result == -1:
-                        engine.failed_tests += 1
-                        logger.error(message)
-                        break
+
+            ip_address = self.get_vnfr_ip(engine, vnf_index)
+            description = "Exec command='{}' at VNFR={} IP={}".format(_commands.get(vnf_index)[0], vnf_index,
+                                                                      ip_address)
+            engine.step += 1
+            test_description = "{}{} {}".format(engine.test_name, engine.step, description)
+            logger.warning(test_description)
+            while _timeout >= time:
+                result, message = self.do_checks([ip_address],
+                                                 vnf_index=vnfr_data["member-vnf-index-ref"],
+                                                 commands=_commands.get(vnf_index), user=_users.get(vnf_index),
+                                                 passwd=_passwds.get(vnf_index), key=_keys.get(vnf_index))
+                if result == 1:
+                    engine.passed_tests += 1
+                    logger.debug(message)
+                    break
+                elif result == 0:
+                    time += 20
+                    sleep(20)
+                elif result == -1:
+                    engine.failed_tests += 1
+                    logger.error(message)
+                    break
                 else:
                     time -= 20
                     engine.failed_tests += 1
                     logger.error(message)
             else:
                 engine.failed_tests += 1
-                logger.error("VNFR {} has not mgmt address. Check failed".format(vnfr_id))
+                logger.error("VNFR {} has not mgmt address. Check failed".format(vnf_index))
 
     def do_checks(self, ip, vnf_index, commands=[], user=None, passwd=None, key=None):
         try:
@@ -989,6 +990,32 @@ class TestDeploy:
         self.additional_operations(engine, test_osm, manual_check)
         self.terminate(engine)
         self.delete_descriptors(engine)
+
+    def get_first_ip(self, ip_string):
+        # When using a floating IP, the vnfr_data['ip-address'] contains a semicolon-separated list of IP:s.
+        first_ip = ip_string.split(";")[0] if ip_string else ""
+        return first_ip
+
+    def get_vnfr_ip(self, engine, vnfr_index_wanted):
+        # If the IP address list has been obtained before, it has been stored in 'vnfr_ip_list'
+        ip = self.vnfr_ip_list.get(vnfr_index_wanted, "")
+        if (ip):
+            return self.get_first_ip(ip)
+        r = engine.test("Get VNFR to get IP_ADDRESS", "GET",
+                        "/nslcm/v1/vnfrs?member-vnf-index-ref={}&nsr-id-ref={}".format(
+                            vnfr_index_wanted, self.ns_id), headers_json, None,
+                        200, r_header_json, "json")
+        if not r:
+            return ""
+        vnfr_data = r.json()
+        if not (vnfr_data and vnfr_data[0]):
+            return ""
+        # Store the IP (or list of IPs) in 'vnfr_ip_list'
+        ip_list = vnfr_data[0].get("ip-address", "")
+        if ip_list:
+            self.vnfr_ip_list[vnfr_index_wanted] = ip_list
+            ip = self.get_first_ip(ip_list)
+        return ip
 
 
 class TestDeployHackfestCirros(TestDeploy):
@@ -1249,11 +1276,34 @@ class TestDeployHackfest3Charmed(TestDeploy):
         self.commands = {'1': ['ls -lrt /home/ubuntu/first-touch'], '2': ['ls -lrt /home/ubuntu/first-touch']}
         self.users = {'1': "ubuntu", '2': "ubuntu"}
         self.passwords = {'1': "osm4u", '2': "osm4u"}
+        self.descriptor_edit = {
+            "vnfd0": yaml.full_load(
+                """
+                vnf-configuration:
+                    terminate-config-primitive:
+                    -   seq: '1'
+                        name: touch
+                        parameter:
+                        -   name: filename
+                            value: '/home/ubuntu/last-touch1'
+                    -   seq: '3'
+                        name: touch
+                        parameter:
+                        -   name: filename
+                            value: '/home/ubuntu/last-touch3'
+                    -   seq: '2'
+                        name: touch
+                        parameter:
+                        -   name: filename
+                            value: '/home/ubuntu/last-touch2'
+                """)
+        }
 
     def additional_operations(self, engine, test_osm, manual_check):
         if not test_osm:
             return
         # 1 perform action
+        vnfr_index_selected = "2"
         payload = '{member_vnf_index: "2", primitive: touch, primitive_params: { filename: /home/ubuntu/OSMTESTNBI }}'
         engine.test("Exec service primitive over NS", "POST",
                     "/nslcm/v1/ns_instances/{}/action".format(self.ns_id), headers_yaml, payload,
@@ -1261,9 +1311,12 @@ class TestDeployHackfest3Charmed(TestDeploy):
         nslcmop2_action = engine.last_id
         # Wait until status is Ok
         engine.wait_operation_ready("ns", nslcmop2_action, timeout_deploy)
+        vnfr_ip = self.get_vnfr_ip(engine, vnfr_index_selected)
         if manual_check:
-            input('NS service primitive has been executed. Check that file /home/ubuntu/OSMTESTNBI is present at '
-                  'TODO_PUT_IP')
+            input(
+                "NS service primitive has been executed."
+                "Check that file /home/ubuntu/OSMTESTNBI is present at {}".
+                format(vnfr_ip))
         if test_osm:
             commands = {'1': [''], '2': ['ls -lrt /home/ubuntu/OSMTESTNBI', ]}
             self.test_ns(engine, test_osm, commands=commands)
