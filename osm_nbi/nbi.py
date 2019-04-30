@@ -337,6 +337,17 @@ class Server(object):
                                         },
                 }
             },
+            "nspm": {
+                "v1": {
+                    "pm_jobs": {
+                        "<ID>": {
+                            "reports": {
+                                "<ID>": {"METHODS": ("GET")}
+                            }
+                        },
+                    },
+                },
+            },
         }
 
     def _format_in(self, kwargs):
@@ -699,7 +710,7 @@ class Server(object):
             if not main_topic or not version or not topic:
                 raise NbiException("URL must contain at least 'main_topic/version/topic'",
                                    HTTPStatus.METHOD_NOT_ALLOWED)
-            if main_topic not in ("admin", "vnfpkgm", "nsd", "nslcm", "pdu", "nst", "nsilcm"):
+            if main_topic not in ("admin", "vnfpkgm", "nsd", "nslcm", "pdu", "nst", "nsilcm", "nspm"):
                 raise NbiException("URL main_topic '{}' not supported".format(main_topic),
                                    HTTPStatus.METHOD_NOT_ALLOWED)
             if version != 'v1':
@@ -723,7 +734,7 @@ class Server(object):
             engine_topic = topic
             if topic == "subscriptions":
                 engine_topic = main_topic + "_" + topic
-            if item:
+            if item and topic != "pm_jobs":
                 engine_topic = item
 
             if main_topic == "nsd":
@@ -763,6 +774,9 @@ class Server(object):
                 elif not _id:
                     outdata = self.engine.get_item_list(session, engine_topic, kwargs)
                 else:
+                    if item == "reports":
+                        # TODO check that project_id (_id in this context) has permissions
+                        _id = args[0]
                     outdata = self.engine.get_item(session, engine_topic, _id)
             elif method == "POST":
                 if topic in ("ns_descriptors_content", "vnf_packages_content", "netslice_templates_content"):
