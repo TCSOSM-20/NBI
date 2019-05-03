@@ -23,6 +23,7 @@ from base_topic import BaseTopic, EngineException, get_iterable
 from descriptor_topics import DescriptorTopic
 from yaml import safe_dump
 from osm_common.dbbase import DbException
+from re import match  # For checking that additional parameter names are valid Jinja2 identifiers
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
@@ -115,6 +116,12 @@ class NsrTopic(BaseTopic):
                     break
         if additional_params:
             for k, v in additional_params.items():
+                # BEGIN Check that additional parameter names are valid Jinja2 identifiers
+                if not match('^[a-zA-Z_][a-zA-Z0-9_]*$', k):
+                    raise EngineException("Invalid param name at {}:{}. Must contain only alphanumeric characters "
+                                          "and underscores, and cannot start with a digit"
+                                          .format(where_, k))
+                # END Check that additional parameter names are valid Jinja2 identifiers
                 if not isinstance(k, str):
                     raise EngineException("Invalid param at {}:{}. Only string keys are allowed".format(where_, k))
                 if "." in k or "$" in k:
