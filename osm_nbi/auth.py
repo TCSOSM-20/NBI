@@ -25,7 +25,6 @@ Authenticator is responsible for authenticating the users,
 create the tokens unscoped and scoped, retrieve the role
 list inside the projects that they are inserted
 """
-from os import path
 
 __author__ = "Eduardo Sousa <esousa@whitestack.com>; Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 __date__ = "$27-jul-2018 23:59:59$"
@@ -40,7 +39,7 @@ from hashlib import sha256
 from http import HTTPStatus
 from random import choice as random_choice
 from time import time
-from uuid import uuid4
+from os import path
 
 from authconn import AuthException
 from authconn_keystone import AuthconnKeystone
@@ -108,8 +107,11 @@ class Authenticator:
                 if "resources_to_operations" in config["rbac"]:
                     self.resources_to_operations_file = config["rbac"]["resources_to_operations"]
                 else:
-                    for config_file in (__file__[:__file__.rfind("auth.py")] + "resources_to_operations.yml",
-                                        "./resources_to_operations.yml"):
+                    possible_paths = (
+                        __file__[:__file__.rfind("auth.py")] + "resources_to_operations.yml",
+                        "./resources_to_operations.yml"
+                    )
+                    for config_file in possible_paths:
                         if path.isfile(config_file):
                             self.resources_to_operations_file = config_file
                             break
@@ -119,8 +121,11 @@ class Authenticator:
                 if "roles_to_operations" in config["rbac"]:
                     self.roles_to_operations_file = config["rbac"]["roles_to_operations"]
                 else:
-                    for config_file in (__file__[:__file__.rfind("auth.py")] + "roles_to_operations.yml",
-                                        "./roles_to_operations.yml"):
+                    possible_paths = (
+                        __file__[:__file__.rfind("auth.py")] + "roles_to_operations.yml",
+                        "./roles_to_operations.yml"
+                    )
+                    for config_file in possible_paths:
                         if path.isfile(config_file):
                             self.roles_to_operations_file = config_file
                             break
@@ -147,6 +152,9 @@ class Authenticator:
         # Always reads operation to resource mapping from file (this is static, no need to store it in MongoDB)
         # Operations encoding: "<METHOD> <URL>"
         # Note: it is faster to rewrite the value than to check if it is already there or not
+        if self.config["authentication"]["backend"] == "internal":
+            return
+        
         operations = []
         with open(self.resources_to_operations_file, "r") as stream:
             resources_to_operations_yaml = yaml.load(stream)
@@ -208,28 +216,29 @@ class Authenticator:
 
                 now = time()
                 operation_to_roles_item = {
-                    "_id": str(uuid4()),
                     "_admin": {
                         "created": now,
                         "modified": now,
                     },
-                    "role": role_with_operations["role"],
+                    "name": role_with_operations["role"],
                     "root": root
                 }
 
                 for operation, value in role_ops.items():
                     operation_to_roles_item[operation] = value
 
+                if self.config["authentication"]["backend"] != "internal" and \
+                        role_with_operations["role"] != "anonymous":
+                    keystone_id = self.backend.create_role(role_with_operations["role"])
+                    operation_to_roles_item["_id"] = keystone_id["_id"]
+
                 self.db.create("roles_operations", operation_to_roles_item)
 
         permissions = {oper: [] for oper in operations}
         records = self.db.get_list("roles_operations")
 
-        ignore_fields = ["_id", "_admin", "role", "root"]
-        roles = []
+        ignore_fields = ["_id", "_admin", "name", "root"]
         for record in records:
-
-            roles.append(record["role"])
             record_permissions = {oper: record["root"] for oper in operations}
             operations_joined = [(oper, value) for oper, value in record.items() if oper not in ignore_fields]
             operations_joined.sort(key=lambda x: x[0].count(":"))
@@ -243,17 +252,12 @@ class Authenticator:
             allowed_operations = [k for k, v in record_permissions.items() if v is True]
 
             for allowed_op in allowed_operations:
-                permissions[allowed_op].append(record["role"])
+                permissions[allowed_op].append(record["name"])
 
         for oper, role_list in permissions.items():
             self.operation_to_allowed_roles[oper] = role_list
 
         if self.config["authentication"]["backend"] != "internal":
-            for role in roles:
-                if role == "anonymous":
-                    continue
-                self.backend.create_role(role)
-
             self.backend.assign_role_to_user("admin", "admin", "system_admin")
 
     def authorize(self):
@@ -402,7 +406,7 @@ class Authenticator:
 
         operation = self.resources_to_operations_mapping[key]
         roles_required = self.operation_to_allowed_roles[operation]
-        roles_allowed = self.backend.get_role_list(session["id"])
+        roles_allowed = self.backend.get_user_role_list(session["id"])
 
         if "anonymous" in roles_required:
             return
@@ -412,6 +416,9 @@ class Authenticator:
                 return
 
         raise AuthException("Access denied: lack of permissions.")
+
+    def get_user_list(self):
+        return self.backend.get_user_list()
 
     def _normalize_url(self, url, method):
         # Removing query strings

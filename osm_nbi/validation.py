@@ -565,6 +565,17 @@ pdu_edit_schema = {
 }
 
 # USERS
+project_role_mapping = {
+    "title": "",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": {
+        "project": shortname_schema,
+        "role": shortname_schema
+    },
+    "required": ["project", "role"],
+    "additionalProperties": False
+}
 user_new_schema = {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "title": "New user schema",
@@ -573,8 +584,13 @@ user_new_schema = {
         "username": shortname_schema,
         "password": passwd_schema,
         "projects": nameshort_list_schema,
+        "project_role_mappings": {
+            "type": "array",
+            "items": project_role_mapping,
+            "minItems": 1
+        },
     },
-    "required": ["username", "password", "projects"],
+    "required": ["username", "password"],
     "additionalProperties": False
 }
 user_edit_schema = {
@@ -588,6 +604,11 @@ user_edit_schema = {
                 nameshort_list_schema,
                 array_edition_schema
             ]
+        },
+        "project_role_mappings": {
+            "type": "array",
+            "items": project_role_mapping,
+            "minItems": 1
         },
     },
     "minProperties": 1,
@@ -613,6 +634,32 @@ project_edit_schema = {
     "properties": {
         "admin": bool_schema,
     },
+    "additionalProperties": False,
+    "minProperties": 1
+}
+
+# ROLES
+roles_new_schema = {
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "title": "New role schema for administrators",
+    "type": "object",
+    "properties": {
+        "name": shortname_schema,
+        "definition": object_schema,
+    },
+    "required": ["name"],
+    "additionalProperties": False
+}
+roles_edit_schema = {
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "title": "Roles edit schema for administrators",
+    "type": "object",
+    "properties": {
+        "_id": id_schema,
+        "name": shortname_schema,
+        "definition": object_schema,
+    },
+    "required": ["_id", "name", "definition"],
     "additionalProperties": False,
     "minProperties": 1
 }

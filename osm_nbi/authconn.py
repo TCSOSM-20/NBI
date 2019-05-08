@@ -34,8 +34,8 @@ class AuthException(Exception):
     Authentication error.
     """
     def __init__(self, message, http_code=HTTPStatus.UNAUTHORIZED):
+        super(AuthException, self).__init__(message)
         self.http_code = http_code
-        Exception.__init__(self, message)
 
 
 class AuthconnException(Exception):
@@ -43,7 +43,7 @@ class AuthconnException(Exception):
     Common and base class Exception for all authconn exceptions.
     """
     def __init__(self, message, http_code=HTTPStatus.UNAUTHORIZED):
-        Exception.__init__(message)
+        super(AuthconnException, self).__init__(message)
         self.http_code = http_code
 
 
@@ -52,7 +52,7 @@ class AuthconnConnectionException(AuthconnException):
     Connectivity error with Auth backend.
     """
     def __init__(self, message, http_code=HTTPStatus.BAD_GATEWAY):
-        AuthconnException.__init__(self, message, http_code)
+        super(AuthconnConnectionException, self).__init__(message, http_code)
 
 
 class AuthconnNotSupportedException(AuthconnException):
@@ -60,7 +60,7 @@ class AuthconnNotSupportedException(AuthconnException):
     The request is not supported by the Auth backend.
     """
     def __init__(self, message, http_code=HTTPStatus.NOT_IMPLEMENTED):
-        AuthconnException.__init__(self, message, http_code)
+        super(AuthconnNotSupportedException, self).__init__(message, http_code)
 
 
 class AuthconnNotImplementedException(AuthconnException):
@@ -68,7 +68,7 @@ class AuthconnNotImplementedException(AuthconnException):
     The method is not implemented by the Auth backend.
     """
     def __init__(self, message, http_code=HTTPStatus.NOT_IMPLEMENTED):
-        AuthconnException.__init__(self, message, http_code)
+        super(AuthconnNotImplementedException, self).__init__(message, http_code)
 
 
 class AuthconnOperationException(AuthconnException):
@@ -76,7 +76,7 @@ class AuthconnOperationException(AuthconnException):
     The operation executed failed.
     """
     def __init__(self, message, http_code=HTTPStatus.INTERNAL_SERVER_ERROR):
-        AuthconnException.__init__(self, message, http_code)
+        super(AuthconnOperationException, self).__init__(message, http_code)
 
 
 class Authconn:
@@ -136,7 +136,7 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def get_project_list(self, token):
+    def get_user_project_list(self, token):
         """
         Get all the projects associated with a user.
 
@@ -145,7 +145,7 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def get_role_list(self, token):
+    def get_user_role_list(self, token):
         """
         Get role list for a scoped project.
 
@@ -175,14 +175,21 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def delete_user(self, user):
+    def delete_user(self, user_id):
         """
         Delete user.
 
-        :param user: username.
+        :param user_id: user identifier.
         :raises AuthconnOperationException: if user deletion failed.
         """
         raise AuthconnNotImplementedException("Should have implemented this")
+
+    def get_user_list(self):
+        """
+        Get user list.
+
+        :return: returns a list of users.
+        """
 
     def create_role(self, role):
         """
@@ -193,12 +200,20 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def delete_role(self, role):
+    def delete_role(self, role_id):
         """
         Delete a role.
 
-        :param role: role name.
+        :param role_id: role identifier.
         :raises AuthconnOperationException: if user deletion failed.
+        """
+        raise AuthconnNotImplementedException("Should have implemented this")
+
+    def get_role_list(self):
+        """
+        Get all the roles.
+
+        :return: list of roles
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
@@ -211,12 +226,20 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def delete_project(self, project):
+    def delete_project(self, project_id):
         """
         Delete a project.
 
-        :param project: project name.
+        :param project_id: project identifier.
         :raises AuthconnOperationException: if project deletion failed.
+        """
+        raise AuthconnNotImplementedException("Should have implemented this")
+
+    def get_project_list(self):
+        """
+        Get all the projects.
+
+        :return: list of projects
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 

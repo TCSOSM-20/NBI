@@ -14,17 +14,21 @@
 # limitations under the License.
 
 import logging
+import yaml
 from osm_common import dbmongo, dbmemory, fslocal, msglocal, msgkafka, version as common_version
 from osm_common.dbbase import DbException
 from osm_common.fsbase import FsException
 from osm_common.msgbase import MsgException
 from http import HTTPStatus
+
+from authconn_keystone import AuthconnKeystone
 from base_topic import EngineException, versiontuple
 from admin_topics import UserTopic, ProjectTopic, VimAccountTopic, WimAccountTopic, SdnTopic
+from admin_topics import UserTopicAuth, ProjectTopicAuth, RoleTopicAuth
 from descriptor_topics import VnfdTopic, NsdTopic, PduTopic, NstTopic
 from instance_topics import NsrTopic, VnfrTopic, NsLcmOpTopic, NsiTopic, NsiLcmOpTopic
 from base64 import b64encode
-from os import urandom
+from os import urandom, path
 from threading import Lock
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
@@ -54,7 +58,9 @@ class Engine(object):
         self.db = None
         self.fs = None
         self.msg = None
+        self.auth = None
         self.config = None
+        self.operations = None
         self.logger = logging.getLogger("nbi.engine")
         self.map_topic = {}
         self.write_lock = None
@@ -99,11 +105,48 @@ class Engine(object):
                 else:
                     raise EngineException("Invalid configuration param '{}' at '[message]':'driver'".format(
                         config["message"]["driver"]))
+            if not self.auth:
+                if config["authentication"]["backend"] == "keystone":
+                    self.auth = AuthconnKeystone(config["authentication"])
+            if not self.operations:
+                if "resources_to_operations" in config["rbac"]:
+                    resources_to_operations_file = config["rbac"]["resources_to_operations"]
+                else:
+                    possible_paths = (
+                        __file__[:__file__.rfind("engine.py")] + "resources_to_operations.yml",
+                        "./resources_to_operations.yml"
+                    )
+                    for config_file in possible_paths:
+                        if path.isfile(config_file):
+                            resources_to_operations_file = config_file
+                            break
+                    if not resources_to_operations_file:                        
+                        raise EngineException("Invalid permission configuration: resources_to_operations file missing")
+                
+                with open(resources_to_operations_file, 'r') as f:
+                    resources_to_operations = yaml.load(f)
+                
+                self.operations = []
+
+                for _, value in resources_to_operations["resources_to_operations"].items():
+                    if value not in self.operations:
+                        self.operations += value
+
+            if config["authentication"]["backend"] == "keystone":
+                self.map_from_topic_to_class["users"] = UserTopicAuth
+                self.map_from_topic_to_class["projects"] = ProjectTopicAuth
+                self.map_from_topic_to_class["roles"] = RoleTopicAuth
 
             self.write_lock = Lock()
             # create one class per topic
             for topic, topic_class in self.map_from_topic_to_class.items():
-                self.map_topic[topic] = topic_class(self.db, self.fs, self.msg)
+                if self.auth and topic_class in (UserTopicAuth, ProjectTopicAuth):
+                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.auth)
+                elif self.auth and topic_class == RoleTopicAuth:
+                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.auth,
+                                                        self.operations)
+                else:
+                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg)
         except (DbException, FsException, MsgException) as e:
             raise EngineException(str(e), http_code=e.http_code)
 

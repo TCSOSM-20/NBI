@@ -17,9 +17,12 @@
 from uuid import uuid4
 from hashlib import sha256
 from http import HTTPStatus
+from time import time
 from validation import user_new_schema, user_edit_schema, project_new_schema, project_edit_schema
 from validation import vim_account_new_schema, vim_account_edit_schema, sdn_new_schema, sdn_edit_schema
-from validation import wim_account_new_schema, wim_account_edit_schema
+from validation import wim_account_new_schema, wim_account_edit_schema, roles_new_schema, roles_edit_schema
+from validation import validate_input
+from validation import ValidationError
 from base_topic import BaseTopic, EngineException
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
@@ -313,3 +316,660 @@ class SdnTopic(BaseTopic):
             self.db.set_one("sdns", {"_id": _id}, {"_admin.to_delete": True})  # TODO change status
             self._send_msg("delete", {"_id": _id})
             return v   # TODO indicate an offline operation to return 202 ACCEPTED
+
+
+class UserTopicAuth(UserTopic):
+    topic = "users"
+    topic_msg = "users"
+    schema_new = user_new_schema
+    schema_edit = user_edit_schema
+
+    def __init__(self, db, fs, msg, auth):
+        UserTopic.__init__(self, db, fs, msg)
+        self.auth = auth
+
+    def check_conflict_on_new(self, session, indata, force=False):
+        """
+        Check that the data to be inserted is valid
+
+        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param indata: data to be inserted
+        :param force: boolean. With force it is more tolerant
+        :return: None or raises EngineException
+        """
+        username = indata.get("username")
+        user_list = list(map(lambda x: x["username"], self.auth.get_user_list()))
+
+        if username in user_list:
+            raise EngineException("username '{}' exists".format(username), HTTPStatus.CONFLICT)
+
+    def check_conflict_on_edit(self, session, final_content, edit_content, _id, force=False):
+        """
+        Check that the data to be edited/uploaded is valid
+
+        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param final_content: data once modified
+        :param edit_content: incremental data that contains the modifications to apply
+        :param _id: internal _id
+        :param force: boolean. With force it is more tolerant
+        :return: None or raises EngineException
+        """
+        users = self.auth.get_user_list()
+        admin_user = [user for user in users if user["name"] == "admin"][0]
+
+        if _id == admin_user["_id"] and edit_content["project_role_mappings"]:
+            elem = {
+                "project": "admin",
+                "role": "system_admin"
+            }
+            if elem not in edit_content:
+                raise EngineException("You cannot remove system_admin role from admin user", 
+                                      http_code=HTTPStatus.FORBIDDEN)
+
+    def check_conflict_on_del(self, session, _id, force=False):
+        """
+        Check if deletion can be done because of dependencies if it is not force. To override
+
+        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param _id: internal _id
+        :param force: Avoid this checking
+        :return: None if ok or raises EngineException with the conflict
+        """
+        if _id == session["username"]:
+            raise EngineException("You cannot delete your own user", http_code=HTTPStatus.CONFLICT)
+
+    @staticmethod
+    def format_on_new(content, project_id=None, make_public=False):
+        """
+        Modifies content descriptor to include _id.
+
+        NOTE: No password salt required because the authentication backend
+        should handle these security concerns.
+
+        :param content: descriptor to be modified
+        :param make_public: if included it is generated as public for reading.
+        :return: None, but content is modified
+        """
+        BaseTopic.format_on_new(content, make_public=False)
+        content["_id"] = content["username"]
+        content["password"] = content["password"]
+
+    @staticmethod
+    def format_on_edit(final_content, edit_content):
+        """
+        Modifies final_content descriptor to include the modified date.
+
+        NOTE: No password salt required because the authentication backend
+        should handle these security concerns.
+
+        :param final_content: final descriptor generated
+        :param edit_content: alterations to be include
+        :return: None, but final_content is modified
+        """
+        BaseTopic.format_on_edit(final_content, edit_content)
+        if "password" in edit_content:
+            final_content["password"] = edit_content["password"]
+        else:
+            final_content["project_role_mappings"] = edit_content["project_role_mappings"]
+
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+        """
+        Creates a new entry into the authentication backend.
+
+        NOTE: Overrides BaseTopic functionality because it doesn't require access to database.
+
+        :param rollback: list to append created items at database in case a rollback may to be done
+        :param session: contains the used login username and working project
+        :param indata: data to be inserted
+        :param kwargs: used to override the indata descriptor
+        :param headers: http request headers
+        :param force: If True avoid some dependence checks
+        :param make_public: Make the created item public to all projects
+        :return: _id: identity of the inserted data.
+        """
+        try:
+            content = BaseTopic._remove_envelop(indata)
+
+            # Override descriptor with query string kwargs
+            BaseTopic._update_input_with_kwargs(content, kwargs)
+            content = self._validate_input_new(content, force)
+            self.check_conflict_on_new(session, content, force=force)
+            self.format_on_new(content, project_id=session["project_id"], make_public=make_public)
+            _id = self.auth.create_user(content["username"], content["password"])
+            rollback.append({"topic": self.topic, "_id": _id})
+            del content["password"]
+            # self._send_msg("create", content)
+            return _id
+        except ValidationError as e:
+            raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
+
+    def show(self, session, _id):
+        """
+        Get complete information on an topic
+
+        :param session: contains the used login username and working project
+        :param _id: server internal id
+        :return: dictionary, raise exception if not found.
+        """
+        users = [user for user in self.auth.get_user_list() if user["_id"] == _id]
+
+        if len(users) == 1:
+            return users[0]
+        elif len(users) > 1:
+            raise EngineException("Too many users found", HTTPStatus.CONFLICT)
+        else:
+            raise EngineException("User not found", HTTPStatus.NOT_FOUND)
+
+    def edit(self, session, _id, indata=None, kwargs=None, force=False, content=None):
+        """
+        Updates an user entry.
+
+        :param session: contains the used login username and working project
+        :param _id:
+        :param indata: data to be inserted
+        :param kwargs: used to override the indata descriptor
+        :param force: If True avoid some dependence checks
+        :param content:
+        :return: _id: identity of the inserted data.
+        """
+        indata = self._remove_envelop(indata)
+
+        # Override descriptor with query string kwargs
+        if kwargs:
+            BaseTopic._update_input_with_kwargs(indata, kwargs)
+        try:
+            indata = self._validate_input_edit(indata, force=force)
+
+            if not content:
+                content = self.show(session, _id)
+            self.check_conflict_on_edit(session, content, indata, _id=_id, force=force)
+            self.format_on_edit(content, indata)
+
+            if "password" in content:
+                self.auth.change_password(content["name"], content["password"])
+            else:
+                users = self.auth.get_user_list()
+                user = [user for user in users if user["_id"] == content["_id"]][0]
+                original_mapping = []
+                edit_mapping = content["project_role_mappings"]
+
+                for project in user["projects"]:
+                    for role in project["roles"]:
+                        original_mapping += {
+                            "project": project["name"],
+                            "role": role["name"]
+                        }
+                
+                mappings_to_remove = [mapping for mapping in original_mapping 
+                                      if mapping not in edit_mapping]
+                
+                mappings_to_add = [mapping for mapping in edit_mapping
+                                   if mapping not in original_mapping]
+                
+                for mapping in mappings_to_remove:
+                    self.auth.remove_role_from_user(
+                        user["name"], 
+                        mapping["project"],
+                        mapping["role"]
+                    )
+                
+                for mapping in mappings_to_add:
+                    self.auth.assign_role_to_user(
+                        user["name"], 
+                        mapping["project"],
+                        mapping["role"]
+                    )
+
+            return content["_id"]
+        except ValidationError as e:
+            raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
+
+    def list(self, session, filter_q=None):
+        """
+        Get a list of the topic that matches a filter
+        :param session: contains the used login username and working project
+        :param filter_q: filter of data to be applied
+        :return: The list, it can be empty if no one match the filter.
+        """
+        return self.auth.get_user_list()
+
+    def delete(self, session, _id, force=False, dry_run=False):
+        """
+        Delete item by its internal _id
+
+        :param session: contains the used login username, working project, and admin rights
+        :param _id: server internal id
+        :param force: indicates if deletion must be forced in case of conflict
+        :param dry_run: make checking but do not delete
+        :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
+        """
+        self.check_conflict_on_del(session, _id, force)
+        if not dry_run:
+            v = self.auth.delete_user(_id)
+            return v
+        return None
+
+
+class ProjectTopicAuth(ProjectTopic):
+    topic = "projects"
+    topic_msg = "projects"
+    schema_new = project_new_schema
+    schema_edit = project_edit_schema
+
+    def __init__(self, db, fs, msg, auth):
+        ProjectTopic.__init__(self, db, fs, msg)
+        self.auth = auth
+
+    def check_conflict_on_new(self, session, indata, force=False):
+        """
+        Check that the data to be inserted is valid
+
+        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param indata: data to be inserted
+        :param force: boolean. With force it is more tolerant
+        :return: None or raises EngineException
+        """
+        project = indata.get("name")
+        project_list = list(map(lambda x: x["name"], self.auth.get_project_list()))
+
+        if project in project_list:
+            raise EngineException("project '{}' exists".format(project), HTTPStatus.CONFLICT)
+
+    def check_conflict_on_del(self, session, _id, force=False):
+        """
+        Check if deletion can be done because of dependencies if it is not force. To override
+
+        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param _id: internal _id
+        :param force: Avoid this checking
+        :return: None if ok or raises EngineException with the conflict
+        """
+        projects = self.auth.get_project_list()
+        current_project = [project for project in projects
+                           if project["name"] == session["project_id"]][0]
+
+        if _id == current_project["_id"]:
+            raise EngineException("You cannot delete your own project", http_code=HTTPStatus.CONFLICT)
+
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+        """
+        Creates a new entry into the authentication backend.
+
+        NOTE: Overrides BaseTopic functionality because it doesn't require access to database.
+
+        :param rollback: list to append created items at database in case a rollback may to be done
+        :param session: contains the used login username and working project
+        :param indata: data to be inserted
+        :param kwargs: used to override the indata descriptor
+        :param headers: http request headers
+        :param force: If True avoid some dependence checks
+        :param make_public: Make the created item public to all projects
+        :return: _id: identity of the inserted data.
+        """
+        try:
+            content = BaseTopic._remove_envelop(indata)
+
+            # Override descriptor with query string kwargs
+            BaseTopic._update_input_with_kwargs(content, kwargs)
+            content = self._validate_input_new(content, force)
+            self.check_conflict_on_new(session, content, force=force)
+            self.format_on_new(content, project_id=session["project_id"], make_public=make_public)
+            _id = self.auth.create_project(content["name"])
+            rollback.append({"topic": self.topic, "_id": _id})
+            # self._send_msg("create", content)
+            return _id
+        except ValidationError as e:
+            raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
+
+    def show(self, session, _id):
+        """
+        Get complete information on an topic
+
+        :param session: contains the used login username and working project
+        :param _id: server internal id
+        :return: dictionary, raise exception if not found.
+        """
+        projects = [project for project in self.auth.get_project_list() if project["_id"] == _id]
+
+        if len(projects) == 1:
+            return projects[0]
+        elif len(projects) > 1:
+            raise EngineException("Too many projects found", HTTPStatus.CONFLICT)
+        else:
+            raise EngineException("Project not found", HTTPStatus.NOT_FOUND)
+
+    def list(self, session, filter_q=None):
+        """
+        Get a list of the topic that matches a filter
+
+        :param session: contains the used login username and working project
+        :param filter_q: filter of data to be applied
+        :return: The list, it can be empty if no one match the filter.
+        """
+        return self.auth.get_project_list()
+
+    def delete(self, session, _id, force=False, dry_run=False):
+        """
+        Delete item by its internal _id
+
+        :param session: contains the used login username, working project, and admin rights
+        :param _id: server internal id
+        :param force: indicates if deletion must be forced in case of conflict
+        :param dry_run: make checking but do not delete
+        :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
+        """
+        self.check_conflict_on_del(session, _id, force)
+        if not dry_run:
+            v = self.auth.delete_project(_id)
+            return v
+        return None
+
+
+class RoleTopicAuth(BaseTopic):
+    topic = "roles_operations"
+    topic_msg = "roles"
+    schema_new = roles_new_schema
+    schema_edit = roles_edit_schema
+
+    def __init__(self, db, fs, msg, auth, ops):
+        BaseTopic.__init__(self, db, fs, msg)
+        self.auth = auth
+        self.operations = ops
+
+    @staticmethod
+    def validate_role_definition(operations, role_definitions):
+        """
+        Validates the role definition against the operations defined in
+        the resources to operations files.
+
+        :param operations: operations list
+        :param role_definitions: role definition to test
+        :return: None if ok, raises ValidationError exception on error
+        """
+        for role_def in role_definitions.keys():
+            if role_def == ".":
+                continue
+            if role_def[-1] == ".":
+                raise ValidationError("Operation cannot end with \".\"")
+            
+            role_def_matches = [op for op in operations if op.starswith(role_def)]
+
+            if len(role_def_matches) == 0:
+                raise ValidationError("No matching operation found.")
+
+    def _validate_input_new(self, input, force=False):
+        """
+        Validates input user content for a new entry.
+
+        :param input: user input content for the new topic
+        :param force: may be used for being more tolerant
+        :return: The same input content, or a changed version of it.
+        """
+        if self.schema_new:
+            validate_input(input, self.schema_new)
+        if "definition" in input and input["definition"]:
+            self.validate_role_definition(self.operations, input["definition"])
+        return input
+
+    def _validate_input_edit(self, input, force=False):
+        """
+        Validates input user content for updating an entry.
+
+        :param input: user input content for the new topic
+        :param force: may be used for being more tolerant
+        :return: The same input content, or a changed version of it.
+        """
+        if self.schema_edit:
+            validate_input(input, self.schema_edit)
+        if "definition" in input and input["definition"]:
+            self.validate_role_definition(self.operations, input["definition"])
+        return input
+
+    def check_conflict_on_new(self, session, indata, force=False):
+        """
+        Check that the data to be inserted is valid
+
+        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param indata: data to be inserted
+        :param force: boolean. With force it is more tolerant
+        :return: None or raises EngineException
+        """
+        role = indata.get("name")
+        role_list = list(map(lambda x: x["name"], self.auth.get_role_list()))
+
+        if role in role_list:
+            raise EngineException("role '{}' exists".format(role), HTTPStatus.CONFLICT)
+
+    def check_conflict_on_edit(self, session, final_content, edit_content, _id, force=False):
+        """
+        Check that the data to be edited/uploaded is valid
+
+        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param final_content: data once modified
+        :param edit_content: incremental data that contains the modifications to apply
+        :param _id: internal _id
+        :param force: boolean. With force it is more tolerant
+        :return: None or raises EngineException
+        """
+        roles = self.auth.get_role_list()
+        system_admin_role = [role for role in roles
+                             if roles["name"] == "system_admin"][0]
+
+        if _id == system_admin_role["_id"]:
+            raise EngineException("You cannot edit system_admin role", http_code=HTTPStatus.FORBIDDEN)
+
+    def check_conflict_on_del(self, session, _id, force=False):
+        """
+        Check if deletion can be done because of dependencies if it is not force. To override
+
+        :param session: contains "username", if user is "admin" and the working "project_id"
+        :param _id: internal _id
+        :param force: Avoid this checking
+        :return: None if ok or raises EngineException with the conflict
+        """
+        roles = self.auth.get_role_list()
+        system_admin_role = [role for role in roles
+                             if roles["name"] == "system_admin"][0]
+
+        if _id == system_admin_role["_id"]:
+            raise EngineException("You cannot delete system_admin role", http_code=HTTPStatus.FORBIDDEN)
+
+    @staticmethod
+    def format_on_new(content, project_id=None, make_public=False):
+        """
+        Modifies content descriptor to include _admin
+
+        :param content: descriptor to be modified
+        :param project_id: if included, it add project read/write permissions
+        :param make_public: if included it is generated as public for reading.
+        :return: None, but content is modified
+        """
+        now = time()
+        if "_admin" not in content:
+            content["_admin"] = {}
+        if not content["_admin"].get("created"):
+            content["_admin"]["created"] = now
+        content["_admin"]["modified"] = now
+        content["root"] = False
+
+        # Saving the role definition
+        if "definition" in content and content["definition"]:
+            for role_def, value in content["definition"].items():
+                if role_def == ".":
+                    content["root"] = value
+                else:
+                    content[role_def.replace(".", ":")] = value
+
+        # Cleaning undesired values
+        if "definition" in content:
+            del content["definition"]
+
+    @staticmethod
+    def format_on_edit(final_content, edit_content):
+        """
+        Modifies final_content descriptor to include the modified date.
+
+        :param final_content: final descriptor generated
+        :param edit_content: alterations to be include
+        :return: None, but final_content is modified
+        """
+        final_content["_admin"]["modified"] = time()
+
+        ignore_fields = ["_id", "name", "_admin"]
+        delete_keys = [key for key in final_content.keys() if key not in ignore_fields]
+
+        for key in delete_keys:
+            del final_content[key]
+
+        # Saving the role definition
+        if "definition" in edit_content and edit_content["definition"]:
+            for role_def, value in edit_content["definition"].items():
+                if role_def == ".":
+                    final_content["root"] = value
+                else:
+                    final_content[role_def.replace(".", ":")] = value
+
+        if "root" not in final_content:
+            final_content["root"] = False
+
+    @staticmethod
+    def format_on_show(content):
+        """
+        Modifies the content of the role information to separate the role 
+        metadata from the role definition. Eases the reading process of the
+        role definition.
+
+        :param definition: role definition to be processed
+        """
+        ignore_fields = ["_admin", "_id", "name", "root"]
+        content_keys = list(content.keys())
+        definition = dict(content)
+        
+        for key in content_keys:
+            if key in ignore_fields:
+                del definition[key]
+            if ":" not in key:
+                del content[key]
+                continue
+            definition[key.replace(":", ".")] = definition[key]
+            del definition[key]
+            del content[key]
+        
+        content["definition"] = definition
+
+    def show(self, session, _id):
+        """
+        Get complete information on an topic
+
+        :param session: contains the used login username and working project
+        :param _id: server internal id
+        :return: dictionary, raise exception if not found.
+        """
+        filter_db = self._get_project_filter(session, write=False, show_all=True)
+        filter_db["_id"] = _id
+
+        role = self.db.get_one(self.topic, filter_db)
+        new_role = dict(role)
+        self.format_on_show(new_role)
+
+        return new_role
+
+    def list(self, session, filter_q=None):
+        """
+        Get a list of the topic that matches a filter
+
+        :param session: contains the used login username and working project
+        :param filter_q: filter of data to be applied
+        :return: The list, it can be empty if no one match the filter.
+        """
+        if not filter_q:
+            filter_q = {}
+
+        roles = self.db.get_list(self.topic, filter_q)
+        new_roles = []
+
+        for role in roles:
+            new_role = dict(role)
+            self.format_on_show(new_role)
+            new_roles.append(new_role)
+
+        return new_roles
+
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None, force=False, make_public=False):
+        """
+        Creates a new entry into database.
+
+        :param rollback: list to append created items at database in case a rollback may to be done
+        :param session: contains the used login username and working project
+        :param indata: data to be inserted
+        :param kwargs: used to override the indata descriptor
+        :param headers: http request headers
+        :param force: If True avoid some dependence checks
+        :param make_public: Make the created item public to all projects
+        :return: _id: identity of the inserted data.
+        """
+        try:
+            content = BaseTopic._remove_envelop(indata)
+
+            # Override descriptor with query string kwargs
+            BaseTopic._update_input_with_kwargs(content, kwargs)
+            content = self._validate_input_new(content, force)
+            self.check_conflict_on_new(session, content, force=force)
+            self.format_on_new(content, project_id=session["project_id"], make_public=make_public)
+            role_name = content["name"]
+            role = self.auth.create_role(role_name)
+            content["_id"] = role["_id"]
+            _id = self.db.create(self.topic, content)
+            rollback.append({"topic": self.topic, "_id": _id})
+            # self._send_msg("create", content)
+            return _id
+        except ValidationError as e:
+            raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
+
+    def delete(self, session, _id, force=False, dry_run=False):
+        """
+        Delete item by its internal _id
+
+        :param session: contains the used login username, working project, and admin rights
+        :param _id: server internal id
+        :param force: indicates if deletion must be forced in case of conflict
+        :param dry_run: make checking but do not delete
+        :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
+        """
+        self.check_conflict_on_del(session, _id, force)
+        filter_q = self._get_project_filter(session, write=True, show_all=True)
+        filter_q["_id"] = _id
+        if not dry_run:
+            self.auth.delete_role(_id)
+            v = self.db.del_one(self.topic, filter_q)
+            return v
+        return None
+
+    def edit(self, session, _id, indata=None, kwargs=None, force=False, content=None):
+        """
+        Updates a role entry.
+
+        :param session: contains the used login username and working project
+        :param _id:
+        :param indata: data to be inserted
+        :param kwargs: used to override the indata descriptor
+        :param force: If True avoid some dependence checks
+        :param content:
+        :return: _id: identity of the inserted data.
+        """
+        indata = self._remove_envelop(indata)
+
+        # Override descriptor with query string kwargs
+        if kwargs:
+            BaseTopic._update_input_with_kwargs(indata, kwargs)
+        try:
+            indata = self._validate_input_edit(indata, force=force)
+
+            if not content:
+                content = self.show(session, _id)
+            self.check_conflict_on_edit(session, content, indata, _id=_id, force=force)
+            self.format_on_edit(content, indata)
+            self.db.replace(self.topic, _id, content)
+            return id
+        except ValidationError as e:
+            raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)

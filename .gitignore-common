@@ -46,3 +46,6 @@ build
 dist
 *.egg-info
 .eggs
+
+#vscode
+.vscode

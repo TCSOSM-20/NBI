@@ -160,7 +160,7 @@ class AuthconnKeystone(Authconn):
             self.logger.exception("Error during token revocation using keystone")
             raise AuthException("Error during token revocation using Keystone", http_code=HTTPStatus.UNAUTHORIZED)
 
-    def get_project_list(self, token):
+    def get_user_project_list(self, token):
         """
         Get all the projects associated with a user.
 
@@ -177,7 +177,7 @@ class AuthconnKeystone(Authconn):
             self.logger.exception("Error during user project listing using keystone")
             raise AuthException("Error during user project listing using Keystone", http_code=HTTPStatus.UNAUTHORIZED)
 
-    def get_role_list(self, token):
+    def get_user_role_list(self, token):
         """
         Get role list for a scoped project.
 
@@ -203,9 +203,11 @@ class AuthconnKeystone(Authconn):
         :param user: username.
         :param password: password.
         :raises AuthconnOperationException: if user creation failed.
+        :return: returns the id of the user in keystone.
         """
         try:
-            self.keystone.users.create(user, password=password, domain=self.user_domain_name)
+            new_user = self.keystone.users.create(user, password=password, domain=self.user_domain_name)
+            return {"username": new_user.name, "_id": new_user.id}
         except ClientException:
             self.logger.exception("Error during user creation using keystone")
             raise AuthconnOperationException("Error during user creation using Keystone")
@@ -225,19 +227,80 @@ class AuthconnKeystone(Authconn):
             self.logger.exception("Error during user password update using keystone")
             raise AuthconnOperationException("Error during user password update using Keystone")
 
-    def delete_user(self, user):
+    def delete_user(self, user_id):
         """
         Delete user.
 
-        :param user: username.
+        :param user_id: user identifier.
         :raises AuthconnOperationException: if user deletion failed.
         """
         try:
-            user_obj = list(filter(lambda x: x.name == user, self.keystone.users.list()))[0]
-            self.keystone.users.delete(user_obj)
+            users = self.keystone.users.list()
+            user_obj = [user for user in users if user.id == user_id][0]
+            result, _ = self.keystone.users.delete(user_obj)
+
+            if result.status_code != 204:
+                raise ClientException("User was not deleted")
+
+            return True
         except ClientException:
             self.logger.exception("Error during user deletion using keystone")
             raise AuthconnOperationException("Error during user deletion using Keystone")
+
+    def get_user_list(self):
+        """
+        Get user list.
+
+        :return: returns a list of users.
+        """
+        try:
+            users = self.keystone.users.list()
+            users = [{
+                "username": user.name,
+                "_id": user.id
+            } for user in users if user.name != self.admin_username]
+
+            for user in users:
+                projects = self.keystone.projects.list(user=user["_id"])
+                projects = [{
+                    "name": project.name,
+                    "_id": project.id
+                } for project in projects]
+
+                for project in projects:
+                    roles = self.keystone.roles.list(user=user["_id"], project=project["_id"])
+                    roles = [{
+                        "name": role.name,
+                        "_id": role.id
+                    } for role in roles]
+                    project["roles"] = roles
+
+                user["projects"] = projects
+
+            return users
+        except ClientException:
+            self.logger.exception("Error during user listing using keystone")
+            raise AuthconnOperationException("Error during user listing using Keystone")
+
+    def get_role_list(self):
+        """
+        Get role list.
+
+        :return: returns the list of roles for the user in that project. If
+        the token is unscoped it returns None.
+        """
+        try:
+            roles_list = self.keystone.roles.list()
+
+            roles = [{
+                "name": role.name,
+                "_id": role.id
+            } for role in roles_list if role.name != "service"]
+
+            return roles
+        except ClientException:
+            self.logger.exception("Error during user role listing using keystone")
+            raise AuthException("Error during user role listing using Keystone", http_code=HTTPStatus.UNAUTHORIZED)
 
     def create_role(self, role):
         """
@@ -247,26 +310,51 @@ class AuthconnKeystone(Authconn):
         :raises AuthconnOperationException: if role creation failed.
         """
         try:
-            self.keystone.roles.create(role)
+            result = self.keystone.roles.create(role)
+            return {"name": result.name, "_id": result.id}
         except Conflict as ex:
             self.logger.info("Duplicate entry: %s", str(ex))
         except ClientException:
             self.logger.exception("Error during role creation using keystone")
             raise AuthconnOperationException("Error during role creation using Keystone")
 
-    def delete_role(self, role):
+    def delete_role(self, role_id):
         """
         Delete a role.
 
-        :param role: role name.
+        :param role_id: role identifier.
         :raises AuthconnOperationException: if role deletion failed.
         """
         try:
-            role_obj = list(filter(lambda x: x.name == role, self.keystone.roles.list()))[0]
-            self.keystone.roles.delete(role_obj)
+            roles = self.keystone.roles.list()
+            role_obj = [role for role in roles if role.id == role_id][0]
+            result, _ = self.keystone.roles.delete(role_obj)
+
+            if result.status_code != 204:
+                raise ClientException("Role was not deleted")
+
+            return True
         except ClientException:
             self.logger.exception("Error during role deletion using keystone")
             raise AuthconnOperationException("Error during role deletion using Keystone")
+
+    def get_project_list(self):
+        """
+        Get all the projects.
+
+        :return: list of projects
+        """
+        try:
+            projects = self.keystone.projects.list()
+            projects = [{
+                "name": project.name,
+                "_id": project.id
+            } for project in projects if project.name != self.admin_project]
+
+            return projects
+        except ClientException:
+            self.logger.exception("Error during user project listing using keystone")
+            raise AuthException("Error during user project listing using Keystone", http_code=HTTPStatus.UNAUTHORIZED)
 
     def create_project(self, project):
         """
@@ -276,21 +364,28 @@ class AuthconnKeystone(Authconn):
         :raises AuthconnOperationException: if project creation failed.
         """
         try:
-            self.keystone.project.create(project, self.project_domain_name)
+            result = self.keystone.projects.create(project, self.project_domain_name)
+            return {"name": result.name, "_id": result.id}
         except ClientException:
             self.logger.exception("Error during project creation using keystone")
             raise AuthconnOperationException("Error during project creation using Keystone")
 
-    def delete_project(self, project):
+    def delete_project(self, project_id):
         """
         Delete a project.
 
-        :param project: project name.
+        :param project_id: project identifier.
         :raises AuthconnOperationException: if project deletion failed.
         """
         try:
-            project_obj = list(filter(lambda x: x.name == project, self.keystone.projects.list()))[0]
-            self.keystone.project.delete(project_obj)
+            projects = self.keystone.projects.list()
+            project_obj = [project for project in projects if project.id == project_id][0]
+            result, _ = self.keystone.projects.delete(project_obj)
+
+            if result.status_code != 204:
+                raise ClientException("Project was not deleted")
+
+            return True
         except ClientException:
             self.logger.exception("Error during project deletion using keystone")
             raise AuthconnOperationException("Error during project deletion using Keystone")

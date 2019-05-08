@@ -213,6 +213,9 @@ class Server(object):
                     "projects": {"METHODS": ("GET", "POST"),
                                  "<ID>": {"METHODS": ("GET", "DELETE")}
                                  },
+                    "roles": {"METHODS": ("GET", "POST"),
+                              "<ID>": {"METHODS": ("GET", "POST", "DELETE")}
+                              },
                     "vims": {"METHODS": ("GET", "POST"),
                              "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT")}
                              },
