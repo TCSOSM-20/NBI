@@ -873,9 +873,9 @@ class Server(object):
                     # creates nslcmop
                     indata["lcmOperationType"] = "instantiate"
                     indata["nsInstanceId"] = _id
-                    self.engine.new_item(rollback, session, "nslcmops", indata, None)
+                    nslcmop_id = self.engine.new_item(rollback, session, "nslcmops", indata, None)
                     self._set_location_header(main_topic, version, topic, _id)
-                    outdata = {"id": _id}
+                    outdata = {"id": _id, "nslcmop_id": nslcmop_id}
                 elif topic == "ns_instances" and item:
                     indata["lcmOperationType"] = item
                     indata["nsInstanceId"] = _id
@@ -889,8 +889,8 @@ class Server(object):
                     self._set_location_header(main_topic, version, topic, _id)
                     indata["lcmOperationType"] = "instantiate"
                     indata["nsiInstanceId"] = _id
-                    self.engine.new_item(rollback, session, "nsilcmops", indata, kwargs)
-                    outdata = {"id": _id}
+                    nsilcmop_id = self.engine.new_item(rollback, session, "nsilcmops", indata, kwargs)
+                    outdata = {"id": _id, "nsilcmop_id": nsilcmop_id}
 
                 elif topic == "netslice_instances" and item:
                     indata["lcmOperationType"] = item
