@@ -1512,20 +1512,20 @@ class TestDeployHackfest3Charmed3(TestDeployHackfest3Charmed):
                         "$[1]":
                             parameter:
                                 "$[0]":
-                                    value: "<touch-filename>"   # default-value: /home/ubuntu/first-touch
+                                    value: "<touch_filename>"   # default-value: /home/ubuntu/first-touch
                     config-primitive:
                         "$[0]":
                             parameter:
                                 "$[0]":
-                                    default-value: "<touch-filename2>"
+                                    default-value: "<touch_filename2>"
                 """)
         }
         self.ns_params = {
             "additionalParamsForVnf": [
-                {"member-vnf-index": "1", "additionalParams": {"touch-filename": "/home/ubuntu/first-touch-1",
-                                                               "touch-filename2": "/home/ubuntu/second-touch-1"}},
-                {"member-vnf-index": "2", "additionalParams": {"touch-filename": "/home/ubuntu/first-touch-2",
-                                                               "touch-filename2": "/home/ubuntu/second-touch-2"}},
+                {"member-vnf-index": "1", "additionalParams": {"touch_filename": "/home/ubuntu/first-touch-1",
+                                                               "touch_filename2": "/home/ubuntu/second-touch-1"}},
+                {"member-vnf-index": "2", "additionalParams": {"touch_filename": "/home/ubuntu/first-touch-2",
+                                                               "touch_filename2": "/home/ubuntu/second-touch-2"}},
             ]
         }
 
@@ -2173,7 +2173,8 @@ class TestNetSliceInstances:
         nsilcmop_id1 = engine.last_id
 
         # Waiting for NSI-1
-        engine.wait_operation_ready("nsi", nsilcmop_id1, timeout_deploy)
+        if test_osm:
+            engine.wait_operation_ready("nsi", nsilcmop_id1, timeout_deploy)
 
         # CREATE NSI-2
         ns_data = {'nsiName': 'Deploy-NSI-2', 'vimAccountId': self.vim_id, 'nstId': nst_id, 'nsiDescription': 'default'}
@@ -2187,17 +2188,19 @@ class TestNetSliceInstances:
         nsilcmop_id2 = engine.last_id
 
         # Waiting for NSI-2
-        engine.wait_operation_ready("nsi", nsilcmop_id2, timeout_deploy)
+        if test_osm:
+            engine.wait_operation_ready("nsi", nsilcmop_id2, timeout_deploy)
 
         if manual_check:
             input('NSI-1 AND NSI-2 has been deployed. Perform manual check and press enter to resume')
 
         # TERMINATE NSI-1
-        self.terminate_slice(engine, self.nsi_id1, "Terminate NSI-1")
-        nsilcmop1_id = engine.last_id
+        if test_osm:
+            self.terminate_slice(engine, self.nsi_id1, "Terminate NSI-1")
+            nsilcmop1_id = engine.last_id
 
-        # Wait terminate NSI-1
-        engine.wait_operation_ready("nsi", nsilcmop1_id, timeout_deploy)
+            # Wait terminate NSI-1
+            engine.wait_operation_ready("nsi", nsilcmop1_id, timeout_deploy)
 
         # DELETE NSI-1
         self.delete_slice(engine, self.nsi_id1, "Delete NS")
@@ -2218,27 +2221,30 @@ class TestNetSliceInstances:
         nsilcmop_id3 = engine.last_id
 
         # Wait Instantiate NSI-3
-        engine.wait_operation_ready("nsi", nsilcmop_id3, timeout_deploy)
+        if test_osm:
+            engine.wait_operation_ready("nsi", nsilcmop_id3, timeout_deploy)
 
         if manual_check:
             input('NSI-3 has been deployed. Perform manual check and press enter to resume')
 
         # TERMINATE NSI-2
-        self.terminate_slice(engine, self.nsi_id2, "Terminate NSI-2")
-        nsilcmop2_id = engine.last_id
+        if test_osm:
+            self.terminate_slice(engine, self.nsi_id2, "Terminate NSI-2")
+            nsilcmop2_id = engine.last_id
 
-        # Wait terminate NSI-2
-        engine.wait_operation_ready("nsi", nsilcmop2_id, timeout_deploy)
+            # Wait terminate NSI-2
+            engine.wait_operation_ready("nsi", nsilcmop2_id, timeout_deploy)
         
         # DELETE NSI-2
         self.delete_slice(engine, self.nsi_id2, "DELETE NSI-2")
 
         # TERMINATE NSI-3
-        self. terminate_slice(engine, self.nsi_id3, "Terminate NSI-3")
-        nsilcmop3_id = engine.last_id
-        
-        # Wait terminate NSI-3
-        engine.wait_operation_ready("nsi", nsilcmop3_id, timeout_deploy)
+        if test_osm:
+            self. terminate_slice(engine, self.nsi_id3, "Terminate NSI-3")
+            nsilcmop3_id = engine.last_id
+
+            # Wait terminate NSI-3
+            engine.wait_operation_ready("nsi", nsilcmop3_id, timeout_deploy)
 
         # DELETE NSI-3
         self.delete_slice(engine, self.nsi_id3, "DELETE NSI-3")
