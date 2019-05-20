@@ -236,10 +236,11 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def get_project_list(self):
+    def get_project_list(self, filter_q={}):
         """
         Get all the projects.
 
+        :param filter_q: dictionary to filter project list.
         :return: list of projects
         """
         raise AuthconnNotImplementedException("Should have implemented this")

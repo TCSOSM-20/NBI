@@ -347,10 +347,11 @@ class AuthconnKeystone(Authconn):
             self.logger.exception("Error during role deletion using keystone")
             raise AuthconnOperationException("Error during role deletion using Keystone")
 
-    def get_project_list(self):
+    def get_project_list(self, filter_q={}):
         """
         Get all the projects.
 
+        :param filter_q: dictionary to filter project list.
         :return: list of projects
         """
         try:
@@ -359,6 +360,14 @@ class AuthconnKeystone(Authconn):
                 "name": project.name,
                 "_id": project.id
             } for project in projects if project.name != self.admin_project]
+
+            allowed_fields = ["_id", "name"]
+            for key in filter_q.keys():
+                if key not in allowed_fields:
+                    continue
+
+                projects = [project for project in projects
+                            if filter_q[key] == project[key]]
 
             return projects
         except ClientException:
