@@ -559,7 +559,10 @@ class UserTopicAuth(UserTopic):
         :param filter_q: filter of data to be applied
         :return: The list, it can be empty if no one match the filter.
         """
-        return self.auth.get_user_list()
+        if not filter_q:
+            filter_q = {}
+
+        return self.auth.get_user_list(filter_q)
 
     def delete(self, session, _id, dry_run=False):
         """

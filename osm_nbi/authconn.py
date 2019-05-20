@@ -184,10 +184,11 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def get_user_list(self):
+    def get_user_list(self, filter_q={}):
         """
         Get user list.
 
+        :param filter_q: dictionary to filter user list.
         :return: returns a list of users.
         """
 

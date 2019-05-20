@@ -247,10 +247,11 @@ class AuthconnKeystone(Authconn):
             self.logger.exception("Error during user deletion using keystone")
             raise AuthconnOperationException("Error during user deletion using Keystone")
 
-    def get_user_list(self):
+    def get_user_list(self, filter_q={}):
         """
         Get user list.
 
+        :param filter_q: dictionary to filter user list.
         :return: returns a list of users.
         """
         try:
@@ -259,6 +260,14 @@ class AuthconnKeystone(Authconn):
                 "username": user.name,
                 "_id": user.id
             } for user in users if user.name != self.admin_username]
+
+            allowed_fields = ["_id", "username"]
+            for key in filter_q.keys():
+                if key not in allowed_fields:
+                    continue
+
+                users = [user for user in users 
+                         if filter_q[key] == user[key]]
 
             for user in users:
                 projects = self.keystone.projects.list(user=user["_id"])
