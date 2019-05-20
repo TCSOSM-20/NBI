@@ -40,7 +40,7 @@ __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
 __version__ = "0.1.3"
 version_date = "Jan 2019"
-database_version = '1.0'
+database_version = '1.1'
 auth_database_version = '1.0'
 nbi_server = None           # instance of Server class
 subscription_thread = None  # instance of SubscriptionThread class

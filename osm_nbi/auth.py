@@ -156,7 +156,7 @@ class Authenticator:
         # Note: it is faster to rewrite the value than to check if it is already there or not
         if self.config["authentication"]["backend"] == "internal":
             return
-        
+
         operations = []
         with open(self.resources_to_operations_file, "r") as stream:
             resources_to_operations_yaml = yaml.load(stream)

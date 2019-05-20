@@ -56,6 +56,12 @@ class Engine(object):
         # "pm_jobs": PmJobsTopic will be added manually because it needs other parameters
     }
 
+    map_target_version_to_int = {
+        "1.0": 1000,
+        "1.1": 1001
+        # Add new versions here
+    }
+
     def __init__(self):
         self.db = None
         self.fs = None
@@ -321,29 +327,46 @@ class Engine(object):
             return {'project_id': project_id, 'user_id': user_id}
 
     def upgrade_db(self, current_version, target_version):
-        if not target_version or current_version == target_version:
-            return
-        if target_version == '1.0':
-            if not current_version:
-                # create database version
-                serial = urandom(32)
-                version_data = {
-                    "_id": 'version',               # Always 'version'
-                    "version_int": 1000,            # version number
-                    "version": '1.0',               # version text
-                    "date": "2018-10-25",           # version date
-                    "description": "added serial",  # changes in this version
-                    'status': 'ENABLED',            # ENABLED, DISABLED (migration in process), ERROR,
-                    'serial': b64encode(serial)
-                }
-                self.db.create("admin", version_data)
-                self.db.set_secret_key(serial)
-                return
-            # TODO add future migrations here
+        if target_version not in self.map_target_version_to_int.keys():
+            raise EngineException("Wrong database version '{}'. Expected '{}'"
+                                  ". It cannot be up/down-grade".format(current_version, target_version),
+                                  http_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
-        raise EngineException("Wrong database version '{}'. Expected '{}'"
-                              ". It cannot be up/down-grade".format(current_version, target_version),
-                              http_code=HTTPStatus.INTERNAL_SERVER_ERROR)
+        if current_version == target_version:
+            return
+        
+        target_version_int = self.map_target_version_to_int[target_version]
+
+        if not current_version:
+            # create database version
+            serial = urandom(32)
+            version_data = {
+                "_id": "version",               # Always "version"
+                "version_int": 1000,            # version number
+                "version": "1.0",               # version text
+                "date": "2018-10-25",           # version date
+                "description": "added serial",  # changes in this version
+                'status': "ENABLED",            # ENABLED, DISABLED (migration in process), ERROR,
+                'serial': b64encode(serial)
+            }
+            self.db.create("admin", version_data)
+            self.db.set_secret_key(serial)
+            current_version = "1.0"
+            
+        if current_version == "1.0" and target_version_int >= self.map_target_version_to_int["1.1"]:
+            self.db.del_list("roles_operations")
+            
+            version_data = {
+                "_id": "version",
+                "version_int": 1001,
+                "version": "1.1",
+                "date": "2019-05-24",
+                "description": "set new format for roles_operations"
+            }
+
+            self.db.set_one("admin", {"_id": "version"}, version_data)
+            current_version = "1.1"
+            # TODO add future migrations here
 
     def init_db(self, target_version='1.0'):
         """
