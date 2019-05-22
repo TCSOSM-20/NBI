@@ -149,7 +149,7 @@ class Engine(object):
                                                         self.operations)
                 else:
                     self.map_topic[topic] = topic_class(self.db, self.fs, self.msg)
-                self.map_topic[topic] = topic_class(self.db, self.fs, self.msg)
+            
             self.map_topic["pm_jobs"] = PmJobsTopic(config["prometheus"].get("host"), config["prometheus"].get("port"))
         except (DbException, FsException, MsgException) as e:
             raise EngineException(str(e), http_code=e.http_code)
