@@ -376,8 +376,8 @@ class SdnTopic(BaseTopic):
 class UserTopicAuth(UserTopic):
     # topic = "users"
     # topic_msg = "users"
-    # schema_new = user_new_schema
-    # schema_edit = user_edit_schema
+    schema_new = user_new_schema
+    schema_edit = user_edit_schema
 
     def __init__(self, db, fs, msg, auth):
         UserTopic.__init__(self, db, fs, msg)
@@ -468,6 +468,21 @@ class UserTopicAuth(UserTopic):
         else:
             final_content["project_role_mappings"] = edit_content["project_role_mappings"]
 
+    @staticmethod
+    def format_on_show(content):
+        """
+        Modifies the content of the role information to separate the role 
+        metadata from the role definition.
+        """
+        project_role_mappings = []
+
+        for project in content["projects"]:
+            for role in project["roles"]:
+                project_role_mappings.append([project, role])
+        
+        del content["projects"]
+        content["project_role_mappings"] = project_role_mappings
+
     def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
         Creates a new entry into the authentication backend.
@@ -508,7 +523,7 @@ class UserTopicAuth(UserTopic):
         users = [user for user in self.auth.get_user_list() if user["_id"] == _id]
 
         if len(users) == 1:
-            return users[0]
+            return self.format_on_show(users[0])
         elif len(users) > 1:
             raise EngineException("Too many users found", HTTPStatus.CONFLICT)
         else:
@@ -541,17 +556,9 @@ class UserTopicAuth(UserTopic):
             if "password" in content:
                 self.auth.change_password(content["name"], content["password"])
             else:
-                users = self.auth.get_user_list()
-                user = [user for user in users if user["_id"] == content["_id"]][0]
-                original_mapping = []
+                user = self.show(session, _id)
+                original_mapping = user["project_role_mappings"]
                 edit_mapping = content["project_role_mappings"]
-
-                for project in user["projects"]:
-                    for role in project["roles"]:
-                        original_mapping += {
-                            "project": project["name"],
-                            "role": role["name"]
-                        }
                 
                 mappings_to_remove = [mapping for mapping in original_mapping 
                                       if mapping not in edit_mapping]
@@ -562,15 +569,15 @@ class UserTopicAuth(UserTopic):
                 for mapping in mappings_to_remove:
                     self.auth.remove_role_from_user(
                         user["name"], 
-                        mapping["project"],
-                        mapping["role"]
+                        mapping[0],
+                        mapping[1]
                     )
                 
                 for mapping in mappings_to_add:
                     self.auth.assign_role_to_user(
                         user["name"], 
-                        mapping["project"],
-                        mapping["role"]
+                        mapping[0],
+                        mapping[1]
                     )
 
             return content["_id"]
@@ -587,7 +594,9 @@ class UserTopicAuth(UserTopic):
         if not filter_q:
             filter_q = {}
 
-        return self.auth.get_user_list(filter_q)
+        users = [self.format_on_show(user) for user in self.auth.get_user_list(filter_q)]
+
+        return users
 
     def delete(self, session, _id, dry_run=False):
         """
