@@ -421,7 +421,7 @@ wim_account_new_schema = {
         "name": name_schema,
         "description": description_schema,
         "wim": name_schema,
-        "wim_type": {"enum": ["tapi", "onos", "odl", "dynpac"]},
+        "wim_type": {"enum": ["tapi", "onos", "odl", "dynpac", "fake"]},
         "wim_url": description_schema,
         "user": shortname_schema,
         "password": passwd_schema,
