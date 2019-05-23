@@ -648,10 +648,9 @@ roles_new_schema = {
     "type": "object",
     "properties": {
         "name": shortname_schema,
-        "definition": object_schema,
     },
     "required": ["name"],
-    "additionalProperties": False
+    "additionalProperties": True
 }
 roles_edit_schema = {
     "$schema": "http://json-schema.org/draft-04/schema#",
@@ -660,10 +659,9 @@ roles_edit_schema = {
     "properties": {
         "_id": id_schema,
         "name": shortname_schema,
-        "definition": object_schema,
     },
-    "required": ["_id", "name", "definition"],
-    "additionalProperties": False,
+    "required": ["_id", "name"],
+    "additionalProperties": True,
     "minProperties": 1
 }
 

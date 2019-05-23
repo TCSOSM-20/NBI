@@ -298,8 +298,7 @@ class AuthconnKeystone(Authconn):
         """
         Get role list.
 
-        :return: returns the list of roles for the user in that project. If
-        the token is unscoped it returns None.
+        :return: returns the list of roles.
         """
         try:
             roles_list = self.keystone.roles.list()

@@ -731,9 +731,15 @@ class RoleTopicAuth(BaseTopic):
         :param role_definitions: role definition to test
         :return: None if ok, raises ValidationError exception on error
         """
+        ignore_fields = ["_id", "name"]
         for role_def in role_definitions.keys():
-            if role_def == ".":
+            if role_def in ignore_fields:
                 continue
+            if role_def == ".":
+                if isinstance(role_definitions[role_def], bool):
+                    continue
+                else:
+                    raise ValidationError("Operation authorization \".\" should be True/False.")
             if role_def[-1] == ".":
                 raise ValidationError("Operation cannot end with \".\"")
             
@@ -741,6 +747,9 @@ class RoleTopicAuth(BaseTopic):
 
             if len(role_def_matches) == 0:
                 raise ValidationError("No matching operation found.")
+
+            if not isinstance(role_definitions[role_def], bool):
+                raise ValidationError("Operation authorization {} should be True/False.".format(role_def))
 
     def _validate_input_new(self, input, force=False):
         """
@@ -752,8 +761,8 @@ class RoleTopicAuth(BaseTopic):
         """
         if self.schema_new:
             validate_input(input, self.schema_new)
-        if "definition" in input and input["definition"]:
-            self.validate_role_definition(self.operations, input["definition"])
+            self.validate_role_definition(self.operations, input)
+        
         return input
 
     def _validate_input_edit(self, input, force=False):
@@ -766,8 +775,8 @@ class RoleTopicAuth(BaseTopic):
         """
         if self.schema_edit:
             validate_input(input, self.schema_edit)
-        if "definition" in input and input["definition"]:
-            self.validate_role_definition(self.operations, input["definition"])
+            self.validate_role_definition(self.operations, input)
+        
         return input
 
     def check_conflict_on_new(self, session, indata):
@@ -833,19 +842,14 @@ class RoleTopicAuth(BaseTopic):
         if not content["_admin"].get("created"):
             content["_admin"]["created"] = now
         content["_admin"]["modified"] = now
-        content["root"] = False
+        content[":"] = False
 
-        # Saving the role definition
-        if "definition" in content and content["definition"]:
-            for role_def, value in content["definition"].items():
-                if role_def == ".":
-                    content["root"] = value
-                else:
-                    content[role_def.replace(".", ":")] = value
-
-        # Cleaning undesired values
-        if "definition" in content:
-            del content["definition"]
+        ignore_fields = ["_id", "_admin", "name"]
+        for role_def, value in content.items():
+            if role_def in ignore_fields:
+                continue
+            content[role_def.replace(".", ":")] = value
+            del content[role_def]
 
     @staticmethod
     def format_on_edit(final_content, edit_content):
@@ -865,15 +869,11 @@ class RoleTopicAuth(BaseTopic):
             del final_content[key]
 
         # Saving the role definition
-        if "definition" in edit_content and edit_content["definition"]:
-            for role_def, value in edit_content["definition"].items():
-                if role_def == ".":
-                    final_content["root"] = value
-                else:
-                    final_content[role_def.replace(".", ":")] = value
-
-        if "root" not in final_content:
-            final_content["root"] = False
+        for role_def, value in edit_content.items():
+            final_content[role_def.replace(".", ":")] = value
+        
+        if ":" not in final_content.keys():
+            final_content[":"] = False
 
     @staticmethod
     def format_on_show(content):
@@ -884,21 +884,12 @@ class RoleTopicAuth(BaseTopic):
 
         :param definition: role definition to be processed
         """
-        ignore_fields = ["_admin", "_id", "name", "root"]
         content_keys = list(content.keys())
-        definition = dict(content)
-        
+
         for key in content_keys:
-            if key in ignore_fields:
-                del definition[key]
-            if ":" not in key:
+            if ":" in key:
+                content[key.replace(":", ".")] = content[key]
                 del content[key]
-                continue
-            definition[key.replace(":", ".")] = definition[key]
-            del definition[key]
-            del content[key]
-        
-        content["definition"] = definition
 
     def show(self, session, _id):
         """
