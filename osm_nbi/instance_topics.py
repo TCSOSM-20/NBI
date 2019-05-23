@@ -20,7 +20,7 @@ from time import time
 from copy import copy, deepcopy
 from validation import validate_input, ValidationError, ns_instantiate, ns_action, ns_scale, nsi_instantiate
 from base_topic import BaseTopic, EngineException, get_iterable
-from descriptor_topics import DescriptorTopic
+# from descriptor_topics import DescriptorTopic
 from yaml import safe_dump
 from osm_common.dbbase import DbException
 from re import match  # For checking that additional parameter names are valid Jinja2 identifiers
@@ -54,22 +54,58 @@ class NsrTopic(BaseTopic):
         BaseTopic.format_on_new(content, project_id=project_id, make_public=make_public)
         content["_admin"]["nsState"] = "NOT_INSTANTIATED"
 
-    def check_conflict_on_del(self, session, _id):
+    def check_conflict_on_del(self, session, _id, db_content):
+        """
+        Check that NSR is not instantiated
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id: nsr internal id
+        :param db_content: The database content of the nsr
+        :return: None or raises EngineException with the conflict
+        """
         if session["force"]:
             return
-        nsr = self.db.get_one("nsrs", {"_id": _id})
+        nsr = db_content
         if nsr["_admin"].get("nsState") == "INSTANTIATED":
             raise EngineException("nsr '{}' cannot be deleted because it is in 'INSTANTIATED' state. "
                                   "Launch 'terminate' operation first; or force deletion".format(_id),
                                   http_code=HTTPStatus.CONFLICT)
 
-    def delete_extra(self, session, _id):
+    def delete_extra(self, session, _id, db_content):
+        """
+        Deletes associated nslcmops and vnfrs from database. Deletes associated filesystem.
+         Set usageState of pdu, vnfd, nsd
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id: server internal id
+        :param db_content: The database content of the descriptor
+        :return: None if ok or raises EngineException with the problem
+        """
         self.fs.file_delete(_id, ignore_non_exist=True)
         self.db.del_list("nslcmops", {"nsInstanceId": _id})
         self.db.del_list("vnfrs", {"nsr-id-ref": _id})
+
         # set all used pdus as free
         self.db.set_list("pdus", {"_admin.usage.nsr_id": _id},
                          {"_admin.usageState": "NOT_IN_USE", "_admin.usage": None})
+
+        # Set NSD usageState
+        nsr = db_content
+        used_nsd_id = nsr.get("nsd-id")
+        if used_nsd_id:
+            # check if used by another NSR
+            nsrs_list = self.db.get_one("nsrs", {"nsd-id": used_nsd_id},
+                                        fail_on_empty=False, fail_on_more=False)
+            if not nsrs_list:
+                self.db.set_one("nsds", {"_id": used_nsd_id}, {"_admin.usageState": "NOT_IN_USE"})
+
+        # Set VNFD usageState
+        used_vnfd_id_list = nsr.get("vnfd-id")
+        if used_vnfd_id_list:
+            for used_vnfd_id in used_vnfd_id_list:
+                # check if used by another NSR
+                nsrs_list = self.db.get_one("nsrs", {"vnfd-id": used_vnfd_id},
+                                            fail_on_empty=False, fail_on_more=False)
+                if not nsrs_list:
+                    self.db.set_one("vnfds", {"_id": used_vnfd_id}, {"_admin.usageState": "NOT_IN_USE"})
 
     @staticmethod
     def _format_ns_request(ns_request):
@@ -149,12 +185,12 @@ class NsrTopic(BaseTopic):
             self._update_input_with_kwargs(ns_request, kwargs)
             self._validate_input_new(ns_request, session["force"])
 
-            step = ""
             # look for nsr
             step = "getting nsd id='{}' from database".format(ns_request.get("nsdId"))
-            _filter = {"_id": ns_request["nsdId"]}
-            _filter.update(BaseTopic._get_project_filter(session))
+            _filter = self._get_project_filter(session)
+            _filter["_id"] = ns_request["nsdId"]
             nsd = self.db.get_one("nsds", _filter)
+            del _filter["_id"]
 
             nsr_id = str(uuid4())
 
@@ -183,6 +219,7 @@ class NsrTopic(BaseTopic):
                 "operational-events": [],   # "id", "timestamp", "description", "event",
                 "nsd-ref": nsd["id"],
                 "nsd-id": nsd["_id"],
+                "vnfd-id": [],
                 "instantiate_params": self._format_ns_request(ns_request),
                 "additionalParamsForNs": self._format_addional_params(ns_request),
                 "ns-instance-config-ref": nsr_id,
@@ -207,9 +244,12 @@ class NsrTopic(BaseTopic):
                     member_vnf["vnfd-id-ref"], member_vnf["member-vnf-index"])
                 if vnfd_id not in needed_vnfds:
                     # Obtain vnfd
-                    vnfd = DescriptorTopic.get_one_by_id(self.db, session, "vnfds", vnfd_id)
+                    _filter["id"] = vnfd_id
+                    vnfd = self.db.get_one("vnfds", _filter, fail_on_empty=True, fail_on_more=True)
+                    del _filter["id"]
                     vnfd.pop("_admin")
                     needed_vnfds[vnfd_id] = vnfd
+                    nsr_descriptor["vnfd-id"].append(vnfd["_id"])
                 else:
                     vnfd = needed_vnfds[vnfd_id]
                 step = "filling vnfr  vnfd-id='{}' constituent-vnfd='{}'".format(
@@ -817,30 +857,34 @@ class NsiTopic(BaseTopic):
             raise EngineException("Descriptor error at nst-ref='{}' references a non exist nstd".format(nstd_id),
                                   http_code=HTTPStatus.CONFLICT)
 
-    def check_conflict_on_del(self, session, _id, ):
+    def check_conflict_on_del(self, session, _id, db_content):
+        """
+        Check that NSI is not instantiated
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id: nsi internal id
+        :param db_content: The database content of the _id
+        :return: None or raises EngineException with the conflict
+        """
         if session["force"]:
             return
-        nsi = self.db.get_one("nsis", {"_id": _id})
+        nsi = db_content
         if nsi["_admin"].get("nsiState") == "INSTANTIATED":
             raise EngineException("nsi '{}' cannot be deleted because it is in 'INSTANTIATED' state. "
                                   "Launch 'terminate' operation first; or force deletion".format(_id),
                                   http_code=HTTPStatus.CONFLICT)
 
-    def delete(self, session, _id, dry_run=False):
+    def delete_extra(self, session, _id, db_content):
         """
-        Delete item by its internal _id
+        Deletes associated nsilcmops from database. Deletes associated filesystem.
+         Set usageState of nst
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
-        :param dry_run: make checking but do not delete
-        :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
+        :param db_content: The database content of the descriptor
+        :return: None if ok or raises EngineException with the problem
         """
-        # TODO add admin to filter, validate rights
-        BaseTopic.delete(self, session, _id, dry_run=True)
-        if dry_run:
-            return
 
         # Deleting the nsrs belonging to nsir
-        nsir = self.db.get_one("nsis", {"_id": _id})
+        nsir = db_content
         for nsrs_detailed_item in nsir["_admin"]["nsrs-detailed-list"]:
             nsr_id = nsrs_detailed_item["nsrId"]
             if nsrs_detailed_item.get("shared"):
@@ -857,22 +901,66 @@ class NsiTopic(BaseTopic):
                     pass
                 else:
                     raise
-        # deletes NetSlice instance object
-        v = self.db.del_one("nsis", {"_id": _id})
 
-        # makes a temporal list of nsilcmops objects related to the _id given and deletes them from db
-        _filter = {"netsliceInstanceId": _id} 
-        self.db.del_list("nsilcmops", _filter)
+        # delete related nsilcmops database entries
+        self.db.del_list("nsilcmops", {"netsliceInstanceId": _id})
 
-        # Search if nst is being used by other nsi
+        # Check and set used NST usage state
         nsir_admin = nsir.get("_admin")
-        if nsir_admin:
-            if nsir_admin.get("nst-id"):
-                nsis_list = self.db.get_one("nsis", {"nst-id": nsir_admin["nst-id"]},
-                                            fail_on_empty=False, fail_on_more=False)
-                if not nsis_list:
-                    self.db.set_one("nsts", {"_id": nsir_admin["nst-id"]}, {"_admin.usageState": "NOT_IN_USE"})
-        return v
+        if nsir_admin and nsir_admin.get("nst-id"):
+            # check if used by another NSI
+            nsis_list = self.db.get_one("nsis", {"nst-id": nsir_admin["nst-id"]},
+                                        fail_on_empty=False, fail_on_more=False)
+            if not nsis_list:
+                self.db.set_one("nsts", {"_id": nsir_admin["nst-id"]}, {"_admin.usageState": "NOT_IN_USE"})
+
+    # def delete(self, session, _id, dry_run=False):
+    #     """
+    #     Delete item by its internal _id
+    #     :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+    #     :param _id: server internal id
+    #     :param dry_run: make checking but do not delete
+    #     :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
+    #     """
+    #     # TODO add admin to filter, validate rights
+    #     BaseTopic.delete(self, session, _id, dry_run=True)
+    #     if dry_run:
+    #         return
+    #
+    #     # Deleting the nsrs belonging to nsir
+    #     nsir = self.db.get_one("nsis", {"_id": _id})
+    #     for nsrs_detailed_item in nsir["_admin"]["nsrs-detailed-list"]:
+    #         nsr_id = nsrs_detailed_item["nsrId"]
+    #         if nsrs_detailed_item.get("shared"):
+    #             _filter = {"_admin.nsrs-detailed-list.ANYINDEX.shared": True,
+    #                        "_admin.nsrs-detailed-list.ANYINDEX.nsrId": nsr_id,
+    #                        "_id.ne": nsir["_id"]}
+    #             nsi = self.db.get_one("nsis", _filter, fail_on_empty=False, fail_on_more=False)
+    #             if nsi:  # last one using nsr
+    #                 continue
+    #         try:
+    #             self.nsrTopic.delete(session, nsr_id, dry_run=False)
+    #         except (DbException, EngineException) as e:
+    #             if e.http_code == HTTPStatus.NOT_FOUND:
+    #                 pass
+    #             else:
+    #                 raise
+    #     # deletes NetSlice instance object
+    #     v = self.db.del_one("nsis", {"_id": _id})
+    #
+    #     # makes a temporal list of nsilcmops objects related to the _id given and deletes them from db
+    #     _filter = {"netsliceInstanceId": _id}
+    #     self.db.del_list("nsilcmops", _filter)
+    #
+    #     # Search if nst is being used by other nsi
+    #     nsir_admin = nsir.get("_admin")
+    #     if nsir_admin:
+    #         if nsir_admin.get("nst-id"):
+    #             nsis_list = self.db.get_one("nsis", {"nst-id": nsir_admin["nst-id"]},
+    #                                         fail_on_empty=False, fail_on_more=False)
+    #             if not nsis_list:
+    #                 self.db.set_one("nsts", {"_id": nsir_admin["nst-id"]}, {"_admin.usageState": "NOT_IN_USE"})
+    #     return v
 
     def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
@@ -894,9 +982,11 @@ class NsiTopic(BaseTopic):
             step = ""
             # look for nstd
             step = "getting nstd id='{}' from database".format(slice_request.get("nstId"))
-            _filter = {"_id": slice_request["nstId"]}
-            _filter.update(BaseTopic._get_project_filter(session))
+            _filter = self._get_project_filter(session)
+            _filter["_id"] = slice_request["nstId"]
             nstd = self.db.get_one("nsts", _filter)
+            del _filter["_id"]
+
             nstd.pop("_admin", None)
             nstd_id = nstd.pop("_id", None)
             nsi_id = str(uuid4())
@@ -951,7 +1041,9 @@ class NsiTopic(BaseTopic):
                     member_ns["nsd-ref"], member_ns["id"])
                 if nsd_id not in needed_nsds:
                     # Obtain nsd
-                    nsd = DescriptorTopic.get_one_by_id(self.db, session, "nsds", nsd_id)
+                    _filter["id"] = nsd_id
+                    nsd = self.db.get_one("nsds", _filter, fail_on_empty=True, fail_on_more=True)
+                    del _filter["id"]
                     nsd.pop("_admin")
                     needed_nsds[nsd_id] = nsd
                 else:
@@ -972,8 +1064,8 @@ class NsiTopic(BaseTopic):
                 _id_nsr = None
                 indata_ns = {}
                 # Is the nss shared and instantiated?
-                _filter = {"_admin.nsrs-detailed-list.ANYINDEX.shared": True,
-                           "_admin.nsrs-detailed-list.ANYINDEX.nsd-id": service["nsd-ref"]}
+                _filter["_admin.nsrs-detailed-list.ANYINDEX.shared"] = True
+                _filter["_admin.nsrs-detailed-list.ANYINDEX.nsd-id"] = service["nsd-ref"]
                 nsi = self.db.get_one("nsis", _filter, fail_on_empty=False, fail_on_more=False)
                 
                 if nsi and service.get("is-shared-nss"):
@@ -1129,9 +1221,10 @@ class NsiLcmOpTopic(BaseTopic):
             validate_input(indata, self.operation_schema[operation])
 
             # get nsi from nsiInstanceId
-            _filter = BaseTopic._get_project_filter(session)
+            _filter = self._get_project_filter(session)
             _filter["_id"] = nsiInstanceId
             nsir = self.db.get_one("nsis", _filter)
+            del _filter["_id"]
 
             # initial checking
             if not nsir["_admin"].get("nsiState") or nsir["_admin"]["nsiState"] == "NOT_INSTANTIATED":
@@ -1154,10 +1247,10 @@ class NsiLcmOpTopic(BaseTopic):
             for index, nsr_item in enumerate(nsrs_list):
                 nsi = None
                 if nsr_item.get("shared"):
-                    _filter = {"_admin.nsrs-detailed-list.ANYINDEX.shared": True, 
-                               "_admin.nsrs-detailed-list.ANYINDEX.nsrId": nsr_item["nsrId"],
-                               "_admin.nsrs-detailed-list.ANYINDEX.nslcmop_instantiate.ne": None,
-                               "_id.ne": nsiInstanceId}
+                    _filter["_admin.nsrs-detailed-list.ANYINDEX.shared"] = True,
+                    _filter["_admin.nsrs-detailed-list.ANYINDEX.nsrId"] = nsr_item["nsrId"]
+                    _filter["_admin.nsrs-detailed-list.ANYINDEX.nslcmop_instantiate.ne"] = None
+                    _filter["_id.ne"] = nsiInstanceId
 
                     nsi = self.db.get_one("nsis", _filter, fail_on_empty=False, fail_on_more=False)
                     # looks the first nsi fulfilling the conditions but not being the current NSIR

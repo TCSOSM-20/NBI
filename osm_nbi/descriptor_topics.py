@@ -72,7 +72,14 @@ class DescriptorTopic(BaseTopic):
         content["_admin"]["operationalState"] = "DISABLED"
         content["_admin"]["usageState"] = "NOT_IN_USE"
 
-    def delete_extra(self, session, _id):
+    def delete_extra(self, session, _id, db_content):
+        """
+        Deletes file system storage associated with the descriptor
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id: server internal id
+        :param db_content: The database content of the descriptor
+        :return: None if ok or raises EngineException with the problem
+        """
         self.fs.file_delete(_id, ignore_non_exist=True)
         self.fs.file_delete(_id + "_", ignore_non_exist=True)  # remove temp folder
 
@@ -426,32 +433,36 @@ class VnfdTopic(DescriptorTopic):
             final_content["_admin"]["type"] = "vnfd"
         # if neither vud nor pdu do not fill type
 
-    def check_conflict_on_del(self, session, _id):
+    def check_conflict_on_del(self, session, _id, db_content):
         """
         Check that there is not any NSD that uses this VNFD. Only NSDs belonging to this project are considered. Note
         that VNFD can be public and be used by NSD of other projects. Also check there are not deployments, or vnfr
         that uses this vnfd
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
-        :param _id: vnfd inernal id
+        :param _id: vnfd internal id
+        :param db_content: The database content of the _id.
         :return: None or raises EngineException with the conflict
         """
         if session["force"]:
             return
-        descriptor = self.db.get_one("vnfds", {"_id": _id})
+        descriptor = db_content
         descriptor_id = descriptor.get("id")
         if not descriptor_id:  # empty vnfd not uploaded
             return
 
         _filter = self._get_project_filter(session)
+
         # check vnfrs using this vnfd
         _filter["vnfd-id"] = _id
         if self.db.get_list("vnfrs", _filter):
-            raise EngineException("There is some VNFR that depends on this VNFD", http_code=HTTPStatus.CONFLICT)
+            raise EngineException("There is at least one VNF using this descriptor", http_code=HTTPStatus.CONFLICT)
+
+        # check NSD referencing this VNFD
         del _filter["vnfd-id"]
-        # check NSD using this VNFD
         _filter["constituent-vnfd.ANYINDEX.vnfd-id-ref"] = descriptor_id
         if self.db.get_list("nsds", _filter):
-            raise EngineException("There is at least a NSD that depends on this VNFD", http_code=HTTPStatus.CONFLICT)
+            raise EngineException("There is at least one NSD referencing this descriptor",
+                                  http_code=HTTPStatus.CONFLICT)
 
     def _validate_input_new(self, indata, storage_params, force=False):
         indata = self.pyangbind_validation("vnfds", indata, force)
@@ -746,20 +757,34 @@ class NsdTopic(DescriptorTopic):
 
         self._check_descriptor_dependencies(session, final_content)
 
-    def check_conflict_on_del(self, session, _id):
+    def check_conflict_on_del(self, session, _id, db_content):
         """
         Check that there is not any NSR that uses this NSD. Only NSRs belonging to this project are considered. Note
         that NSD can be public and be used by other projects.
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
-        :param _id: vnfd inernal id
+        :param _id: nsd internal id
+        :param db_content: The database content of the _id
         :return: None or raises EngineException with the conflict
         """
         if session["force"]:
             return
+        descriptor = db_content
+        descriptor_id = descriptor.get("id")
+        if not descriptor_id:  # empty nsd not uploaded
+            return
+
+        # check NSD used by NS
         _filter = self._get_project_filter(session)
-        _filter["nsdId"] = _id
+        _filter["nsd-id"] = _id
         if self.db.get_list("nsrs", _filter):
-            raise EngineException("There is some NSR that depends on this NSD", http_code=HTTPStatus.CONFLICT)
+            raise EngineException("There is at least one NS using this descriptor", http_code=HTTPStatus.CONFLICT)
+
+        # check NSD referenced by NST
+        del _filter["nsd-id"]
+        _filter["netslice-subnet.ANYINDEX.nsd-ref"] = descriptor_id
+        if self.db.get_list("nsts", _filter):
+            raise EngineException("There is at least one NetSlice Template referencing this descriptor",
+                                  http_code=HTTPStatus.CONFLICT)
 
 
 class NstTopic(DescriptorTopic):
@@ -815,12 +840,13 @@ class NstTopic(DescriptorTopic):
 
         self._check_descriptor_dependencies(session, final_content)
 
-    def check_conflict_on_del(self, session, _id):
+    def check_conflict_on_del(self, session, _id, db_content):
         """
         Check that there is not any NSIR that uses this NST. Only NSIRs belonging to this project are considered. Note
         that NST can be public and be used by other projects.
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: nst internal id
+        :param db_content: The database content of the _id.
         :return: None or raises EngineException with the conflict
         """
         # TODO: Check this method
@@ -828,16 +854,10 @@ class NstTopic(DescriptorTopic):
             return
         # Get Network Slice Template from Database
         _filter = self._get_project_filter(session)
-        _filter["_id"] = _id
-        nst = self.db.get_one("nsts", _filter)
-        
-        # Search NSIs using NST via nst-ref
-        _filter = self._get_project_filter(session)
-        _filter["nst-ref"] = nst["id"]
-        nsis_list = self.db.get_list("nsis", _filter)
-        for nsi_item in nsis_list:
-            if nsi_item["_admin"].get("nsiState") != "TERMINATED":
-                raise EngineException("There is some NSIS that depends on this NST", http_code=HTTPStatus.CONFLICT)
+        _filter["nst-id"] = _id
+        if self.db.get_list("nsis", _filter):
+            raise EngineException("there is at least one Netslice Instance using this descriptor",
+                                  http_code=HTTPStatus.CONFLICT)
 
 
 class PduTopic(BaseTopic):
@@ -856,10 +876,18 @@ class PduTopic(BaseTopic):
         content["_admin"]["operationalState"] = "ENABLED"
         content["_admin"]["usageState"] = "NOT_IN_USE"
 
-    def check_conflict_on_del(self, session, _id):
+    def check_conflict_on_del(self, session, _id, db_content):
+        """
+        Check that there is not any vnfr that uses this PDU
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id: pdu internal id
+        :param db_content: The database content of the _id.
+        :return: None or raises EngineException with the conflict
+        """
         if session["force"]:
             return
-        # TODO Is it needed to check descriptors _admin.project_read/project_write??
-        _filter = {"vdur.pdu-id": _id}
+
+        _filter = self._get_project_filter(session)
+        _filter["vdur.pdu-id"] = _id
         if self.db.get_list("vnfrs", _filter):
-            raise EngineException("There is some NSR that uses this PDU", http_code=HTTPStatus.CONFLICT)
+            raise EngineException("There is at least one VNF using this PDU", http_code=HTTPStatus.CONFLICT)

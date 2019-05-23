@@ -64,7 +64,14 @@ class UserTopic(BaseTopic):
                                        fail_on_more=False):
                     raise EngineException("project '{}' does not exist".format(p), HTTPStatus.CONFLICT)
 
-    def check_conflict_on_del(self, session, _id):
+    def check_conflict_on_del(self, session, _id, db_content):
+        """
+        Check if deletion can be done because of dependencies if it is not force. To override
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id: internal _id
+        :param db_content: The database content of this item _id
+        :return: None if ok or raises EngineException with the conflict
+        """
         if _id == session["username"]:
             raise EngineException("You cannot delete your own user", http_code=HTTPStatus.CONFLICT)
 
@@ -144,7 +151,14 @@ class ProjectTopic(BaseTopic):
         # Removed so that the UUID is kept, to allow Project Name modification
         # content["_id"] = content["name"]
 
-    def check_conflict_on_del(self, session, _id):
+    def check_conflict_on_del(self, session, _id, db_content):
+        """
+        Check if deletion can be done because of dependencies if it is not force. To override
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id: internal _id
+        :param db_content: The database content of this item _id
+        :return: None if ok or raises EngineException with the conflict
+        """
         if _id in session["project_id"]:
             raise EngineException("You cannot delete your own project", http_code=HTTPStatus.CONFLICT)
         if session["force"]:
@@ -398,12 +412,12 @@ class UserTopicAuth(UserTopic):
                 raise EngineException("You cannot remove system_admin role from admin user", 
                                       http_code=HTTPStatus.FORBIDDEN)
 
-    def check_conflict_on_del(self, session, _id):
+    def check_conflict_on_del(self, session, _id, db_content):
         """
         Check if deletion can be done because of dependencies if it is not force. To override
-
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: internal _id
+        :param db_content: The database content of this item _id
         :return: None if ok or raises EngineException with the conflict
         """
         if _id == session["username"]:
@@ -574,7 +588,7 @@ class UserTopicAuth(UserTopic):
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
-        self.check_conflict_on_del(session, _id)
+        self.check_conflict_on_del(session, _id, None)
         if not dry_run:
             v = self.auth.delete_user(_id)
             return v
@@ -605,12 +619,13 @@ class ProjectTopicAuth(ProjectTopic):
         if project in project_list:
             raise EngineException("project '{}' exists".format(project), HTTPStatus.CONFLICT)
 
-    def check_conflict_on_del(self, session, _id):
+    def check_conflict_on_del(self, session, _id, db_content):
         """
         Check if deletion can be done because of dependencies if it is not force. To override
 
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: internal _id
+        :param db_content: The database content of this item _id
         :return: None if ok or raises EngineException with the conflict
         """
         projects = self.auth.get_project_list()
@@ -687,7 +702,7 @@ class ProjectTopicAuth(ProjectTopic):
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
-        self.check_conflict_on_del(session, _id)
+        self.check_conflict_on_del(session, _id, None)
         if not dry_run:
             v = self.auth.delete_project(_id)
             return v
@@ -786,12 +801,13 @@ class RoleTopicAuth(BaseTopic):
         if _id == system_admin_role["_id"]:
             raise EngineException("You cannot edit system_admin role", http_code=HTTPStatus.FORBIDDEN)
 
-    def check_conflict_on_del(self, session, _id):
+    def check_conflict_on_del(self, session, _id, db_content):
         """
         Check if deletion can be done because of dependencies if it is not force. To override
 
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: internal _id
+        :param db_content: The database content of this item _id
         :return: None if ok or raises EngineException with the conflict
         """
         roles = self.auth.get_role_list()
@@ -960,8 +976,8 @@ class RoleTopicAuth(BaseTopic):
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
-        self.check_conflict_on_del(session, _id)
-        filter_q = self._get_project_filter(session, write=True, show_all=True)
+        self.check_conflict_on_del(session, _id, None)
+        filter_q = self._get_project_filter(session)
         filter_q["_id"] = _id
         if not dry_run:
             self.auth.delete_role(_id)
@@ -984,7 +1000,7 @@ class RoleTopicAuth(BaseTopic):
 
         # Override descriptor with query string kwargs
         if kwargs:
-            BaseTopic._update_input_with_kwargs(indata, kwargs)
+            self._update_input_with_kwargs(indata, kwargs)
         try:
             indata = self._validate_input_edit(indata, force=session["force"])
 

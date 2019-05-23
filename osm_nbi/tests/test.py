@@ -1249,9 +1249,6 @@ class TestDeployHackfestCirrosScaling(TestDeploy):
         self.test_name = "CIRROS-SCALE"
         self.vnfd_filenames = ("cirros_vnf.tar.gz",)
         self.nsd_filename = "cirros_2vnf_ns.tar.gz"
-
-    def create_descriptors(self, engine):
-        super().create_descriptors(engine)
         # Modify VNFD to add scaling and count=2
         self.descriptor_edit = {
             "vnfd0": {

@@ -234,11 +234,12 @@ class BaseTopic:
             content.pop("_admin", None)
             self.msg.write(self.topic_msg, action, content)
 
-    def check_conflict_on_del(self, session, _id):
+    def check_conflict_on_del(self, session, _id, db_content):
         """
         Check if deletion can be done because of dependencies if it is not force. To override
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: internal _id
+        :param db_content: The database content of this item _id
         :return: None if ok or raises EngineException with the conflict
         """
         pass
@@ -372,12 +373,15 @@ class BaseTopic:
         filter_q.update(self._get_project_filter(session))
         return self.db.del_list(self.topic, filter_q)
 
-    def delete_extra(self, session, _id):
+    def delete_extra(self, session, _id, db_content):
         """
         Delete other things apart from database entry of a item _id.
         e.g.: other associated elements at database and other file system storage
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
+        :param db_content: The database content of the _id. It is already deleted when reached this method, but the
+            content is needed in same cases
+        :return: None if ok or raises EngineException with the problem
         """
         pass
 
@@ -389,14 +393,18 @@ class BaseTopic:
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
+
+        # To allow addressing projects and users by name AS WELL AS by _id
+        filter_q = {BaseTopic.id_field(self.topic, _id): _id}
+        item_content = self.db.get_one(self.topic, filter_q)
+
         # TODO add admin to filter, validate rights
         # data = self.get_item(topic, _id)
-        self.check_conflict_on_del(session, _id)
-        filter_q = self._get_project_filter(session)
-        # To allow project addressing by name AS WELL AS _id
-        filter_q[BaseTopic.id_field(self.topic, _id)] = _id
+        self.check_conflict_on_del(session, _id, item_content)
         if dry_run:
             return None
+        
+        filter_q.update(self._get_project_filter(session))
         if self.multiproject and session["project_id"]:
             # remove reference from project_read. If not last delete
             self.db.set_one(self.topic, filter_q, update_dict=None,
@@ -408,7 +416,7 @@ class BaseTopic:
                 return v
         else:
             v = self.db.del_one(self.topic, filter_q)
-        self.delete_extra(session, _id)
+        self.delete_extra(session, _id, item_content)
         self._send_msg("deleted", {"_id": _id})
         return v
 
