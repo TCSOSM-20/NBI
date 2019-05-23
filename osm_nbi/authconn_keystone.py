@@ -258,10 +258,11 @@ class AuthconnKeystone(Authconn):
             users = self.keystone.users.list()
             users = [{
                 "username": user.name,
-                "_id": user.id
+                "_id": user.id,
+                "id": user.id
             } for user in users if user.name != self.admin_username]
 
-            allowed_fields = ["_id", "username"]
+            allowed_fields = ["_id", "id", "username"]
             for key in filter_q.keys():
                 if key not in allowed_fields:
                     continue
@@ -273,14 +274,16 @@ class AuthconnKeystone(Authconn):
                 projects = self.keystone.projects.list(user=user["_id"])
                 projects = [{
                     "name": project.name,
-                    "_id": project.id
+                    "_id": project.id,
+                    "id": project.id
                 } for project in projects]
 
                 for project in projects:
                     roles = self.keystone.roles.list(user=user["_id"], project=project["_id"])
                     roles = [{
                         "name": role.name,
-                        "_id": role.id
+                        "_id": role.id,
+                        "id": role.id
                     } for role in roles]
                     project["roles"] = roles
 
