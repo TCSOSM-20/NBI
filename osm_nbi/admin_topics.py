@@ -84,6 +84,13 @@ class UserTopic(BaseTopic):
         content["_admin"]["salt"] = salt
         if content.get("password"):
             content["password"] = sha256(content["password"].encode('utf-8') + salt.encode('utf-8')).hexdigest()
+        if content.get("project_role_mappings"):
+            projects = [mapping[0] for mapping in content["project_role_mappings"]]
+
+            if content.get("projects"):
+                content["projects"] += projects
+            else:
+                content["projects"] = projects
 
     @staticmethod
     def format_on_edit(final_content, edit_content):
@@ -386,6 +393,10 @@ class UserTopicAuth(UserTopic):
         """
         username = indata.get("username")
         user_list = list(map(lambda x: x["username"], self.auth.get_user_list()))
+
+        if "projects" in indata.keys():
+            raise EngineException("Format invalid: the keyword \"projects\" is not allowed for Keystone", 
+                                  HTTPStatus.BAD_REQUEST)
 
         if username in user_list:
             raise EngineException("username '{}' exists".format(username), HTTPStatus.CONFLICT)
