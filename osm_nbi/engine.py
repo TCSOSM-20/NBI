@@ -388,5 +388,7 @@ class Engine(object):
             self.upgrade_db(db_version, target_version)
 
         # create user admin if not exist
-        self.create_admin()
+        if not self.auth:
+            self.create_admin()
+        
         return
