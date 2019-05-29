@@ -865,10 +865,11 @@ class RoleTopicAuth(BaseTopic):
         content[":"] = False
 
         ignore_fields = ["_id", "_admin", "name"]
-        for role_def, value in content.items():
+        content_keys = content.keys()
+        for role_def in content_keys:
             if role_def in ignore_fields:
                 continue
-            content[role_def.replace(".", ":")] = value
+            content[role_def.replace(".", ":")] = content[role_def]
             del content[role_def]
 
     @staticmethod
