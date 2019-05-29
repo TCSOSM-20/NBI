@@ -862,7 +862,13 @@ class RoleTopicAuth(BaseTopic):
         if not content["_admin"].get("created"):
             content["_admin"]["created"] = now
         content["_admin"]["modified"] = now
-        content[":"] = False
+        
+        if "." in content.keys():
+            content["root"] = content["."]
+            del content["."]
+        
+        if "root" not in content.keys():
+            content["root"] = False
 
         ignore_fields = ["_id", "_admin", "name"]
         content_keys = content.keys()
@@ -893,8 +899,12 @@ class RoleTopicAuth(BaseTopic):
         for role_def, value in edit_content.items():
             final_content[role_def.replace(".", ":")] = value
         
-        if ":" not in final_content.keys():
-            final_content[":"] = False
+        if ":" in final_content.keys():
+            final_content["root"] = final_content[":"]
+            del final_content[":"]
+        
+        if "root" not in final_content.keys():
+            final_content["root"] = False
 
     @staticmethod
     def format_on_show(content):
