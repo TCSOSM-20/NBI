@@ -57,10 +57,12 @@ class SubscriptionThread(threading.Thread):
         self.logger = logging.getLogger("nbi.subscriptions")
         self.aiomain_task = None  # asyncio task for receiving kafka bus
         self.internal_session = {  # used for a session to the engine methods
-            "_id": "subscription",
-            "id": "subscription",
-            "project_id": "admin",
-            "admin": True
+            "project_id": (),
+            "set_project": (),
+            "admin": True,
+            "force": False,
+            "public": None,
+            "method": "delete",
         }
 
     def run(self):
