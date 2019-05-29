@@ -907,6 +907,8 @@ class RoleTopicAuth(BaseTopic):
         """
         content_keys = list(content.keys())
 
+        content["_id"] = str(content["_id"])
+
         for key in content_keys:
             if ":" in key:
                 content[key.replace(":", ".")] = content[key]
