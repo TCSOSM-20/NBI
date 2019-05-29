@@ -751,7 +751,7 @@ class RoleTopicAuth(BaseTopic):
         :param role_definitions: role definition to test
         :return: None if ok, raises ValidationError exception on error
         """
-        ignore_fields = ["_id", "name"]
+        ignore_fields = ["_id", "_admin", "name"]
         for role_def in role_definitions.keys():
             if role_def in ignore_fields:
                 continue
@@ -919,7 +919,7 @@ class RoleTopicAuth(BaseTopic):
         :param _id: server internal id
         :return: dictionary, raise exception if not found.
         """
-        filter_db = self._get_project_filter(session, write=False, show_all=True)
+        filter_db = self._get_project_filter(session)
         filter_db["_id"] = _id
 
         role = self.db.get_one(self.topic, filter_db)
@@ -938,6 +938,17 @@ class RoleTopicAuth(BaseTopic):
         """
         if not filter_q:
             filter_q = {}
+
+        if "root" in filter_q:
+            filter_q[":"] = filter_q["root"]
+            del filter_q["root"]
+        
+        if len(filter_q) > 0:
+            keys = [key for key in filter_q.keys() if "." in key]
+
+            for key in keys:
+                filter_q[key.replace(".", ":")] = filter_q[key]
+                del filter_q[key]
 
         roles = self.db.get_list(self.topic, filter_q)
         new_roles = []
