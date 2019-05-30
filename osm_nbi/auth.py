@@ -231,7 +231,12 @@ class Authenticator:
 
                 if self.config["authentication"]["backend"] != "internal" and \
                         role_with_operations["role"] != "anonymous":
-                    keystone_id = self.backend.create_role(role_with_operations["role"])
+                    keystone_id = [role for role in self.backend.get_role_list() 
+                                   if role["name"] == role_with_operations["role"]]
+                    if keystone_id:
+                        keystone_id = keystone_id[0]
+                    else:
+                        keystone_id = self.backend.create_role(role_with_operations["role"])
                     operation_to_roles_item["_id"] = keystone_id["_id"]
 
                 self.db.create("roles_operations", operation_to_roles_item)
