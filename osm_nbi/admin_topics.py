@@ -478,7 +478,7 @@ class UserTopicAuth(UserTopic):
 
         for project in content["projects"]:
             for role in project["roles"]:
-                project_role_mappings.append([project, role])
+                project_role_mappings.append({"project": project, "role": role})
         
         del content["projects"]
         content["project_role_mappings"] = project_role_mappings
@@ -569,15 +569,15 @@ class UserTopicAuth(UserTopic):
                 for mapping in mappings_to_remove:
                     self.auth.remove_role_from_user(
                         user["name"], 
-                        mapping[0],
-                        mapping[1]
+                        mapping["project"],
+                        mapping["role"]
                     )
                 
                 for mapping in mappings_to_add:
                     self.auth.assign_role_to_user(
                         user["name"], 
-                        mapping[0],
-                        mapping[1]
+                        mapping["project"],
+                        mapping["role"]
                     )
 
             return content["_id"]
