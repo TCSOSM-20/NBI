@@ -483,6 +483,8 @@ class UserTopicAuth(UserTopic):
         del content["projects"]
         content["project_role_mappings"] = project_role_mappings
 
+        return content
+
     def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
         Creates a new entry into the authentication backend.
