@@ -1247,12 +1247,15 @@ class NsiLcmOpTopic(BaseTopic):
             for index, nsr_item in enumerate(nsrs_list):
                 nsi = None
                 if nsr_item.get("shared"):
-                    _filter["_admin.nsrs-detailed-list.ANYINDEX.shared"] = True,
+                    _filter["_admin.nsrs-detailed-list.ANYINDEX.shared"] = True
                     _filter["_admin.nsrs-detailed-list.ANYINDEX.nsrId"] = nsr_item["nsrId"]
                     _filter["_admin.nsrs-detailed-list.ANYINDEX.nslcmop_instantiate.ne"] = None
                     _filter["_id.ne"] = nsiInstanceId
-
                     nsi = self.db.get_one("nsis", _filter, fail_on_empty=False, fail_on_more=False)
+                    if operation == "terminate":
+                        _update = {"_admin.nsrs-detailed-list.{}.nslcmop_instantiate".format(index): None}
+                        self.db.set_one("nsis", {"_id": nsir["_id"]}, _update)
+                        
                     # looks the first nsi fulfilling the conditions but not being the current NSIR
                     if nsi:
                         nsi_admin_shared = nsi["_admin"]["nsrs-detailed-list"]
