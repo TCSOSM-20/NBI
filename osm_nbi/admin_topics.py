@@ -934,8 +934,7 @@ class RoleTopicAuth(BaseTopic):
         :param _id: server internal id
         :return: dictionary, raise exception if not found.
         """
-        filter_db = self._get_project_filter(session)
-        filter_db["_id"] = _id
+        filter_db = {"_id": _id}
 
         role = self.db.get_one(self.topic, filter_db)
         new_role = dict(role)
@@ -1014,8 +1013,7 @@ class RoleTopicAuth(BaseTopic):
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
         self.check_conflict_on_del(session, _id, None)
-        filter_q = self._get_project_filter(session)
-        filter_q["_id"] = _id
+        filter_q = {"_id": _id}
         if not dry_run:
             self.auth.delete_role(_id)
             v = self.db.del_one(self.topic, filter_q)
