@@ -104,6 +104,12 @@ fi
 
 if [ -n "$OSMNBI_CLEAN_VCA" ]
 then
-    juju destroy-model -y default
-    juju add-model default
+    for juju_model in `juju models | grep lxd | grep -v controller | grep -v default | awk '{print$1}'`
+    do
+       echo
+       echo juju destroy-model  $juju_model
+       juju destroy-model -y $juju_model
+    done
+    # juju destroy-model -y default
+    # juju add-model default
 fi
