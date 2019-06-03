@@ -515,11 +515,13 @@ class NsLcmOpTopic(BaseTopic):
             # check vnf_member_index
             if indata.get("vnf_member_index"):
                 indata["member_vnf_index"] = indata.pop("vnf_member_index")    # for backward compatibility
-            if not indata.get("member_vnf_index"):
-                raise EngineException("Missing 'member_vnf_index' parameter")
-            vnfd = check_valid_vnf_member_index(indata["member_vnf_index"])
+            if indata.get("member_vnf_index"):
+                vnfd = check_valid_vnf_member_index(indata["member_vnf_index"])
+                descriptor_configuration = vnfd.get("vnf-configuration", {}).get("config-primitive")
+            else:  # use a NSD
+                descriptor_configuration = nsd.get("ns-configuration", {}).get("config-primitive")
             # check primitive
-            for config_primitive in get_iterable(vnfd.get("vnf-configuration", {}).get("config-primitive")):
+            for config_primitive in get_iterable(descriptor_configuration):
                 if indata["primitive"] == config_primitive["name"]:
                     # check needed primitive_params are provided
                     if indata.get("primitive_params"):
@@ -534,11 +536,11 @@ class NsLcmOpTopic(BaseTopic):
                                 paramd["name"], indata["primitive"]))
                     # check no extra primitive params are provided
                     if in_primitive_params_copy:
-                        raise EngineException("parameter/s '{}' not present at vnfd for primitive '{}'".format(
+                        raise EngineException("parameter/s '{}' not present at vnfd /nsd for primitive '{}'".format(
                             list(in_primitive_params_copy.keys()), indata["primitive"]))
                     break
             else:
-                raise EngineException("Invalid primitive '{}' is not present at vnfd".format(indata["primitive"]))
+                raise EngineException("Invalid primitive '{}' is not present at vnfd/nsd".format(indata["primitive"]))
         if operation == "scale":
             vnfd = check_valid_vnf_member_index(indata["scaleVnfData"]["scaleByStepData"]["member-vnf-index"])
             for scaling_group in get_iterable(vnfd.get("scaling-group-descriptor")):
