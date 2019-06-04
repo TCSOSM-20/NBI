@@ -217,7 +217,6 @@ class Server(object):
                               "<ID>": {"METHODS": ("GET", "POST", "DELETE", "PATCH", "PUT")}
                               },
                     "projects": {"METHODS": ("GET", "POST"),
-                                 # Added PUT to allow Project Name modification
                                  "<ID>": {"METHODS": ("GET", "DELETE", "PUT")}
                                  },
                     "roles": {"METHODS": ("GET", "POST"),

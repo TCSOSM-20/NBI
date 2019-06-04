@@ -648,8 +648,9 @@ roles_new_schema = {
     "type": "object",
     "properties": {
         "name": shortname_schema,
+        "root": bool_schema,
     },
-    "required": ["name"],
+    "required": ["name", "root"],
     "additionalProperties": True
 }
 roles_edit_schema = {
@@ -657,10 +658,9 @@ roles_edit_schema = {
     "title": "Roles edit schema for administrators",
     "type": "object",
     "properties": {
-        "_id": id_schema,
-        "name": shortname_schema,
+        "root": bool_schema,
     },
-    "required": ["_id", "name"],
+    "required": ["root"],
     "additionalProperties": True,
     "minProperties": 1
 }

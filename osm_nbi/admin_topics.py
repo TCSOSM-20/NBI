@@ -656,7 +656,7 @@ class ProjectTopicAuth(ProjectTopic):
         """
         projects = self.auth.get_project_list()
         current_project = [project for project in projects
-                           if project["name"] == session["project_id"]][0]
+                           if project["name"] in session["project_id"]][0]
 
         if _id == current_project["_id"]:
             raise EngineException("You cannot delete your own project", http_code=HTTPStatus.CONFLICT)
@@ -761,12 +761,12 @@ class RoleTopicAuth(BaseTopic):
         for role_def in role_definitions.keys():
             if role_def in ignore_fields:
                 continue
-            if role_def == ".":
+            if role_def == "root":
                 if isinstance(role_definitions[role_def], bool):
                     continue
                 else:
                     raise ValidationError("Operation authorization \".\" should be True/False.")
-            if role_def[-1] == ".":
+            if role_def[-1] == ":":
                 raise ValidationError("Operation cannot end with \".\"")
             
             role_def_matches = [op for op in operations if op.startswith(role_def)]
@@ -831,7 +831,7 @@ class RoleTopicAuth(BaseTopic):
         """
         roles = self.auth.get_role_list()
         system_admin_role = [role for role in roles
-                             if roles["name"] == "system_admin"][0]
+                             if role["name"] == "system_admin"][0]
 
         if _id == system_admin_role["_id"]:
             raise EngineException("You cannot edit system_admin role", http_code=HTTPStatus.FORBIDDEN)
