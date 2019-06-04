@@ -162,10 +162,9 @@ class Authenticator:
             resources_to_operations_yaml = yaml.load(stream)
 
         for resource, operation in resources_to_operations_yaml["resources_to_operations"].items():
-            operation_key = operation.replace(".", ":")
-            if operation_key not in operations:
-                operations.append(operation_key)
-            self.resources_to_operations_mapping[resource] = operation_key
+            if operation not in operations:
+                operations.append(operation)
+            self.resources_to_operations_mapping[resource] = operation
 
         records = self.db.get_list("roles_operations")
 
@@ -194,19 +193,18 @@ class Authenticator:
                     if not isinstance(is_allowed, bool):
                         continue
 
-                    if operation == ".":
+                    if operation == ":":
                         root = is_allowed
                         continue
 
-                    if len(operation) != 1 and operation[-1] == ".":
-                        self.logger.warning("Invalid operation {0} terminated in '.'. "
+                    if len(operation) != 1 and operation[-1] == ":":
+                        self.logger.warning("Invalid operation {0} terminated in ':'. "
                                             "Operation will be discarded"
                                             .format(operation))
                         continue
 
-                    operation_key = operation.replace(".", ":")
-                    if operation_key not in role_ops.keys():
-                        role_ops[operation_key] = is_allowed
+                    if operation not in role_ops.keys():
+                        role_ops[operation] = is_allowed
                     else:
                         self.logger.info("In role {0}, the operation {1} with the value {2} was discarded due to "
                                          "repetition.".format(role_with_operations["role"], operation, is_allowed))

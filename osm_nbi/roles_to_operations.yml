@@ -75,11 +75,11 @@ roles_to_operations:
 
   - role: "system_admin"
     operations:
-      ".": true
+      ":": true
 
   - role: "account_manager"
     operations:
-      ".": false
+      ":": false
       "tokens": true
       "users": true
       "projects": true
@@ -87,11 +87,11 @@ roles_to_operations:
 
   - role: "project_admin"
     operations:
-      ".": true
+      ":": true
       # Users
-      "users.post": false
-      "users.id.post": false
-      "users.id.delete": false
+      "users:post": false
+      "users:id:post": false
+      "users:id:delete": false
       # Projects
       "projects": false
       # Roles
@@ -99,39 +99,39 @@ roles_to_operations:
 
   - role: "project_user"
     operations:
-      ".": true
+      ":": true
       # NS Instances
       "ns_instances": false
-      "ns_instances.get": true
+      "ns_instances:get": true
       # VNF Instances
       "vnf_instances": false
       # Users
       "users": false
-      "users.id.get": true
-      "users.id.put": true
-      "users.id.patch": true
+      "users:id:get": true
+      "users:id:put": true
+      "users:id:patch": true
       # Projects
       "projects": false
       # VIMs
       "vims": false
-      "vims.get": true
-      "vims.id.get": true
+      "vims:get": true
+      "vims:id:get": true
       # VIM Accounts
       "vim_accounts": false
-      "vim_accounts.get": true
-      "vim_accounts.id.get": true
+      "vim_accounts:get": true
+      "vim_accounts:id:get": true
       # SDN Controllers
       "sdn_controllers": false
-      "sdn_controllers.get": true
-      "sdn_controllers.id.get": true
+      "sdn_controllers:get": true
+      "sdn_controllers:id:get": true
       # WIMs
       "wims": false
-      "wims.get": true
-      "wims.id.get": true
+      "wims:get": true
+      "wims:id:get": true
       # WIM Accounts
       "wim_accounts": false
-      "wim_accounts.get": true
-      "wim_accounts.id.get": true
+      "wim_accounts:get": true
+      "wim_accounts:id:get": true
 
   - role: "anonymous"
     operations:

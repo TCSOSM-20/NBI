@@ -788,7 +788,7 @@ class RoleTopicAuth(BaseTopic):
         if self.schema_new:
             validate_input(input, self.schema_new)
             self.validate_role_definition(self.operations, input)
-        
+
         return input
 
     def _validate_input_edit(self, input, force=False):
@@ -802,7 +802,7 @@ class RoleTopicAuth(BaseTopic):
         if self.schema_edit:
             validate_input(input, self.schema_edit)
             self.validate_role_definition(self.operations, input)
-        
+
         return input
 
     def check_conflict_on_new(self, session, indata):
@@ -868,21 +868,13 @@ class RoleTopicAuth(BaseTopic):
         if not content["_admin"].get("created"):
             content["_admin"]["created"] = now
         content["_admin"]["modified"] = now
-        
-        if "." in content.keys():
-            content["root"] = content["."]
-            del content["."]
-        
+
+        if ":" in content.keys():
+            content["root"] = content[":"]
+            del content[":"]
+
         if "root" not in content.keys():
             content["root"] = False
-
-        ignore_fields = ["_id", "_admin", "name"]
-        content_keys = content.keys()
-        for role_def in content_keys:
-            if role_def in ignore_fields:
-                continue
-            content[role_def.replace(".", ":")] = content[role_def]
-            del content[role_def]
 
     @staticmethod
     def format_on_edit(final_content, edit_content):
@@ -903,12 +895,12 @@ class RoleTopicAuth(BaseTopic):
 
         # Saving the role definition
         for role_def, value in edit_content.items():
-            final_content[role_def.replace(".", ":")] = value
-        
+            final_content[role_def] = value
+
         if ":" in final_content.keys():
             final_content["root"] = final_content[":"]
             del final_content[":"]
-        
+
         if "root" not in final_content.keys():
             final_content["root"] = False
 
@@ -921,14 +913,7 @@ class RoleTopicAuth(BaseTopic):
 
         :param definition: role definition to be processed
         """
-        content_keys = list(content.keys())
-
         content["_id"] = str(content["_id"])
-
-        for key in content_keys:
-            if ":" in key:
-                content[key.replace(":", ".")] = content[key]
-                del content[key]
 
     def show(self, session, _id):
         """
@@ -957,16 +942,13 @@ class RoleTopicAuth(BaseTopic):
         if not filter_q:
             filter_q = {}
 
-        if "root" in filter_q:
-            filter_q[":"] = filter_q["root"]
-            del filter_q["root"]
-        
-        if len(filter_q) > 0:
-            keys = [key for key in filter_q.keys() if "." in key]
+        if ":" in filter_q:
+            filter_q["root"] = filter_q[":"]
 
-            for key in keys:
-                filter_q[key.replace(".", ":")] = filter_q[key]
-                del filter_q[key]
+        for key in filter_q.keys():
+            if key == "name":
+                continue
+            filter_q[key] = filter_q[key] in ["True", "true"]
 
         roles = self.db.get_list(self.topic, filter_q)
         new_roles = []
