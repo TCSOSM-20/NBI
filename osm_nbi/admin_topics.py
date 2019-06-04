@@ -471,15 +471,15 @@ class UserTopicAuth(UserTopic):
     @staticmethod
     def format_on_show(content):
         """
-        Modifies the content of the role information to separate the role 
+        Modifies the content of the role information to separate the role
         metadata from the role definition.
         """
         project_role_mappings = []
 
         for project in content["projects"]:
             for role in project["roles"]:
-                project_role_mappings.append({"project": project, "role": role})
-        
+                project_role_mappings.append({"project": project["_id"], "role": role["_id"]})
+
         del content["projects"]
         content["project_role_mappings"] = project_role_mappings
 
@@ -506,7 +506,11 @@ class UserTopicAuth(UserTopic):
             content = self._validate_input_new(content, session["force"])
             self.check_conflict_on_new(session, content)
             self.format_on_new(content, session["project_id"], make_public=session["public"])
-            _id = self.auth.create_user(content["username"], content["password"])
+            _id = self.auth.create_user(content["username"], content["password"])["_id"]
+
+            for mapping in content["project_role_mappings"]:
+                self.auth.assign_role_to_user(_id, mapping["project"], mapping["role"])
+
             rollback.append({"topic": self.topic, "_id": _id})
             del content["password"]
             # self._send_msg("create", content)
@@ -561,20 +565,20 @@ class UserTopicAuth(UserTopic):
                 user = self.show(session, _id)
                 original_mapping = user["project_role_mappings"]
                 edit_mapping = content["project_role_mappings"]
-                
-                mappings_to_remove = [mapping for mapping in original_mapping 
+
+                mappings_to_remove = [mapping for mapping in original_mapping
                                       if mapping not in edit_mapping]
-                
+
                 mappings_to_add = [mapping for mapping in edit_mapping
                                    if mapping not in original_mapping]
-                
+
                 for mapping in mappings_to_remove:
                     self.auth.remove_role_from_user(
-                        user["name"], 
+                        user["name"],
                         mapping["project"],
                         mapping["role"]
                     )
-                
+
                 for mapping in mappings_to_add:
                     self.auth.assign_role_to_user(
                         user["name"], 
@@ -620,8 +624,8 @@ class UserTopicAuth(UserTopic):
 class ProjectTopicAuth(ProjectTopic):
     # topic = "projects"
     # topic_msg = "projects"
-    # schema_new = project_new_schema
-    # schema_edit = project_edit_schema
+    schema_new = project_new_schema
+    schema_edit = project_edit_schema
 
     def __init__(self, db, fs, msg, auth):
         ProjectTopic.__init__(self, db, fs, msg)

@@ -23,7 +23,7 @@ AuthconnKeystone implements implements the connector for
 Openstack Keystone and leverages the RBAC model, to bring
 it for OSM.
 """
-import time
+
 
 __author__ = "Eduardo Sousa <esousa@whitestack.com>"
 __date__ = "$27-jul-2018 23:59:59$"
@@ -32,12 +32,14 @@ from authconn import Authconn, AuthException, AuthconnOperationException
 
 import logging
 import requests
+import time
 from keystoneauth1 import session
 from keystoneauth1.identity import v3
 from keystoneauth1.exceptions.base import ClientException
 from keystoneauth1.exceptions.http import Conflict
 from keystoneclient.v3 import client
 from http import HTTPStatus
+from validation import is_valid_uuid
 
 
 class AuthconnKeystone(Authconn):
@@ -420,9 +422,20 @@ class AuthconnKeystone(Authconn):
         :raises AuthconnOperationException: if role assignment failed.
         """
         try:
-            user_obj = list(filter(lambda x: x.name == user, self.keystone.users.list()))[0]
-            project_obj = list(filter(lambda x: x.name == project, self.keystone.projects.list()))[0]
-            role_obj = list(filter(lambda x: x.name == role, self.keystone.roles.list()))[0]
+            if is_valid_uuid(user):
+                user_obj = self.keystone.users.get(user)
+            else:
+                user_obj = self.keystone.users.list(name=user)[0]
+
+            if is_valid_uuid(project):
+                project_obj = self.keystone.projects.get(project)
+            else:
+                project_obj = self.keystone.projects.list(name=project)[0]
+
+            if is_valid_uuid(role):
+                role_obj = self.keystone.roles.get(role)
+            else:
+                role_obj = self.keystone.roles.list(name=role)[0]
 
             self.keystone.roles.grant(role_obj, user=user_obj, project=project_obj)
         except ClientException:
