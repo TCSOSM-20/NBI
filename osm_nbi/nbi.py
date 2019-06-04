@@ -221,7 +221,7 @@ class Server(object):
                                  "<ID>": {"METHODS": ("GET", "DELETE", "PUT")}
                                  },
                     "roles": {"METHODS": ("GET", "POST"),
-                              "<ID>": {"METHODS": ("GET", "POST", "DELETE")}
+                              "<ID>": {"METHODS": ("GET", "POST", "DELETE", "PUT")}
                               },
                     "vims": {"METHODS": ("GET", "POST"),
                              "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT")}
