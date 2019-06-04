@@ -412,15 +412,15 @@ class UserTopicAuth(UserTopic):
         :return: None or raises EngineException
         """
         users = self.auth.get_user_list()
-        admin_user = [user for user in users if user["name"] == "admin"][0]
+        admin_user = [user for user in users if user["username"] == "admin"][0]
 
-        if _id == admin_user["_id"] and edit_content["project_role_mappings"]:
+        if _id == admin_user["_id"] and "project_role_mappings" in edit_content.keys():
             elem = {
                 "project": "admin",
                 "role": "system_admin"
             }
             if elem not in edit_content:
-                raise EngineException("You cannot remove system_admin role from admin user", 
+                raise EngineException("You cannot remove system_admin role from admin user",
                                       http_code=HTTPStatus.FORBIDDEN)
 
     def check_conflict_on_del(self, session, _id, db_content):
@@ -560,7 +560,7 @@ class UserTopicAuth(UserTopic):
             self.format_on_edit(content, indata)
 
             if "password" in content:
-                self.auth.change_password(content["name"], content["password"])
+                self.auth.change_password(content["username"], content["password"])
             else:
                 user = self.show(session, _id)
                 original_mapping = user["project_role_mappings"]
@@ -574,14 +574,14 @@ class UserTopicAuth(UserTopic):
 
                 for mapping in mappings_to_remove:
                     self.auth.remove_role_from_user(
-                        user["name"],
+                        _id,
                         mapping["project"],
                         mapping["role"]
                     )
 
                 for mapping in mappings_to_add:
                     self.auth.assign_role_to_user(
-                        user["name"], 
+                        _id,
                         mapping["project"],
                         mapping["role"]
                     )
