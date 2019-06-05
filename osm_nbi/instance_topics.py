@@ -763,6 +763,15 @@ class NsLcmOpTopic(BaseTopic):
         :param headers: http request headers
         :return: id of the nslcmops
         """
+        def check_if_nsr_is_not_slice_member(session, nsr_id):
+            nsis = None
+            db_filter = self._get_project_filter(session)
+            db_filter["_admin.nsrs-detailed-list.ANYINDEX.nsrId"] = nsr_id
+            nsis = self.db.get_one("nsis", db_filter, fail_on_empty=False, fail_on_more=False)
+            if nsis:
+                raise EngineException("The NS instance {} cannot be terminate because is used by the slice {}".format(
+                                      nsr_id, nsis["_id"]), http_code=HTTPStatus.CONFLICT)
+
         try:
             # Override descriptor with query string kwargs
             self._update_input_with_kwargs(indata, kwargs)
@@ -776,6 +785,8 @@ class NsLcmOpTopic(BaseTopic):
             nsr = self.db.get_one("nsrs", _filter)
 
             # initial checking
+            if operation == "terminate" and slice_object is False:
+                check_if_nsr_is_not_slice_member(session, nsr["_id"])
             if not nsr["_admin"].get("nsState") or nsr["_admin"]["nsState"] == "NOT_INSTANTIATED":
                 if operation == "terminate" and indata.get("autoremove"):
                     # NSR must be deleted
