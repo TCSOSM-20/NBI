@@ -1184,7 +1184,7 @@ class NsiLcmOpTopic(BaseTopic):
             "isCancelPending": False,
             "links": {
                 "self": "/osm/nsilcm/v1/nsi_lcm_op_occs/" + _id,
-                "nsInstance": "/osm/nsilcm/v1/netslice_instances/" + netsliceInstanceId,
+                "netsliceInstanceId": "/osm/nsilcm/v1/netslice_instances/" + netsliceInstanceId,
             }
         }
         return nsilcmop
@@ -1209,7 +1209,7 @@ class NsiLcmOpTopic(BaseTopic):
         :param rollback: list to append created items at database in case a rollback must to be done
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param indata: descriptor with the parameters of the operation. It must contains among others
-            nsiInstanceId: _id of the nsir to perform the operation
+            netsliceInstanceId: _id of the nsir to perform the operation
             operation: it can be: instantiate, terminate, action, TODO: update, heal
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
@@ -1219,12 +1219,12 @@ class NsiLcmOpTopic(BaseTopic):
             # Override descriptor with query string kwargs
             self._update_input_with_kwargs(indata, kwargs)
             operation = indata["lcmOperationType"]
-            nsiInstanceId = indata["nsiInstanceId"]
+            netsliceInstanceId = indata["netsliceInstanceId"]
             validate_input(indata, self.operation_schema[operation])
 
-            # get nsi from nsiInstanceId
+            # get nsi from netsliceInstanceId
             _filter = self._get_project_filter(session)
-            _filter["_id"] = nsiInstanceId
+            _filter["_id"] = netsliceInstanceId
             nsir = self.db.get_one("nsis", _filter)
             del _filter["_id"]
 
@@ -1235,11 +1235,11 @@ class NsiLcmOpTopic(BaseTopic):
                     return None    # a none in this case is used to indicate not instantiated. It can be removed
                 if operation != "instantiate":
                     raise EngineException("netslice_instance '{}' cannot be '{}' because it is not instantiated".format(
-                        nsiInstanceId, operation), HTTPStatus.CONFLICT)
+                        netsliceInstanceId, operation), HTTPStatus.CONFLICT)
             else:
                 if operation == "instantiate" and not session["force"]:
                     raise EngineException("netslice_instance '{}' cannot be '{}' because it is already instantiated".
-                                          format(nsiInstanceId, operation), HTTPStatus.CONFLICT)
+                                          format(netsliceInstanceId, operation), HTTPStatus.CONFLICT)
             
             # Creating all the NS_operation (nslcmop)
             # Get service list from db
@@ -1252,7 +1252,7 @@ class NsiLcmOpTopic(BaseTopic):
                     _filter["_admin.nsrs-detailed-list.ANYINDEX.shared"] = True
                     _filter["_admin.nsrs-detailed-list.ANYINDEX.nsrId"] = nsr_item["nsrId"]
                     _filter["_admin.nsrs-detailed-list.ANYINDEX.nslcmop_instantiate.ne"] = None
-                    _filter["_id.ne"] = nsiInstanceId
+                    _filter["_id.ne"] = netsliceInstanceId
                     nsi = self.db.get_one("nsis", _filter, fail_on_empty=False, fail_on_more=False)
                     if operation == "terminate":
                         _update = {"_admin.nsrs-detailed-list.{}.nslcmop_instantiate".format(index): None}
@@ -1280,7 +1280,7 @@ class NsiLcmOpTopic(BaseTopic):
                     indata_ns["lcmOperationType"] = operation
                     indata_ns["nsInstanceId"] = service["_id"]
                     # Including netslice_id in the ns instantiate Operation
-                    indata_ns["netsliceInstanceId"] = nsiInstanceId
+                    indata_ns["netsliceInstanceId"] = netsliceInstanceId
                     del indata_ns["key-pair-ref"]
                     # Creating NS_LCM_OP with the flag slice_object=True to not trigger the service instantiation 
                     # message via kafka bus
@@ -1302,7 +1302,7 @@ class NsiLcmOpTopic(BaseTopic):
             indata["nslcmops_ids"] = nslcmops
             self._check_nsi_operation(session, nsir, operation, indata)
 
-            nsilcmop_desc = self._create_nsilcmop(session, nsiInstanceId, operation, indata)
+            nsilcmop_desc = self._create_nsilcmop(session, netsliceInstanceId, operation, indata)
             self.format_on_new(nsilcmop_desc, session["project_id"], make_public=session["public"])
             _id = self.db.create("nsilcmops", nsilcmop_desc)
             rollback.append({"topic": "nsilcmops", "_id": _id})

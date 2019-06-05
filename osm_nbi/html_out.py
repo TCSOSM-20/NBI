@@ -119,7 +119,7 @@ html_nslcmop_body = """
 """
 
 html_nsilcmop_body = """
-<a href="/osm/nsilcm/v1/nsi_lcm_op_occs?nsiInstanceId={id}">nsilcm operations </a>
+<a href="/osm/nsilcm/v1/nsi_lcm_op_occs?netsliceInstanceId={id}">nsilcm operations </a>
 <form action="/osm/nsilcm/v1/netslice_instances/{id}/terminate" method="post" enctype="multipart/form-data">
     <h3> <table style="border: 0;"> <tr>
         <td> <input type="submit" value="Terminate"/> </td>

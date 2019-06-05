@@ -887,13 +887,13 @@ class Server(object):
                     _id = self.engine.new_item(rollback, session, engine_topic, indata, kwargs)
                     self._set_location_header(main_topic, version, topic, _id)
                     indata["lcmOperationType"] = "instantiate"
-                    indata["nsiInstanceId"] = _id
+                    indata["netsliceInstanceId"] = _id
                     nsilcmop_id = self.engine.new_item(rollback, session, "nsilcmops", indata, kwargs)
                     outdata = {"id": _id, "nsilcmop_id": nsilcmop_id}
 
                 elif topic == "netslice_instances" and item:
                     indata["lcmOperationType"] = item
-                    indata["nsiInstanceId"] = _id
+                    indata["netsliceInstanceId"] = _id
                     _id = self.engine.new_item(rollback, session, "nsilcmops", indata, kwargs)
                     self._set_location_header(main_topic, version, "nsi_lcm_op_occs", _id)
                     outdata = {"id": _id}
@@ -926,7 +926,7 @@ class Server(object):
                     elif topic == "netslice_instances_content" and not session["force"]:
                         nsilcmop_desc = {
                             "lcmOperationType": "terminate",
-                            "nsiInstanceId": _id,
+                            "netsliceInstanceId": _id,
                             "autoremove": True
                         }
                         opp_id = self.engine.new_item(rollback, session, "nsilcmops", nsilcmop_desc, None)

@@ -712,7 +712,7 @@ nsi_instantiate = {
     "type": "object",
     "properties": {
         "lcmOperationType": string_schema,
-        "nsiInstanceId": id_schema,
+        "netsliceInstanceId": id_schema,
         "nsiName": name_schema,
         "nsiDescription": {"oneOf": [description_schema, null_schema]},
         "nstId": string_schema,
