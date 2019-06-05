@@ -26,6 +26,7 @@ from time import sleep
 from random import randint
 import os
 from sys import stderr
+from uuid import uuid4
 
 __author__ = "Alfonso Tierno, alfonso.tiernosepulveda@telefonica.com"
 __date__ = "$2018-03-01$"
@@ -454,102 +455,225 @@ class TestUsersProjects:
     @staticmethod
     def run(engine, test_osm, manual_check, test_params=None):
         engine.set_test_name("UserProject")
+        # backend = test_params.get("backend") if test_params else None   # UNUSED
+
+        # Initialisation
+        p1 = p2 = p3 = None
+        padmin = pbad = None
+        u1 = u2 = u3 = u4 = None
+
         engine.get_autorization()
-        engine.test("Create project non admin", "POST", "/admin/v1/projects", headers_json, {"name": "P1"},
-                    (201, 204), {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
-        engine.test("Create project admin", "POST", "/admin/v1/projects", headers_json,
-                    {"name": "Padmin", "admin": True}, (201, 204),
-                    {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
-        engine.test("Create project bad format", "POST", "/admin/v1/projects", headers_json, {"name": 1}, (400, 422),
-                    r_header_json, "json")
-        engine.test("Create user with bad project", "POST", "/admin/v1/users", headers_json,
-                    {"username": "U1", "projects": ["P1", "P2", "Padmin"], "password": "pw1"}, 409,
-                    r_header_json, "json")
-        engine.test("Create user with bad project and force", "POST", "/admin/v1/users?FORCE=True", headers_json,
-                    {"username": "U1", "projects": ["P1", "P2", "Padmin"], "password": "pw1"}, 201,
-                    {"Location": "/admin/v1/users/", "Content-Type": "application/json"}, "json")
-        engine.test("Create user 2", "POST", "/admin/v1/users", headers_json,
-                    {"username": "U2", "projects": ["P1"], "password": "pw2"}, 201,
-                    {"Location": "/admin/v1/users/", "Content-Type": "application/json"}, "json")
-        engine.test("Edit user U1, delete  P2 project", "PATCH", "/admin/v1/users/U1", headers_json,
-                    {"projects": {"$'P2'": None}}, 204, None, None)
-        res = engine.test("Check user U1, contains the right projects", "GET", "/admin/v1/users/U1",
-                          headers_json, None, 200, None, json)
+
+        res = engine.test("Create project non admin 1", "POST", "/admin/v1/projects", headers_json, {"name": "P1"},
+                          (201, 204), {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
+        p1 = engine.last_id if res else None
+
+        res = engine.test("Create project admin", "POST", "/admin/v1/projects", headers_json,
+                          {"name": "Padmin", "admin": True}, (201, 204),
+                          {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
+        padmin = engine.last_id if res else None
+
+        res = engine.test("Create project bad format", "POST", "/admin/v1/projects", headers_json, {"name": 1},
+                          (400, 422), r_header_json, "json")
+        pbad = engine.last_id if res else None
+
+        res = engine.test("Get project admin role", "GET", "/admin/v1/roles?name=project_admin", headers_json, {},
+                          (200), {"Content-Type": "application/json"}, "json")
+        rpa = res.json()[0]["_id"] if res else None
+        res = engine.test("Get project user role", "GET", "/admin/v1/roles?name=project_user", headers_json, {},
+                          (200), {"Content-Type": "application/json"}, "json")
+        rpu = res.json()[0]["_id"] if res else None
+        res = engine.test("Get system admin role", "GET", "/admin/v1/roles?name=system_admin", headers_json, {},
+                          (200), {"Content-Type": "application/json"}, "json")
+        rsa = res.json()[0]["_id"] if res else None
+
+        data = {"username": "U1", "password": "pw1"}
+        p2 = uuid4().hex
+        data["project_role_mappings"] = [
+            {"project": p1, "role": rpa},
+            {"project": p2, "role": rpa},
+            {"project": padmin, "role": rpu}
+        ]
+        rc = 201
+        xhd = {"Location": "/admin/v1/users/", "Content-Type": "application/json"}
+        res = engine.test("Create user with bad project and force", "POST", "/admin/v1/users?FORCE=True", headers_json,
+                          data, rc, xhd, "json")
         if res:
-            u1 = res.json()
-            # print(u1)
-            expected_projects = ["P1", "Padmin"]
-            if u1["projects"] != expected_projects:
-                logger.error("User content projects '{}' different than expected '{}'. Edition has not done"
-                             " properly".format(u1["projects"], expected_projects))
-                engine.failed_tests += 1
+            u1 = engine.last_id
+        else:
+            # User is created sometimes even though an exception is raised
+            res = engine.test("Get user U1", "GET", "/admin/v1/users?username=U1", headers_json, {},
+                              (200), {"Content-Type": "application/json"}, "json")
+            u1 = res.json()[0]["_id"] if res else None
 
-        engine.test("Edit user U1, set Padmin as default project", "PUT", "/admin/v1/users/U1", headers_json,
-                    {"projects": {"$'Padmin'": None, "$+[0]": "Padmin"}}, 204, None, None)
-        res = engine.test("Check user U1, contains the right projects", "GET", "/admin/v1/users/U1",
-                          headers_json, None, 200, None, json)
-        if res:
-            u1 = res.json()
-            # print(u1)
-            expected_projects = ["Padmin", "P1"]
-            if u1["projects"] != expected_projects:
-                logger.error("User content projects '{}' different than expected '{}'. Edition has not done"
-                             " properly".format(u1["projects"], expected_projects))
-                engine.failed_tests += 1
+        data = {"username": "U2", "password": "pw2"}
+        data["project_role_mappings"] = [{"project": p1, "role": rpa}, {"project": padmin, "role": rsa}]
+        res = engine.test("Create user 2", "POST", "/admin/v1/users", headers_json,
+                          data, 201, {"Location": "/admin/v1/users/", "Content-Type": "application/json"}, "json")
+        u2 = engine.last_id if res else None
 
-        engine.test("Edit user U1, change password", "PATCH", "/admin/v1/users/U1", headers_json,
-                    {"password": "pw1_new"}, 204, None, None)
+        if u1:
+            ftt = "project_role_mappings"
+            xpr = [{"project": p1, "role": rpa}, {"project": padmin, "role": rpu}]
+            data = {ftt: xpr}
+            engine.test("Edit user U1, delete  P2 project", "PATCH", "/admin/v1/users/"+u1, headers_json,
+                        data, 204, None, None)
+            res = engine.test("Check user U1, contains the right projects", "GET", "/admin/v1/users/"+u1,
+                              headers_json, None, 200, None, json)
+            if res:
+                rj = res.json()
+                xpr[0]["project_name"] = "P1"
+                xpr[0]["role_name"] = "project_admin"
+                xpr[1]["project_name"] = "Padmin"
+                xpr[1]["role_name"] = "project_user"
+                ok = True
+                for pr in rj[ftt]:
+                    if pr not in xpr:
+                        ok = False
+                for pr in xpr:
+                    if pr not in rj[ftt]:
+                        ok = False
+                if not ok:
+                    logger.error("User {} '{}' are different than expected '{}'. Edition was not done properly"
+                                 .format(ftt, rj[ftt], xpr))
+                    engine.failed_tests += 1
 
-        engine.test("Change to project P1 non existing", "POST", "/admin/v1/tokens/", headers_json,
-                    {"project_id": "P1"}, 401, r_header_json, "json")
+        p2 = None   # To prevent deletion attempts
 
-        res = engine.test("Change to user U1 project P1", "POST", "/admin/v1/tokens", headers_json,
-                          {"username": "U1", "password": "pw1_new", "project_id": "P1"}, (200, 201),
-                          r_header_json, "json")
-        if res:
-            response = res.json()
-            engine.set_header({"Authorization": "Bearer {}".format(response["id"])})
+        # Add a test of 'default project' for Keystone?
 
-        engine.test("Edit user projects non admin", "PUT", "/admin/v1/users/U1", headers_json,
-                    {"projects": {"$'P1'": None}}, 401, r_header_json, "json")
-        engine.test("Add new project non admin", "POST", "/admin/v1/projects", headers_json,
-                    {"name": "P2"}, 401, r_header_json, "json")
-        engine.test("Add new user non admin", "POST", "/admin/v1/users", headers_json,
-                    {"username": "U3", "projects": ["P1"], "password": "pw3"}, 401,
-                    r_header_json, "json")
+        if u2:
+            engine.test("Edit user U2, change password", "PUT", "/admin/v1/users/"+u2, headers_json,
+                        {"password": "pw2_new"}, 204, None, None)
 
-        res = engine.test("Change to user U1 project Padmin", "POST", "/admin/v1/tokens", headers_json,
-                          {"project_id": "Padmin"}, (200, 201), r_header_json, "json")
-        if res:
-            response = res.json()
-            engine.set_header({"Authorization": "Bearer {}".format(response["id"])})
+        if p1:
+            engine.test("Change to project P1 non existing", "POST", "/admin/v1/tokens/", headers_json,
+                        {"project_id": p1}, 401, r_header_json, "json")
 
-        engine.test("Add new project admin", "POST", "/admin/v1/projects", headers_json, {"name": "P2"},
-                    (201, 204), {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
-        engine.test("Add new user U3 admin", "POST", "/admin/v1/users",
-                    headers_json, {"username": "U3", "projects": ["P2"], "password": "pw3"}, (201, 204),
-                    {"Location": "/admin/v1/users/", "Content-Type": "application/json"}, "json")
-        engine.test("Edit user projects admin", "PUT", "/admin/v1/users/U3", headers_json,
-                    {"projects": ["P2"]}, 204, None, None)
+        if u2 and p1:
+            res = engine.test("Change to user U2 project P1", "POST", "/admin/v1/tokens", headers_json,
+                              {"username": "U2", "password": "pw2_new", "project_id": "P1"}, (200, 201),
+                              r_header_json, "json")
+            if res:
+                rj = res.json()
+                engine.set_header({"Authorization": "Bearer {}".format(rj["id"])})
 
-        engine.test("Delete project P2 conflict", "DELETE", "/admin/v1/projects/P2", headers_json, None, 409,
-                    r_header_json, "json")
-        engine.test("Delete project P2 forcing", "DELETE", "/admin/v1/projects/P2?FORCE=True", headers_json,
-                    None, 204, None, None)
+                engine.test("Edit user projects non admin", "PUT", "/admin/v1/users/U1", headers_json,
+                            {"remove_project_role_mappings": [{"project": "P1", "role": None}]},
+                            401, r_header_json, "json")
 
-        engine.test("Delete user U1. Conflict deleting own user", "DELETE", "/admin/v1/users/U1", headers_json,
-                    None, 409, r_header_json, "json")
-        engine.test("Delete user U2", "DELETE", "/admin/v1/users/U2", headers_json, None, 204, None, None)
-        engine.test("Delete user U3", "DELETE", "/admin/v1/users/U3", headers_json, None, 204, None, None)
+                res = engine.test("Add new project non admin", "POST", "/admin/v1/projects", headers_json,
+                                  {"name": "P2"}, 401, r_header_json, "json")
+                if res is None or res.status_code == 201:
+                    # The project has been created even though it shouldn't
+                    res = engine.test("Get project P2", "GET", "/admin/v1/projects/P2", headers_json, None,
+                                      200, r_header_json, "json")
+                    p2 = res.json()["_id"] if res else None
+
+                if p1:
+                    data = {"username": "U3", "password": "pw3"}
+                    data["project_role_mappings"] = [{"project": p1, "role": rpu}]
+                    res = engine.test("Add new user non admin", "POST", "/admin/v1/users", headers_json,
+                                      data, 401, r_header_json, "json")
+                    if res is None or res.status_code == 201:
+                        # The user has been created even though it shouldn't
+                        res = engine.test("Get user U3", "GET", "/admin/v1/users/U3", headers_json, None,
+                                          200, r_header_json, "json")
+                        u3 = res.json()["_id"] if res else None
+                else:
+                    u3 = None
+
+                if padmin:
+                    res = engine.test("Change to user U2 project Padmin", "POST", "/admin/v1/tokens", headers_json,
+                                      {"project_id": "Padmin"},   # Caused a Keystone authentication error
+                                      # {"username": "U2", "password": "pw2_new", "project_id": "Padmin"},
+                                      (200, 201), r_header_json, "json")
+                    if res:
+                        rj = res.json()
+                        engine.set_header({"Authorization": "Bearer {}".format(rj["id"])})
+
+                        res = engine.test("Add new project admin", "POST", "/admin/v1/projects", headers_json,
+                                          {"name": "P3"}, (201, 204),
+                                          {"Location": "/admin/v1/projects/", "Content-Type": "application/json"},
+                                          "json")
+                        p3 = engine.last_id if res else None
+
+                        if p1:
+                            data = {"username": "U4", "password": "pw4"}
+                            data["project_role_mappings"] = [{"project": p1, "role": rpa}]
+                            res = engine.test("Add new user admin", "POST", "/admin/v1/users", headers_json,
+                                              data, (201, 204),
+                                              {"Location": "/admin/v1/users/", "Content-Type": "application/json"},
+                                              "json")
+                            u4 = engine.last_id if res else None
+                        else:
+                            u4 = None
+
+                        if u4 and p3:
+                            data = {"project_role_mappings": [{"project": p3, "role": rpa}]}
+                            engine.test("Edit user projects admin", "PUT", "/admin/v1/users/U4", headers_json,
+                                        data, 204, None, None)
+                            # Project is deleted even though it shouldn't - PROVISIONAL?
+                            res = engine.test("Delete project P3 conflict", "DELETE", "/admin/v1/projects/"+p3,
+                                              headers_json, None, 409, None, None)
+                            if res and res.status_code in (200, 204):
+                                p3 = None
+                            if p3:
+                                res = engine.test("Delete project P3 forcing", "DELETE",
+                                                  "/admin/v1/projects/"+p3+"?FORCE=True", headers_json, None, 204,
+                                                  None, None)
+                                if res and res.status_code in (200, 204):
+                                    p3 = None
+
+                        if u2:
+                            res = engine.test("Delete user U2. Conflict deleting own user", "DELETE",
+                                              "/admin/v1/users/"+u2, headers_json, None, 409, r_header_json, "json")
+                            if res is None or res.status_code in (200, 204):
+                                u2 = None
+                        if u4:
+                            res = engine.test("Delete user U4", "DELETE", "/admin/v1/users/"+u4, headers_json, None,
+                                              204, None, None)
+                            if res and res.status_code in (200, 204):
+                                u4 = None
+                        if p3:
+                            res = engine.test("Delete project P3", "DELETE", "/admin/v1/projects/"+p3, headers_json,
+                                              None, 204, None, None)
+                            if res and res.status_code in (200, 204):
+                                p3 = None
+
+                if u3:
+                    res = engine.test("Delete user U3", "DELETE", "/admin/v1/users/"+u3, headers_json, None,
+                                      204, None, None)
+                    if res:
+                        u3 = None
+
         # change to admin
         engine.remove_authorization()   # To force get authorization
         engine.get_autorization()
-        engine.test("Delete user U1 by Name", "DELETE", "/admin/v1/users/U1", headers_json, None, 204, None, None)
-        engine.test("Delete project P1 by Name", "DELETE", "/admin/v1/projects/P1", headers_json, None, 204, None, None)
-        engine.test("Delete project Padmin by Name", "DELETE", "/admin/v1/projects/Padmin", headers_json, None, 204,
-                    None, None)
+        if u1:
+            engine.test("Delete user U1", "DELETE", "/admin/v1/users/"+u1, headers_json, None, 204, None, None)
+        if u2:
+            engine.test("Delete user U2", "DELETE", "/admin/v1/users/"+u2, headers_json, None, 204, None, None)
+        if u3:
+            engine.test("Delete user U3", "DELETE", "/admin/v1/users/"+u3, headers_json, None, 204, None, None)
+        if u4:
+            engine.test("Delete user U4", "DELETE", "/admin/v1/users/"+u4, headers_json, None, 204, None, None)
+        if p1:
+            engine.test("Delete project P1", "DELETE", "/admin/v1/projects/"+p1, headers_json, None, 204, None, None)
+        if p2:
+            engine.test("Delete project P2", "DELETE", "/admin/v1/projects/"+p2, headers_json, None, 204, None, None)
+        if p3:
+            engine.test("Delete project P3", "DELETE", "/admin/v1/projects/"+p3, headers_json, None, 204, None, None)
+        if padmin:
+            engine.test("Delete project Padmin", "DELETE", "/admin/v1/projects/"+padmin, headers_json, None, 204,
+                        None, None)
+        if pbad:
+            engine.test("Delete bad project", "DELETE", "/admin/v1/projects/"+pbad, headers_json, None, 204,
+                        None, None)
 
         # BEGIN New Tests - Addressing Projects/Users by Name/ID
+        pid1 = pid2 = None
+        uid1 = uid2 = None
         res = engine.test("Create new project P1", "POST", "/admin/v1/projects", headers_json, {"name": "P1"},
                           201, {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
         if res:
@@ -560,39 +684,90 @@ class TestUsersProjects:
         if res:
             pid2 = res.json()["id"]
             # print("# pid =", pid2)
-        res = engine.test("Create new user U1", "POST", "/admin/v1/users", headers_json,
-                          {"username": "U1", "projects": ["P1"], "password": "pw1"}, 201,
+        data = {"username": "U1", "password": "pw1"}
+        data["project_role_mappings"] = [{"project": pid1, "role": rpu}]
+        res = engine.test("Create new user U1", "POST", "/admin/v1/users", headers_json, data, 201,
                           {"Location": "/admin/v1/users/", "Content-Type": "application/json"}, "json")
         if res:
             uid1 = res.json()["id"]
             # print("# uid =", uid1)
-        res = engine.test("Create new user U2", "POST", "/admin/v1/users", headers_json,
-                          {"username": "U2", "projects": ["P2"], "password": "pw2"}, 201,
+        data = {"username": "U2", "password": "pw2"}
+        data["project_role_mappings"] = [{"project": pid2, "role": rpu}]
+        res = engine.test("Create new user U2", "POST", "/admin/v1/users", headers_json, data, 201,
                           {"Location": "/admin/v1/users/", "Content-Type": "application/json"}, "json")
         if res:
             uid2 = res.json()["id"]
             # print("# uid =", uid2)
-        engine.test("Get Project P1 by Name", "GET", "/admin/v1/projects/P1", headers_json, None, 200, None, "json")
-        engine.test("Get Project P1 by ID", "GET", "/admin/v1/projects/"+pid1, headers_json, None, 200, None, "json")
-        engine.test("Get User U1 by Name", "GET", "/admin/v1/users/U1", headers_json, None, 200, None, "json")
-        engine.test("Get User U1 by ID", "GET", "/admin/v1/users/"+uid1, headers_json, None, 200, None, "json")
-        engine.test("Rename Project P1 by Name", "PUT", "/admin/v1/projects/P1", headers_json,
-                    {"name": "P3"}, 204, None, None)
-        engine.test("Rename Project P2 by ID", "PUT", "/admin/v1/projects/"+pid2, headers_json,
-                    {"name": "P4"}, 204, None, None)
-        engine.test("Rename User U1 by Name", "PUT", "/admin/v1/users/U1", headers_json,
-                    {"username": "U3"}, 204, None, None)
-        engine.test("Rename User U2 by ID", "PUT", "/admin/v1/users/"+uid2, headers_json,
-                    {"username": "U4"}, 204, None, None)
-        engine.test("Get Project P1 by new Name", "GET", "/admin/v1/projects/P3", headers_json, None, 200, None, "json")
-        engine.test("Get User U1 by new Name", "GET", "/admin/v1/users/U3", headers_json, None, 200, None, "json")
-        engine.test("Delete User U1 by Name", "DELETE", "/admin/v1/users/U3", headers_json, None, 204, None, None)
-        engine.test("Delete User U2 by ID", "DELETE", "/admin/v1/users/"+uid2, headers_json, None, 204, None, None)
-        engine.test("Delete Project P1 by Name", "DELETE", "/admin/v1/projects/P3", headers_json, None, 204, None,
-                    None)
-        engine.test("Delete Project P2 by ID", "DELETE", "/admin/v1/projects/"+pid2, headers_json, None, 204, None,
-                    None)
+        if pid1:
+            engine.test("Get Project P1 by Name", "GET", "/admin/v1/projects/P1", headers_json, None,
+                        200, None, "json")
+            engine.test("Get Project P1 by ID", "GET", "/admin/v1/projects/"+pid1, headers_json, None,
+                        200, None, "json")
+        if uid1:
+            engine.test("Get User U1 by Name", "GET", "/admin/v1/users/U1", headers_json, None, 200, None, "json")
+            engine.test("Get User U1 by ID", "GET", "/admin/v1/users/"+uid1, headers_json, None, 200, None, "json")
+        if pid1:
+            res = engine.test("Rename Project P1 by Name", "PUT", "/admin/v1/projects/P1", headers_json,
+                              {"name": "P3"}, 204, None, None)
+            if res:
+                engine.test("Get Project P1 by new Name", "GET", "/admin/v1/projects/P3", headers_json, None,
+                            200, None, "json")
+        if pid2:
+            res = engine.test("Rename Project P2 by ID", "PUT", "/admin/v1/projects/"+pid2, headers_json,
+                              {"name": "P4"}, 204, None, None)
+            if res:
+                engine.test("Get Project P2 by new Name", "GET", "/admin/v1/projects/P4", headers_json, None,
+                            200, None, "json")
+
+        if uid1:
+            res = engine.test("Rename User U1 by Name", "PUT", "/admin/v1/users/U1", headers_json,
+                              {"username": "U3"}, 204, None, None)
+            if res:
+                engine.test("Get User U1 by new Name", "GET", "/admin/v1/users/U3", headers_json, None,
+                            200, None, "json")
+
+        if uid2:
+            res = engine.test("Rename User U2 by ID", "PUT", "/admin/v1/users/"+uid2, headers_json,
+                              {"username": "U4"}, 204, None, None)
+            if res:
+                engine.test("Get User U2 by new Name", "GET", "/admin/v1/users/U4", headers_json, None,
+                            200, None, "json")
+        if uid1:
+            res = engine.test("Delete User U1 by Name", "DELETE", "/admin/v1/users/U3", headers_json, None,
+                              204, None, None)
+            if res:
+                uid1 = None
+
+        if uid2:
+            res = engine.test("Delete User U2 by ID", "DELETE", "/admin/v1/users/"+uid2, headers_json, None,
+                              204, None, None)
+            if res:
+                uid2 = None
+
+        if pid1:
+            res = engine.test("Delete Project P1 by Name", "DELETE", "/admin/v1/projects/P3", headers_json, None,
+                              204, None, None)
+            if res:
+                pid1 = None
+
+        if pid2:
+            res = engine.test("Delete Project P2 by ID", "DELETE", "/admin/v1/projects/"+pid2, headers_json, None,
+                              204, None, None)
+            if res:
+                pid2 = None
+
         # END New Tests - Addressing Projects/Users by Name
+
+        # CLEANUP
+        if pid1:
+            engine.test("Delete Project P1", "DELETE", "/admin/v1/projects/"+pid1, headers_json, None, 204, None, None)
+        if pid2:
+            engine.test("Delete Project P2", "DELETE", "/admin/v1/projects/"+pid2, headers_json, None, 204, None, None)
+        if uid1:
+            engine.test("Delete User U1", "DELETE", "/admin/v1/users/"+uid1, headers_json, None, 204, None, None)
+        if uid2:
+            engine.test("Delete User U2", "DELETE", "/admin/v1/users/"+uid2, headers_json, None, 204, None, None)
+
         engine.remove_authorization()   # To finish
 
 
@@ -671,10 +846,11 @@ class TestProjectsDescriptors:
         res = engine.test("List VNFD of admin project", "GET",
                           "/vnfpkgm/v1/vnf_packages?ADMIN={}".format(project_admin_id),
                           headers_json, None, 200, r_header_json, "json")
-        response = res.json()
-        if len(response) != 3:
-            logger.error("Only 3 vnfds should be present for project Padmin. {} listed".format(len(response)))
-            engine.failed_tests += 1
+        if res:
+            response = res.json()
+            if len(response) != 3:
+                logger.error("Only 3 vnfds should be present for project Padmin. {} listed".format(len(response)))
+                engine.failed_tests += 1
 
         # Get Public vnfds
         engine.test("Get VNFD public descriptors", "GET", "/vnfpkgm/v1/vnf_packages/{}".format(vnfd_ids[1]),
@@ -2407,6 +2583,110 @@ class TestNetSliceInstances:
                        headers_yaml, None, 204, None, 0)
 
 
+class TestAuthentication:
+    description = "Test Authentication"
+
+    @staticmethod
+    def run(engine, test_osm, manual_check, test_params=None):
+        engine.set_test_name("Authentication")
+        # backend = test_params.get("backend") if test_params else None   # UNUSED
+
+        admin_project_id = test_project_id = None
+        project_admin_role_id = project_user_role_id = None
+        test_user_id = empty_user_id = None
+        default_role_id = empty_role_id = token_role_id = None
+
+        engine.get_autorization()
+
+        # GET
+        engine.test("Get tokens", "GET", "/admin/v1/tokens", headers_json, {},
+                    (200), {"Content-Type": "application/json"}, "json")
+        engine.test("Get projects", "GET", "/admin/v1/projects", headers_json, {},
+                    (200), {"Content-Type": "application/json"}, "json")
+        engine.test("Get users", "GET", "/admin/v1/users", headers_json, {},
+                    (200), {"Content-Type": "application/json"}, "json")
+        engine.test("Get roles", "GET", "/admin/v1/roles", headers_json, {},
+                    (200), {"Content-Type": "application/json"}, "json")
+        res = engine.test("Get admin project", "GET", "/admin/v1/projects?name=admin", headers_json, {},
+                          (200), {"Content-Type": "application/json"}, "json")
+        admin_project_id = res.json()[0]["_id"] if res else None
+        res = engine.test("Get project admin role", "GET", "/admin/v1/roles?name=project_admin", headers_json, {},
+                          (200), {"Content-Type": "application/json"}, "json")
+        project_admin_role_id = res.json()[0]["_id"] if res else None
+        res = engine.test("Get project user role", "GET", "/admin/v1/roles?name=project_user", headers_json, {},
+                          (200), {"Content-Type": "application/json"}, "json")
+        project_user_role_id = res.json()[0]["_id"] if res else None
+
+        # POST
+        res = engine.test("Create test project", "POST", "/admin/v1/projects", headers_json, {"name": "test"},
+                          (201), {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
+        test_project_id = engine.last_id if res else None
+        res = engine.test("Create role without permissions", "POST", "/admin/v1/roles", headers_json, {"name": "empty"},
+                          (201), {"Content-Type": "application/json"}, "json")
+        empty_role_id = engine.last_id if res else None
+        res = engine.test("Create role with default permissions", "POST", "/admin/v1/roles", headers_json,
+                          {"name": "default", "permissions": {"default": True}},
+                          (201), {"Location": "/admin/v1/roles/", "Content-Type": "application/json"}, "json")
+        default_role_id = engine.last_id if res else None
+        res = engine.test("Create role with token permissions", "POST", "/admin/v1/roles", headers_json,
+                          {"name": "tokens", "permissions": {"tokens": True}},   # is default required ?
+                          (201), {"Location": "/admin/v1/roles/", "Content-Type": "application/json"}, "json")
+        token_role_id = engine.last_id if res else None
+        pr = "project-role mappings"
+        res = engine.test("Create user without "+pr, "POST", "/admin/v1/users", headers_json,
+                          {"username": "empty", "password": "empty"},
+                          201, {"Content-Type": "application/json"}, "json")
+        empty_user_id = engine.last_id if res else None
+        if admin_project_id and test_project_id and project_admin_role_id and project_user_role_id:
+            data = {"username": "test", "password": "test"}
+            data["project_role_mappings"] = [
+                {"project": test_project_id, "role": project_admin_role_id},
+                {"project": admin_project_id, "role": project_user_role_id}
+            ]
+            res = engine.test("Create user with "+pr, "POST", "/admin/v1/users", headers_json, data,
+                              (201), {"Content-Type": "application/json"}, "json")
+            test_user_id = engine.last_id if res else None
+
+        # PUT
+        if test_user_id:
+            engine.test("Modify test user's password", "PUT", "/admin/v1/users/"+test_user_id, headers_json,
+                        {"password": "password"},
+                        (204), {}, 0)
+        if empty_user_id and admin_project_id and test_project_id and project_admin_role_id and project_user_role_id:
+            data = {"project_role_mappings": [
+                {"project": test_project_id, "role": project_admin_role_id},
+                {"project": admin_project_id, "role": project_user_role_id}
+            ]}
+            engine.test("Modify empty user's "+pr, "PUT", "/admin/v1/users/"+empty_user_id,
+                        headers_json,
+                        data,
+                        (204), {}, 0)
+
+        # DELETE
+        if empty_user_id:
+            engine.test("Delete empty user", "DELETE", "/admin/v1/users/"+empty_user_id, headers_json, {},
+                        (204), {}, 0)
+        if test_user_id:
+            engine.test("Delete test user", "DELETE", "/admin/v1/users/"+test_user_id, headers_json, {},
+                        (204), {}, 0)
+        if empty_role_id:
+            engine.test("Delete empty role", "DELETE", "/admin/v1/roles/"+empty_role_id, headers_json, {},
+                        (204), {}, 0)
+        if default_role_id:
+            engine.test("Delete default role", "DELETE", "/admin/v1/roles/"+default_role_id, headers_json, {},
+                        (204), {}, 0)
+        if token_role_id:
+            engine.test("Delete token role", "DELETE", "/admin/v1/roles/"+token_role_id, headers_json, {},
+                        (204), {}, 0)
+        if test_project_id:
+            engine.test("Delete test project", "DELETE", "/admin/v1/projects/"+test_project_id, headers_json, {},
+                        (204), {}, 0)
+
+        # END Tests
+
+        engine.remove_authorization()   # To finish
+
+
 if __name__ == "__main__":
     global logger
     test = ""
@@ -2451,6 +2731,7 @@ if __name__ == "__main__":
             "Deploy-Slice-Instance": TestNetSliceInstances,
             "Deploy-SimpleCharm": TestDeploySimpleCharm,
             "Deploy-SimpleCharm2": TestDeploySimpleCharm2,
+            "Authentication": TestAuthentication,
         }
         test_to_do = []
         test_params = {}
