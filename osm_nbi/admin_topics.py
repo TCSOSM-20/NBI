@@ -847,7 +847,7 @@ class RoleTopicAuth(BaseTopic):
         """
         roles = self.auth.get_role_list()
         system_admin_role = [role for role in roles
-                             if roles["name"] == "system_admin"][0]
+                             if role["name"] == "system_admin"][0]
 
         if _id == system_admin_role["_id"]:
             raise EngineException("You cannot delete system_admin role", http_code=HTTPStatus.FORBIDDEN)
