@@ -128,12 +128,12 @@ class Engine(object):
                         if path.isfile(config_file):
                             resources_to_operations_file = config_file
                             break
-                    if not resources_to_operations_file:                        
+                    if not resources_to_operations_file:                   
                         raise EngineException("Invalid permission configuration: resources_to_operations file missing")
-                
+
                 with open(resources_to_operations_file, 'r') as f:
                     resources_to_operations = yaml.load(f)
-                
+
                 self.operations = []
 
                 for _, value in resources_to_operations["resources_to_operations"].items():

@@ -508,8 +508,9 @@ class UserTopicAuth(UserTopic):
             self.format_on_new(content, session["project_id"], make_public=session["public"])
             _id = self.auth.create_user(content["username"], content["password"])["_id"]
 
-            for mapping in content["project_role_mappings"]:
-                self.auth.assign_role_to_user(_id, mapping["project"], mapping["role"])
+            if "project_role_mappings" in content.keys():
+                for mapping in content["project_role_mappings"]:
+                    self.auth.assign_role_to_user(_id, mapping["project"], mapping["role"])
 
             rollback.append({"topic": self.topic, "_id": _id})
             del content["password"]
