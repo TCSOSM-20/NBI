@@ -138,7 +138,7 @@ class Engine(object):
 
                 for _, value in resources_to_operations["resources_to_operations"].items():
                     if value not in self.operations:
-                        self.operations += value
+                        self.operations += [value]
 
             if config["authentication"]["backend"] == "keystone":
                 self.map_from_topic_to_class["users"] = UserTopicAuth

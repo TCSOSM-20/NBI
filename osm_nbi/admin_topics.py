@@ -768,7 +768,7 @@ class RoleTopicAuth(BaseTopic):
                     raise ValidationError("Operation authorization \".\" should be True/False.")
             if role_def[-1] == ":":
                 raise ValidationError("Operation cannot end with \".\"")
-            
+
             role_def_matches = [op for op in operations if op.startswith(role_def)]
 
             if len(role_def_matches) == 0:
