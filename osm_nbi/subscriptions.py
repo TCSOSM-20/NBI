@@ -65,6 +65,34 @@ class SubscriptionThread(threading.Thread):
             "method": "delete",
         }
 
+    async def start_kafka(self):
+        # timeout_wait_for_kafka = 3*60
+        kafka_working = True
+        while not self.to_terminate:
+            try:
+                # bug 710 635. The library aiokafka does not recieve anything when the topci at kafka has not been
+                # created.
+                # Before subscribe, send dummy messages
+                await self.msg.aiowrite("admin", "echo", "dummy message", loop=self.loop)
+                await self.msg.aiowrite("ns", "echo", "dummy message", loop=self.loop)
+                await self.msg.aiowrite("nsi", "echo", "dummy message", loop=self.loop)
+                if not kafka_working:
+                    self.logger.critical("kafka is working again")
+                    kafka_working = True
+                await asyncio.sleep(10, loop=self.loop)
+                self.aiomain_task = asyncio.ensure_future(self.msg.aioread(("ns", "nsi"), loop=self.loop,
+                                                                           callback=self._msg_callback),
+                                                          loop=self.loop)
+                await asyncio.wait_for(self.aiomain_task, timeout=None, loop=self.loop)
+            except Exception as e:
+                if self.to_terminate:
+                    return
+                if kafka_working:
+                    # logging only first time
+                    self.logger.critical("Error accessing kafka '{}'. Retrying ...".format(e))
+                    kafka_working = False
+            await asyncio.sleep(10, loop=self.loop)
+
     def run(self):
         """
         Start of the thread
@@ -101,10 +129,8 @@ class SubscriptionThread(threading.Thread):
         self.logger.debug("Starting")
         while not self.to_terminate:
             try:
-                self.aiomain_task = asyncio.ensure_future(self.msg.aioread(("ns", "nsi"), loop=self.loop,
-                                                                           callback=self._msg_callback),
-                                                          loop=self.loop)
-                self.loop.run_until_complete(self.aiomain_task)
+
+                self.loop.run_until_complete(asyncio.ensure_future(self.start_kafka(), loop=self.loop))
             # except asyncio.CancelledError:
             #     break  # if cancelled it should end, breaking loop
             except Exception as e:
@@ -164,4 +190,5 @@ class SubscriptionThread(threading.Thread):
         :return: None
         """
         self.to_terminate = True
-        self.loop.call_soon_threadsafe(self.aiomain_task.cancel)
+        if self.aiomain_task:
+            self.loop.call_soon_threadsafe(self.aiomain_task.cancel)
