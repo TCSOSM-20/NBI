@@ -735,6 +735,35 @@ class ProjectTopicAuth(ProjectTopic):
             return v
         return None
 
+    def edit(self, session, _id, indata=None, kwargs=None, content=None):
+        """
+        Updates a project entry.
+
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id:
+        :param indata: data to be inserted
+        :param kwargs: used to override the indata descriptor
+        :param content:
+        :return: _id: identity of the inserted data.
+        """
+        indata = self._remove_envelop(indata)
+
+        # Override descriptor with query string kwargs
+        if kwargs:
+            BaseTopic._update_input_with_kwargs(indata, kwargs)
+        try:
+            indata = self._validate_input_edit(indata, force=session["force"])
+
+            if not content:
+                content = self.show(session, _id)
+            self.check_conflict_on_edit(session, content, indata, _id=_id)
+            self.format_on_edit(content, indata)
+
+            if "name" in indata:
+                self.auth.update_project(content["_id"], indata["name"])
+        except ValidationError as e:
+            raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
+
 
 class RoleTopicAuth(BaseTopic):
     topic = "roles_operations"

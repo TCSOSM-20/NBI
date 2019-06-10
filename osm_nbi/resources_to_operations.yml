@@ -182,6 +182,8 @@ resources_to_operations:
 
   "GET /admin/v1/projects/<id>": "projects:id:get"
 
+  "PUT /admin/v1/projects/<id>": "projects:id:put"
+
   "DELETE /admin/v1/projects/<id>": "projects:id:delete"
 
 ################################################################################

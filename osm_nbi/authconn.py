@@ -223,6 +223,7 @@ class Authconn:
         Create a project.
 
         :param project: project name.
+        :return: the internal id of the created project
         :raises AuthconnOperationException: if project creation failed.
         """
         raise AuthconnNotImplementedException("Should have implemented this")
@@ -242,6 +243,15 @@ class Authconn:
 
         :param filter_q: dictionary to filter project list.
         :return: list of projects
+        """
+        raise AuthconnNotImplementedException("Should have implemented this")
+
+    def update_project(self, project_id, new_name):
+        """
+        Change the name of a project
+        :param project_id: project to be changed
+        :param new_name: new name
+        :return: None
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
