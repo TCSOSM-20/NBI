@@ -655,11 +655,11 @@ class ProjectTopicAuth(ProjectTopic):
         :param db_content: The database content of this item _id
         :return: None if ok or raises EngineException with the conflict
         """
-        projects = self.auth.get_project_list()
-        current_project = [project for project in projects
-                           if project["name"] in session["project_id"]][0]
+        # projects = self.auth.get_project_list()
+        # current_project = [project for project in projects
+        #                    if project["name"] in session["project_id"]][0]
 
-        if _id == current_project["_id"]:
+        if _id == session["project_id"]:
             raise EngineException("You cannot delete your own project", http_code=HTTPStatus.CONFLICT)
 
     def new(self, rollback, session, indata=None, kwargs=None, headers=None):

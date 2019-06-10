@@ -34,7 +34,7 @@ import logging
 import yaml
 from base64 import standard_b64decode
 from copy import deepcopy
-from functools import reduce
+# from functools import reduce
 from hashlib import sha256
 from http import HTTPStatus
 from random import choice as random_choice
@@ -320,43 +320,53 @@ class Authenticator:
         if self.config["authentication"]["backend"] == "internal":
             return self._internal_new_token(session, indata, remote)
         else:
-            if indata.get("username"):
-                token, projects = self.backend.authenticate_with_user_password(
-                    indata.get("username"), indata.get("password"))
-            elif session:
-                token, projects = self.backend.authenticate_with_token(
-                    session.get("id"), indata.get("project_id"))
-            else:
-                raise AuthException("Provide credentials: username/password or Authorization Bearer token",
-                                    http_code=HTTPStatus.UNAUTHORIZED)
+            current_token = None
+            if session:
+                current_token = session.get("token")
+            token_info = self.backend.authenticate(
+                user=indata.get("username"),
+                password=indata.get("username"),
+                token=current_token,
+                project=indata.get("project_id")
+            )
 
-            if indata.get("project_id"):
-                project_id = indata.get("project_id")
-                if project_id not in projects:
-                    raise AuthException("Project {} not allowed for this user".format(project_id),
-                                        http_code=HTTPStatus.UNAUTHORIZED)
-            else:
-                project_id = projects[0]
-
-            if not session:
-                token, projects = self.backend.authenticate_with_token(token, project_id)
-
-            if project_id == "admin":
-                session_admin = True
-            else:
-                session_admin = reduce(lambda x, y: x or (True if y == "admin" else False),
-                                       projects, False)
+            # if indata.get("username"):
+            #     token, projects = self.backend.authenticate_with_user_password(
+            #         indata.get("username"), indata.get("password"))
+            # elif session:
+            #     token, projects = self.backend.authenticate_with_token(
+            #         session.get("id"), indata.get("project_id"))
+            # else:
+            #     raise AuthException("Provide credentials: username/password or Authorization Bearer token",
+            #                         http_code=HTTPStatus.UNAUTHORIZED)
+            #
+            # if indata.get("project_id"):
+            #     project_id = indata.get("project_id")
+            #     if project_id not in projects:
+            #         raise AuthException("Project {} not allowed for this user".format(project_id),
+            #                             http_code=HTTPStatus.UNAUTHORIZED)
+            # else:
+            #     project_id = projects[0]
+            #
+            # if not session:
+            #     token, projects = self.backend.authenticate_with_token(token, project_id)
+            #
+            # if project_id == "admin":
+            #     session_admin = True
+            # else:
+            #     session_admin = reduce(lambda x, y: x or (True if y == "admin" else False),
+            #                            projects, False)
 
             now = time()
             new_session = {
-                "_id": token,
-                "id": token,
+                "_id": token_info["_id"],
+                "id": token_info["_id"],
                 "issued_at": now,
-                "expires": now + 3600,
-                "project_id": project_id,
-                "username": indata.get("username") if not session else session.get("username"),
+                "expires": token_info.get("expires", now + 3600),
+                "project_id": token_info["project_id"],
+                "username": token_info.get("username") or session.get("username"),
                 "remote_port": remote.port,
-                "admin": session_admin
+                "admin": True if token_info.get("project_name") == "admin" else False   # TODO put admin in RBAC
             }
 
             if remote.name:
@@ -365,7 +375,7 @@ class Authenticator:
                 new_session["remote_host"] = remote.ip
 
             # TODO: check if this can be avoided. Backend may provide enough information
-            self.tokens_cache[token] = new_session
+            self.tokens_cache[token_info["_id"]] = new_session
 
             return deepcopy(new_session)
 

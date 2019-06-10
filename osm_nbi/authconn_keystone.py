@@ -77,58 +77,110 @@ class AuthconnKeystone(Authconn):
         self.sess = session.Session(auth=self.auth)
         self.keystone = client.Client(session=self.sess)
 
-    def authenticate_with_user_password(self, user, password):
+    def authenticate(self, user, password, project=None, token=None):
         """
-        Authenticate a user using username and password.
+        Authenticate a user using username/password or token, plus project
+        :param user: user: name, id or None
+        :param password: password or None
+        :param project: name, id, or None. If None first found project will be used to get an scope token
+        :param token: previous token to obtain authorization
+        :return: the scoped token info or raises an exception. The token is a dictionary with:
+            _id:  token string id,
+            username: username,
+            project_id: scoped_token project_id,
+            project_name: scoped_token project_name,
+            expires: epoch time when it expires,
 
-        :param user: username
-        :param password: password
-        :return: an unscoped token that grants access to project list
         """
         try:
-            user_id = list(filter(lambda x: x.name == user, self.keystone.users.list()))[0].id
-            project_names = [project.name for project in self.keystone.projects.list(user=user_id)]
+            username = None
+            user_id = None
+            project_id = None
+            project_name = None
 
-            token = self.keystone.get_raw_token_from_identity_service(
+            if user:
+                if is_valid_uuid(user):
+                    user_id = user
+                else:
+                    username = user
+
+                # get an unscoped token firstly
+                unscoped_token = self.keystone.get_raw_token_from_identity_service(
+                    auth_url=self.auth_url,
+                    user_id=user_id,
+                    username=username,
+                    password=password,
+                    user_domain_name=self.user_domain_name,
+                    project_domain_name=self.project_domain_name)
+            elif token:
+                unscoped_token = self.keystone.tokens.validate(token=token)
+            else:
+                raise AuthException("Provide credentials: username/password or Authorization Bearer token",
+                                    http_code=HTTPStatus.UNAUTHORIZED)
+
+            if not project:
+                # get first project for the user
+                project_list = self.keystone.projects.list(user=unscoped_token["user"]["id"])
+                if not project_list:
+                    raise AuthException("The user {} has not any project and cannot be used for authentication".
+                                        format(user), http_code=HTTPStatus.UNAUTHORIZED)
+                project_id = project_list[0].id
+            else:
+                if is_valid_uuid(project):
+                    project_id = project
+                else:
+                    project_name = project
+
+            scoped_token = self.keystone.get_raw_token_from_identity_service(
                 auth_url=self.auth_url,
-                username=user,
-                password=password,
+                project_name=project_name,
+                project_id=project_id,
                 user_domain_name=self.user_domain_name,
-                project_domain_name=self.project_domain_name)
+                project_domain_name=self.project_domain_name,
+                token=unscoped_token["auth_token"])
 
-            return token["auth_token"], project_names
+            auth_token = {
+                "_id": scoped_token.auth_token,
+                "username": scoped_token.username,
+                "project_id": scoped_token.project_id,
+                "project_name": scoped_token.project_name,
+                "expires": scoped_token.expires.timestamp(),
+            }
+
+            return auth_token
         except ClientException as e:
             self.logger.exception("Error during user authentication using keystone. Method: basic: {}".format(e))
             raise AuthException("Error during user authentication using Keystone: {}".format(e),
                                 http_code=HTTPStatus.UNAUTHORIZED)
 
-    def authenticate_with_token(self, token, project=None):
-        """
-        Authenticate a user using a token. Can be used to revalidate the token
-        or to get a scoped token.
-
-        :param token: a valid token.
-        :param project: (optional) project for a scoped token.
-        :return: return a revalidated token, scoped if a project was passed or
-        the previous token was already scoped.
-        """
-        try:
-            token_info = self.keystone.tokens.validate(token=token)
-            projects = self.keystone.projects.list(user=token_info["user"]["id"])
-            project_names = [project.name for project in projects]
-
-            new_token = self.keystone.get_raw_token_from_identity_service(
-                auth_url=self.auth_url,
-                token=token,
-                project_name=project,
-                user_domain_name=self.user_domain_name,
-                project_domain_name=self.project_domain_name)
-
-            return new_token["auth_token"], project_names
-        except ClientException as e:
-            self.logger.exception("Error during user authentication using keystone. Method: bearer: {}".format(e))
-            raise AuthException("Error during user authentication using Keystone: {}".format(e),
-                                http_code=HTTPStatus.UNAUTHORIZED)
+    # def authenticate_with_token(self, token, project=None):
+    #     """
+    #     Authenticate a user using a token. Can be used to revalidate the token
+    #     or to get a scoped token.
+    #
+    #     :param token: a valid token.
+    #     :param project: (optional) project for a scoped token.
+    #     :return: return a revalidated token, scoped if a project was passed or
+    #     the previous token was already scoped.
+    #     """
+    #     try:
+    #         token_info = self.keystone.tokens.validate(token=token)
+    #         projects = self.keystone.projects.list(user=token_info["user"]["id"])
+    #         project_names = [project.name for project in projects]
+    #
+    #         new_token = self.keystone.get_raw_token_from_identity_service(
+    #             auth_url=self.auth_url,
+    #             token=token,
+    #             project_name=project,
+    #             project_id=None,
+    #             user_domain_name=self.user_domain_name,
+    #             project_domain_name=self.project_domain_name)
+    #
+    #         return new_token["auth_token"], project_names
+    #     except ClientException as e:
+    #         self.logger.exception("Error during user authentication using keystone. Method: bearer: {}".format(e))
+    #         raise AuthException("Error during user authentication using Keystone: {}".format(e),
+    #                             http_code=HTTPStatus.UNAUTHORIZED)
 
     def validate_token(self, token):
         """
@@ -243,12 +295,13 @@ class AuthconnKeystone(Authconn):
         :raises AuthconnOperationException: if user deletion failed.
         """
         try:
-            users = self.keystone.users.list()
-            user_obj = [user for user in users if user.id == user_id][0]
-            result, _ = self.keystone.users.delete(user_obj)
+            # users = self.keystone.users.list()
+            # user_obj = [user for user in users if user.id == user_id][0]
+            # result, _ = self.keystone.users.delete(user_obj)
 
+            result, detail = self.keystone.users.delete(user_id)
             if result.status_code != 204:
-                raise ClientException("User was not deleted")
+                raise ClientException("error {} {}".format(result.status_code, detail))
 
             return True
         except ClientException as e:
@@ -348,17 +401,17 @@ class AuthconnKeystone(Authconn):
         try:
             roles = self.keystone.roles.list()
             role_obj = [role for role in roles if role.id == role_id][0]
-            result, _ = self.keystone.roles.delete(role_obj)
+            result, detail = self.keystone.roles.delete(role_obj)
 
             if result.status_code != 204:
-                raise ClientException("Role was not deleted")
+                raise ClientException("error {} {}".format(result.status_code, detail))
 
             return True
         except ClientException as e:
             self.logger.exception("Error during role deletion using keystone: {}".format(e))
             raise AuthconnOperationException("Error during role deletion using Keystone: {}".format(e))
 
-    def get_project_list(self, filter_q={}):
+    def get_project_list(self, filter_q=None):
         """
         Get all the projects.
 
@@ -366,19 +419,19 @@ class AuthconnKeystone(Authconn):
         :return: list of projects
         """
         try:
-            projects = self.keystone.projects.list()
+            filter_name = None
+            if filter_q:
+                filter_name = filter_q.get("name")
+            projects = self.keystone.projects.list(name=filter_name)
+
             projects = [{
                 "name": project.name,
                 "_id": project.id
-            } for project in projects if project.name != self.admin_project]
+            } for project in projects]
 
-            allowed_fields = ["_id", "name"]
-            for key in filter_q.keys():
-                if key not in allowed_fields:
-                    continue
-
+            if filter_q and filter_q.get("_id"):
                 projects = [project for project in projects
-                            if filter_q[key] == project[key]]
+                            if filter_q["_id"] == project["_id"]]
 
             return projects
         except ClientException as e:
@@ -409,12 +462,13 @@ class AuthconnKeystone(Authconn):
         :raises AuthconnOperationException: if project deletion failed.
         """
         try:
-            projects = self.keystone.projects.list()
-            project_obj = [project for project in projects if project.id == project_id][0]
-            result, _ = self.keystone.projects.delete(project_obj)
+            # projects = self.keystone.projects.list()
+            # project_obj = [project for project in projects if project.id == project_id][0]
+            # result, _ = self.keystone.projects.delete(project_obj)
 
+            result, detail = self.keystone.projects.delete(project_id)
             if result.status_code != 204:
-                raise ClientException("Project was not deleted")
+                raise ClientException("error {} {}".format(result.status_code, detail))
 
             return True
         except ClientException as e:

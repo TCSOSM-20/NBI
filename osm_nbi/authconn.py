@@ -96,27 +96,34 @@ class Authconn:
         """
         self.config = config
 
-    def authenticate_with_user_password(self, user, password):
+    def authenticate(self, user, password, project=None, token=None):
         """
-        Authenticate a user using username and password.
+        Authenticate a user using username/password or token, plus project
+        :param user: user: name, id or None
+        :param password: password or None
+        :param project: name, id, or None. If None first found project will be used to get an scope token
+        :param token: previous token to obtain authorization
+        :return: the scoped token info or raises an exception. The token is a dictionary with:
+            _id:  token string id,
+            username: username,
+            project_id: scoped_token project_id,
+            project_name: scoped_token project_name,
+            expires: epoch time when it expires,
 
-        :param user: username
-        :param password: password
-        :return: an unscoped token that grants access to project list
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def authenticate_with_token(self, token, project=None):
-        """
-        Authenticate a user using a token. Can be used to revalidate the token
-        or to get a scoped token.
-
-        :param token: a valid token.
-        :param project: (optional) project for a scoped token.
-        :return: return a revalidated token, scoped if a project was passed or
-        the previous token was already scoped.
-        """
-        raise AuthconnNotImplementedException("Should have implemented this")
+    # def authenticate_with_token(self, token, project=None):
+    #     """
+    #     Authenticate a user using a token. Can be used to revalidate the token
+    #     or to get a scoped token.
+    #
+    #     :param token: a valid token.
+    #     :param project: (optional) project for a scoped token.
+    #     :return: return a revalidated token, scoped if a project was passed or
+    #     the previous token was already scoped.
+    #     """
+    #     raise AuthconnNotImplementedException("Should have implemented this")
 
     def validate_token(self, token):
         """
@@ -237,11 +244,11 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def get_project_list(self, filter_q={}):
+    def get_project_list(self, filter_q=None):
         """
         Get all the projects.
 
-        :param filter_q: dictionary to filter project list.
+        :param filter_q: dictionary to filter project list, by "name" and/or "_id"
         :return: list of projects
         """
         raise AuthconnNotImplementedException("Should have implemented this")
