@@ -28,7 +28,7 @@ it for OSM.
 __author__ = "Eduardo Sousa <esousa@whitestack.com>"
 __date__ = "$27-jul-2018 23:59:59$"
 
-from authconn import Authconn, AuthException, AuthconnOperationException
+from authconn import Authconn, AuthException, AuthconnOperationException, AuthconnNotFoundException
 
 import logging
 import requests
@@ -268,24 +268,35 @@ class AuthconnKeystone(Authconn):
         try:
             new_user = self.keystone.users.create(user, password=password, domain=self.user_domain_name)
             return {"username": new_user.name, "_id": new_user.id}
+        except Conflict as e:
+            # self.logger.exception("Error during user creation using keystone: {}".format(e))
+            raise AuthconnOperationException(e, http_code=HTTPStatus.CONFLICT)
         except ClientException as e:
             self.logger.exception("Error during user creation using keystone: {}".format(e))
             raise AuthconnOperationException("Error during user creation using Keystone: {}".format(e))
 
-    def change_password(self, user, new_password):
+    def update_user(self, user, new_name=None, new_password=None):
         """
-        Change the user password.
+        Change the user name and/or password.
 
-        :param user: username.
+        :param user: username or user_id
+        :param new_name: new name
         :param new_password: new password.
-        :raises AuthconnOperationException: if user password change failed.
+        :raises AuthconnOperationException: if change failed.
         """
         try:
-            user_obj = list(filter(lambda x: x.name == user, self.keystone.users.list()))[0]
-            self.keystone.users.update(user_obj, password=new_password)
+            if is_valid_uuid(user):
+                user_id = user
+            else:
+                user_obj_list = self.keystone.users.list(name=user)
+                if not user_obj_list:
+                    raise AuthconnNotFoundException("User '{}' not found".format(user))
+                user_id = user_obj_list[0].id
+
+            self.keystone.users.update(user_id, password=new_password, name=new_name)
         except ClientException as e:
-            self.logger.exception("Error during user password update using keystone: {}".format(e))
-            raise AuthconnOperationException("Error during user password update using Keystone: {}".format(e))
+            self.logger.exception("Error during user password/name update using keystone: {}".format(e))
+            raise AuthconnOperationException("Error during user password/name update using Keystone: {}".format(e))
 
     def delete_user(self, user_id):
         """
@@ -308,28 +319,26 @@ class AuthconnKeystone(Authconn):
             self.logger.exception("Error during user deletion using keystone: {}".format(e))
             raise AuthconnOperationException("Error during user deletion using Keystone: {}".format(e))
 
-    def get_user_list(self, filter_q={}):
+    def get_user_list(self, filter_q=None):
         """
         Get user list.
 
-        :param filter_q: dictionary to filter user list.
+        :param filter_q: dictionary to filter user list by name (username is also admited) and/or _id
         :return: returns a list of users.
         """
         try:
-            users = self.keystone.users.list()
+            filter_name = None
+            if filter_q:
+                filter_name = filter_q.get("name") or filter_q.get("username")
+            users = self.keystone.users.list(name=filter_name)
             users = [{
                 "username": user.name,
                 "_id": user.id,
                 "id": user.id
             } for user in users if user.name != self.admin_username]
 
-            allowed_fields = ["_id", "id", "username"]
-            for key in filter_q.keys():
-                if key not in allowed_fields:
-                    continue
-
-                users = [user for user in users 
-                         if filter_q[key] == user[key]]
+            if filter_q and filter_q.get("_id"):
+                users = [user for user in users if filter_q["_id"] == user["_id"]]
 
             for user in users:
                 projects = self.keystone.projects.list(user=user["_id"])
@@ -501,38 +510,70 @@ class AuthconnKeystone(Authconn):
             if is_valid_uuid(user):
                 user_obj = self.keystone.users.get(user)
             else:
-                user_obj = self.keystone.users.list(name=user)[0]
+                user_obj_list = self.keystone.users.list(name=user)
+                if not user_obj_list:
+                    raise AuthconnNotFoundException("User '{}' not found".format(user))
+                user_obj = user_obj_list[0]
 
             if is_valid_uuid(project):
                 project_obj = self.keystone.projects.get(project)
             else:
-                project_obj = self.keystone.projects.list(name=project)[0]
+                project_obj_list = self.keystone.projects.list(name=project)
+                if not project_obj_list:
+                    raise AuthconnNotFoundException("Project '{}' not found".format(project))
+                project_obj = project_obj_list[0]
 
             if is_valid_uuid(role):
                 role_obj = self.keystone.roles.get(role)
             else:
-                role_obj = self.keystone.roles.list(name=role)[0]
+                role_obj_list = self.keystone.roles.list(name=role)
+                if not role_obj_list:
+                    raise AuthconnNotFoundException("Role '{}' not found".format(role))
+                role_obj = role_obj_list[0]
 
             self.keystone.roles.grant(role_obj, user=user_obj, project=project_obj)
         except ClientException as e:
             self.logger.exception("Error during user role assignment using keystone: {}".format(e))
-            raise AuthconnOperationException("Error during user role assignment using Keystone: {}".format(e))
+            raise AuthconnOperationException("Error during role '{}' assignment to user '{}' and project '{}' using "
+                                             "Keystone: {}".format(role, user, project, e))
 
     def remove_role_from_user(self, user, project, role):
         """
         Remove a role from a user in a project.
 
         :param user: username.
-        :param project: project name.
-        :param role: role name.
+        :param project: project name or id.
+        :param role: role name or id.
+
         :raises AuthconnOperationException: if role assignment revocation failed.
         """
         try:
-            user_obj = list(filter(lambda x: x.name == user, self.keystone.users.list()))[0]
-            project_obj = list(filter(lambda x: x.name == project, self.keystone.projects.list()))[0]
-            role_obj = list(filter(lambda x: x.name == role, self.keystone.roles.list()))[0]
+            if is_valid_uuid(user):
+                user_obj = self.keystone.users.get(user)
+            else:
+                user_obj_list = self.keystone.users.list(name=user)
+                if not user_obj_list:
+                    raise AuthconnNotFoundException("User '{}' not found".format(user))
+                user_obj = user_obj_list[0]
+
+            if is_valid_uuid(project):
+                project_obj = self.keystone.projects.get(project)
+            else:
+                project_obj_list = self.keystone.projects.list(name=project)
+                if not project_obj_list:
+                    raise AuthconnNotFoundException("Project '{}' not found".format(project))
+                project_obj = project_obj_list[0]
+
+            if is_valid_uuid(role):
+                role_obj = self.keystone.roles.get(role)
+            else:
+                role_obj_list = self.keystone.roles.list(name=role)
+                if not role_obj_list:
+                    raise AuthconnNotFoundException("Role '{}' not found".format(role))
+                role_obj = role_obj_list[0]
 
             self.keystone.roles.revoke(role_obj, user=user_obj, project=project_obj)
         except ClientException as e:
             self.logger.exception("Error during user role revocation using keystone: {}".format(e))
-            raise AuthconnOperationException("Error during user role revocation using Keystone: {}".format(e))
+            raise AuthconnOperationException("Error during role '{}' revocation to user '{}' and project '{}' using "
+                                             "Keystone: {}".format(role, user, project, e))

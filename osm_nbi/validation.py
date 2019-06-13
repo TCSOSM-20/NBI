@@ -566,16 +566,35 @@ pdu_edit_schema = {
 }
 
 # USERS
-project_role_mapping = {
-    "title": "",
+project_role_mappings = {
+    "title": "list pf projects/roles",
     "$schema": "http://json-schema.org/draft-04/schema#",
-    "type": "object",
-    "properties": {
-        "project": shortname_schema,
-        "role": shortname_schema
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "project": shortname_schema,
+            "role": shortname_schema
+        },
+        "required": ["project", "role"],
+        "additionalProperties": False
     },
-    "required": ["project", "role"],
-    "additionalProperties": False
+    "minItems": 1
+}
+project_role_mappings_optional = {
+    "title": "list of projects/roles or projects only",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "project": shortname_schema,
+            "role": shortname_schema
+        },
+        "required": ["project"],
+        "additionalProperties": False
+    },
+    "minItems": 1
 }
 user_new_schema = {
     "$schema": "http://json-schema.org/draft-04/schema#",
@@ -585,11 +604,7 @@ user_new_schema = {
         "username": shortname_schema,
         "password": passwd_schema,
         "projects": nameshort_list_schema,
-        "project_role_mappings": {
-            "type": "array",
-            "items": project_role_mapping,
-            "minItems": 1
-        },
+        "project_role_mappings": project_role_mappings,
     },
     "required": ["username", "password"],
     "additionalProperties": False
@@ -607,11 +622,9 @@ user_edit_schema = {
                 array_edition_schema
             ]
         },
-        "project_role_mappings": {
-            "type": "array",
-            "items": project_role_mapping,
-            "minItems": 1
-        },
+        "project_role_mappings": project_role_mappings,
+        "add_project_role_mappings": project_role_mappings,
+        "remove_project_role_mappings": project_role_mappings_optional,
     },
     "minProperties": 1,
     "additionalProperties": False

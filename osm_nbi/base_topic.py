@@ -60,7 +60,8 @@ class BaseTopic:
     # Alternative ID Fields for some Topics
     alt_id_field = {
         "projects": "name",
-        "users": "username"
+        "users": "username",
+        "roles": "name"
     }
 
     def __init__(self, db, fs, msg):

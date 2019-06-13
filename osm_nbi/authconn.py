@@ -79,6 +79,14 @@ class AuthconnOperationException(AuthconnException):
         super(AuthconnOperationException, self).__init__(message, http_code)
 
 
+class AuthconnNotFoundException(AuthconnException):
+    """
+    The operation executed failed because element not found.
+    """
+    def __init__(self, message, http_code=HTTPStatus.NOT_FOUND):
+        super().__init__(message, http_code)
+
+
 class Authconn:
     """
     Abstract base class for all the Auth backend connector plugins.
@@ -172,13 +180,14 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def change_password(self, user, new_password):
+    def update_user(self, user, new_name=None, new_password=None):
         """
-        Change the user password.
+        Change the user name and/or password.
 
-        :param user: username.
+        :param user: username or user_id
+        :param new_name: new name
         :param new_password: new password.
-        :raises AuthconnOperationException: if user password change failed.
+        :raises AuthconnOperationException: if change failed.
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
@@ -191,11 +200,11 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def get_user_list(self, filter_q={}):
+    def get_user_list(self, filter_q=None):
         """
         Get user list.
 
-        :param filter_q: dictionary to filter user list.
+        :param filter_q: dictionary to filter user list by name (username is also admited) and/or _id
         :return: returns a list of users.
         """
 
