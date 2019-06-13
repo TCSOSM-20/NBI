@@ -75,6 +75,7 @@ class Authenticator:
         self.resources_to_operations_mapping = {}
         self.operation_to_allowed_roles = {}
         self.logger = logging.getLogger("nbi.authenticator")
+        self.operations = []
 
     def start(self, config):
         """
@@ -157,95 +158,88 @@ class Authenticator:
         if self.config["authentication"]["backend"] == "internal":
             return
 
-        operations = []
         with open(self.resources_to_operations_file, "r") as stream:
             resources_to_operations_yaml = yaml.load(stream)
 
         for resource, operation in resources_to_operations_yaml["resources_to_operations"].items():
-            if operation not in operations:
-                operations.append(operation)
+            if operation not in self.operations:
+                self.operations.append(operation)
             self.resources_to_operations_mapping[resource] = operation
 
         records = self.db.get_list("roles_operations")
 
-        # Loading permissions to MongoDB. If there are permissions already in MongoDB, do nothing.
-        if len(records) == 0:
+        # Loading permissions to MongoDB if there is not any permission.
+        if not records:
             with open(self.roles_to_operations_file, "r") as stream:
                 roles_to_operations_yaml = yaml.load(stream)
 
-            roles = []
-            for role_with_operations in roles_to_operations_yaml["roles_to_operations"]:
-                # Verifying if role already exists. If it does, send warning to log and ignore it.
-                if role_with_operations["role"] not in roles:
-                    roles.append(role_with_operations["role"])
+            role_names = []
+            for role_with_operations in roles_to_operations_yaml["roles"]:
+                # Verifying if role already exists. If it does, raise exception
+                if role_with_operations["name"] not in role_names:
+                    role_names.append(role_with_operations["name"])
                 else:
-                    self.logger.warning("Duplicated role with name: {0}. Role definition is ignored."
-                                        .format(role_with_operations["role"]))
+                    raise AuthException("Duplicated role name '{}' at file '{}''"
+                                        .format(role_with_operations["name"], self.roles_to_operations_file))
+
+                if not role_with_operations["permissions"]:
                     continue
 
-                role_ops = {}
-                root = None
-
-                if not role_with_operations["operations"]:
-                    continue
-
-                for operation, is_allowed in role_with_operations["operations"].items():
+                for permission, is_allowed in role_with_operations["permissions"].items():
                     if not isinstance(is_allowed, bool):
-                        continue
+                        raise AuthException("Invalid value for permission '{}' at role '{}'; at file '{}'"
+                                            .format(permission, role_with_operations["name"],
+                                                    self.roles_to_operations_file))
 
-                    if operation == ":":
-                        root = is_allowed
-                        continue
+                    # TODO chek permission is ok
+                    if permission[-1] == ":":
+                        raise AuthException("Invalid permission '{}' terminated in ':' for role '{}'; at file {}"
+                                            .format(permission, role_with_operations["name"],
+                                                    self.roles_to_operations_file))
 
-                    if len(operation) != 1 and operation[-1] == ":":
-                        self.logger.warning("Invalid operation {0} terminated in ':'. "
-                                            "Operation will be discarded"
-                                            .format(operation))
-                        continue
-
-                    if operation not in role_ops.keys():
-                        role_ops[operation] = is_allowed
-                    else:
-                        self.logger.info("In role {0}, the operation {1} with the value {2} was discarded due to "
-                                         "repetition.".format(role_with_operations["role"], operation, is_allowed))
-
-                if not root:
-                    root = False
-                    self.logger.info("Root for role {0} not defined. Default value 'False' applied."
-                                     .format(role_with_operations["role"]))
+                if "default" not in role_with_operations["permissions"]:
+                    role_with_operations["permissions"]["default"] = False
+                if "admin" not in role_with_operations["permissions"]:
+                    role_with_operations["permissions"]["admin"] = False
 
                 now = time()
-                operation_to_roles_item = {
-                    "_admin": {
-                        "created": now,
-                        "modified": now,
-                    },
-                    "name": role_with_operations["role"],
-                    "root": root
+                role_with_operations["_admin"] = {
+                    "created": now,
+                    "modified": now,
                 }
 
-                for operation, value in role_ops.items():
-                    operation_to_roles_item[operation] = value
-
                 if self.config["authentication"]["backend"] != "internal" and \
-                        role_with_operations["role"] != "anonymous":
-                    keystone_id = [role for role in self.backend.get_role_list() 
-                                   if role["name"] == role_with_operations["role"]]
-                    if keystone_id:
-                        keystone_id = keystone_id[0]
+                        role_with_operations["name"] != "anonymous":
+
+                    backend_roles = self.backend.get_role_list(filter_q={"name": role_with_operations["name"]})
+
+                    if backend_roles:
+                        backend_id = backend_roles[0]["_id"]
                     else:
-                        keystone_id = self.backend.create_role(role_with_operations["role"])
-                    operation_to_roles_item["_id"] = keystone_id["_id"]
+                        backend_id = self.backend.create_role(role_with_operations["name"])
+                    role_with_operations["_id"] = backend_id
 
-                self.db.create("roles_operations", operation_to_roles_item)
+                self.db.create("roles_operations", role_with_operations)
 
-        permissions = {oper: [] for oper in operations}
+        if self.config["authentication"]["backend"] != "internal":
+            self.backend.assign_role_to_user("admin", "admin", "system_admin")
+
+        self.load_operation_to_allowed_roles()
+
+    def load_operation_to_allowed_roles(self):
+        """
+        Fills the internal self.operation_to_allowed_roles based on database role content and self.operations
+        :return: None
+        """
+
+        permissions = {oper: [] for oper in self.operations}
         records = self.db.get_list("roles_operations")
 
-        ignore_fields = ["_id", "_admin", "name", "root"]
+        ignore_fields = ["_id", "_admin", "name", "default", "admin"]
         for record in records:
-            record_permissions = {oper: record["root"] for oper in operations}
-            operations_joined = [(oper, value) for oper, value in record.items() if oper not in ignore_fields]
+            record_permissions = {oper: record["permissions"].get("default", False) for oper in self.operations}
+            operations_joined = [(oper, value) for oper, value in record["permissions"].items()
+                                 if oper not in ignore_fields]
             operations_joined.sort(key=lambda x: x[0].count(":"))
 
             for oper in operations_joined:
@@ -261,9 +255,6 @@ class Authenticator:
 
         for oper, role_list in permissions.items():
             self.operation_to_allowed_roles[oper] = role_list
-
-        if self.config["authentication"]["backend"] != "internal":
-            self.backend.assign_role_to_user("admin", "admin", "system_admin")
 
     def authorize(self):
         token = None
@@ -421,7 +412,7 @@ class Authenticator:
 
         operation = self.resources_to_operations_mapping[key]
         roles_required = self.operation_to_allowed_roles[operation]
-        roles_allowed = self.backend.get_user_role_list(session["id"])
+        roles_allowed = self.backend.get_user_role_list(session["_id"])
 
         if "anonymous" in roles_required:
             return

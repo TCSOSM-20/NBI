@@ -87,6 +87,14 @@ class AuthconnNotFoundException(AuthconnException):
         super().__init__(message, http_code)
 
 
+class AuthconnConflictException(AuthconnException):
+    """
+    The operation has conflicts.
+    """
+    def __init__(self, message, http_code=HTTPStatus.CONFLICT):
+        super().__init__(message, http_code)
+
+
 class Authconn:
     """
     Abstract base class for all the Auth backend connector plugins.
@@ -226,11 +234,21 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def get_role_list(self):
+    def get_role_list(self, filter_q=None):
         """
         Get all the roles.
 
+        :param filter_q: dictionary to filter role list by _id and/or name.
         :return: list of roles
+        """
+        raise AuthconnNotImplementedException("Should have implemented this")
+
+    def update_role(self, role, new_name):
+        """
+        Change the name of a role
+        :param role: role name or id to be changed
+        :param new_name: new name
+        :return: None
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 

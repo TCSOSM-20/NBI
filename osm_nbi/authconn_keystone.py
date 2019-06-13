@@ -28,7 +28,8 @@ it for OSM.
 __author__ = "Eduardo Sousa <esousa@whitestack.com>"
 __date__ = "$27-jul-2018 23:59:59$"
 
-from authconn import Authconn, AuthException, AuthconnOperationException, AuthconnNotFoundException
+from authconn import Authconn, AuthException, AuthconnOperationException, AuthconnNotFoundException, \
+    AuthconnConflictException
 
 import logging
 import requests
@@ -364,19 +365,26 @@ class AuthconnKeystone(Authconn):
             self.logger.exception("Error during user listing using keystone: {}".format(e))
             raise AuthconnOperationException("Error during user listing using Keystone: {}".format(e))
 
-    def get_role_list(self):
+    def get_role_list(self, filter_q=None):
         """
         Get role list.
 
+        :param filter_q: dictionary to filter role list by _id and/or name.
         :return: returns the list of roles.
         """
         try:
-            roles_list = self.keystone.roles.list()
+            filter_name = None
+            if filter_q:
+                filter_name = filter_q.get("name")
+            roles_list = self.keystone.roles.list(name=filter_name)
 
             roles = [{
                 "name": role.name,
                 "_id": role.id
             } for role in roles_list if role.name != "service"]
+
+            if filter_q and filter_q.get("_id"):
+                roles = [role for role in roles if filter_q["_id"] == role["_id"]]
 
             return roles
         except ClientException as e:
@@ -393,9 +401,9 @@ class AuthconnKeystone(Authconn):
         """
         try:
             result = self.keystone.roles.create(role)
-            return {"name": result.name, "_id": result.id}
+            return result.id
         except Conflict as ex:
-            self.logger.info("Duplicate entry: %s", str(ex))
+            raise AuthconnConflictException(str(ex))
         except ClientException as e:
             self.logger.exception("Error during role creation using keystone: {}".format(e))
             raise AuthconnOperationException("Error during role creation using Keystone: {}".format(e))
@@ -408,9 +416,7 @@ class AuthconnKeystone(Authconn):
         :raises AuthconnOperationException: if role deletion failed.
         """
         try:
-            roles = self.keystone.roles.list()
-            role_obj = [role for role in roles if role.id == role_id][0]
-            result, detail = self.keystone.roles.delete(role_obj)
+            result, detail = self.keystone.roles.delete(role_id)
 
             if result.status_code != 204:
                 raise ClientException("error {} {}".format(result.status_code, detail))
@@ -419,6 +425,26 @@ class AuthconnKeystone(Authconn):
         except ClientException as e:
             self.logger.exception("Error during role deletion using keystone: {}".format(e))
             raise AuthconnOperationException("Error during role deletion using Keystone: {}".format(e))
+
+    def update_role(self, role, new_name):
+        """
+        Change the name of a role
+        :param role: role  name or id to be changed
+        :param new_name: new name
+        :return: None
+        """
+        try:
+            if is_valid_uuid(role):
+                role_id = role
+            else:
+                role_obj_list = self.keystone.roles.list(name=role)
+                if not role_obj_list:
+                    raise AuthconnNotFoundException("Role '{}' not found".format(role))
+                role_id = role_obj_list[0].id
+            self.keystone.roles.update(role_id, name=new_name)
+        except ClientException as e:
+            # self.logger.exception("Error during role update using keystone: {}".format(e))
+            raise AuthconnOperationException("Error during role updating using Keystone: {}".format(e))
 
     def get_project_list(self, filter_q=None):
         """

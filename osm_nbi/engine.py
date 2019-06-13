@@ -58,7 +58,8 @@ class Engine(object):
 
     map_target_version_to_int = {
         "1.0": 1000,
-        "1.1": 1001
+        "1.1": 1001,
+        "1.2": 1002,
         # Add new versions here
     }
 
@@ -328,8 +329,7 @@ class Engine(object):
 
     def upgrade_db(self, current_version, target_version):
         if target_version not in self.map_target_version_to_int.keys():
-            raise EngineException("Wrong database version '{}'. Expected '{}'"
-                                  ". It cannot be up/down-grade".format(current_version, target_version),
+            raise EngineException("Cannot upgrade to version '{}' with this version of code".format(target_version),
                                   http_code=HTTPStatus.INTERNAL_SERVER_ERROR)
 
         if current_version == target_version:
@@ -353,19 +353,19 @@ class Engine(object):
             self.db.set_secret_key(serial)
             current_version = "1.0"
             
-        if current_version == "1.0" and target_version_int >= self.map_target_version_to_int["1.1"]:
+        if current_version in ("1.0", "1.1") and target_version_int >= self.map_target_version_to_int["1.2"]:
             self.db.del_list("roles_operations")
             
             version_data = {
                 "_id": "version",
-                "version_int": 1001,
-                "version": "1.1",
-                "date": "2019-05-24",
+                "version_int": 1002,
+                "version": "1.2",
+                "date": "2019-06-11",
                 "description": "set new format for roles_operations"
             }
 
             self.db.set_one("admin", {"_id": "version"}, version_data)
-            current_version = "1.1"
+            current_version = "1.2"
             # TODO add future migrations here
 
     def init_db(self, target_version='1.0'):

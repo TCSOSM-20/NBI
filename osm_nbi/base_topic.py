@@ -192,7 +192,10 @@ class BaseTopic:
         :param _id: If not None, ignore this entry that are going to change
         :return: None or raises EngineException
         """
-        _filter = self._get_project_filter(session)
+        if not self.multiproject:
+            _filter = {}
+        else:
+            _filter = self._get_project_filter(session)
         _filter["name"] = name
         if _id:
             _filter["_id.neq"] = _id
@@ -288,7 +291,10 @@ class BaseTopic:
         :param _id: server internal id
         :return: dictionary, raise exception if not found.
         """
-        filter_db = self._get_project_filter(session)
+        if not self.multiproject:
+            filter_db = {}
+        else:
+            filter_db = self._get_project_filter(session)
         # To allow project&user addressing by name AS WELL AS _id
         filter_db[BaseTopic.id_field(self.topic, _id)] = _id
         return self.db.get_one(self.topic, filter_db)
@@ -315,8 +321,8 @@ class BaseTopic:
         """
         if not filter_q:
             filter_q = {}
-
-        filter_q.update(self._get_project_filter(session))
+        if self.multiproject:
+            filter_q.update(self._get_project_filter(session))
 
         # TODO transform data for SOL005 URL requests. Transform filtering
         # TODO implement "field-type" query string SOL005
@@ -371,7 +377,8 @@ class BaseTopic:
         # TODO add admin to filter, validate rights
         if not filter_q:
             filter_q = {}
-        filter_q.update(self._get_project_filter(session))
+        if self.multiproject:
+            filter_q.update(self._get_project_filter(session))
         return self.db.del_list(self.topic, filter_q)
 
     def delete_extra(self, session, _id, db_content):
@@ -405,7 +412,8 @@ class BaseTopic:
         if dry_run:
             return None
         
-        filter_q.update(self._get_project_filter(session))
+        if self.multiproject:
+            filter_q.update(self._get_project_filter(session))
         if self.multiproject and session["project_id"]:
             # remove reference from project_read. If not last delete
             self.db.set_one(self.topic, filter_q, update_dict=None,

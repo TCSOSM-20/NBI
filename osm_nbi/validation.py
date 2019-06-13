@@ -661,20 +661,34 @@ roles_new_schema = {
     "type": "object",
     "properties": {
         "name": shortname_schema,
-        "root": bool_schema,
+        "permissions": {
+            "type": "object",
+            "patternProperties": {
+                ".": bool_schema,
+            },
+            # "minProperties": 1,
+        }
     },
-    "required": ["name", "root"],
-    "additionalProperties": True
+    "required": ["name"],
+    "additionalProperties": False
 }
 roles_edit_schema = {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "title": "Roles edit schema for administrators",
     "type": "object",
     "properties": {
-        "root": bool_schema,
+        "name": shortname_schema,
+        "permissions": {
+            "type": "object",
+            "patternProperties": {
+                ".": {
+                    "oneOf": [bool_schema, null_schema]
+                }
+            },
+            # "minProperties": 1,
+        }
     },
-    "required": ["root"],
-    "additionalProperties": True,
+    "additionalProperties": False,
     "minProperties": 1
 }
 
