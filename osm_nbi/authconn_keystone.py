@@ -188,16 +188,30 @@ class AuthconnKeystone(Authconn):
         Check if the token is valid.
 
         :param token: token to validate
-        :return: dictionary with information associated with the token. If the
-        token is not valid, returns None.
+        :return: dictionary with information associated with the token:
+             "expires":
+             "_id": token_id,
+             "project_id": project_id,
+             "username": ,
+             "roles": list with dict containing {name, id}
+         If the token is not valid an exception is raised.
         """
         if not token:
             return
 
         try:
             token_info = self.keystone.tokens.validate(token=token)
+            ses = {
+                "_id": token_info["auth_token"],
+                "project_id": token_info["project"]["id"],
+                "project_name": token_info["project"]["name"],
+                "user_id": token_info["user"]["id"],
+                "username": token_info["user"]["name"],
+                "roles": token_info["roles"],
+                "expires": token_info.expires.timestamp()
+            }
 
-            return token_info
+            return ses
         except ClientException as e:
             self.logger.exception("Error during token validation using keystone: {}".format(e))
             raise AuthException("Error during token validation using Keystone: {}".format(e),

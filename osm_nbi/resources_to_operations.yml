@@ -358,3 +358,9 @@ resources_to_operations:
   "GET /nsilcm/v1/netslice_instances/<SliceInstanceId>/nsi_lcm_op_occs": "slice_instances:id:opps:get"
 
   "GET /nsilcm/v1/netslice_instances/<SliceInstanceId>/nsi_lcm_op_occs/<nsiLcmOpOccId>": "slice_instances:id:opps:id:get"
+
+################################################################################
+############################ Admin          ####################################
+################################################################################
+
+  "GET ADMIN": "admin"

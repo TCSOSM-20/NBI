@@ -955,6 +955,10 @@ class Server(object):
                 cherrypy.response.status = HTTPStatus.NO_CONTENT.value
             else:
                 raise NbiException("Method {} not allowed".format(method), HTTPStatus.METHOD_NOT_ALLOWED)
+
+            # if Role information changes, it is needed to reload the information of roles
+            if topic == "roles" and method != "GET":
+                self.authenticator.load_operation_to_allowed_roles()
             return self._format_out(outdata, session, _format)
         except Exception as e:
             if isinstance(e, (NbiException, EngineException, DbException, FsException, MsgException, AuthException,
