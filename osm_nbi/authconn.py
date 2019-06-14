@@ -31,11 +31,18 @@ from http import HTTPStatus
 
 class AuthException(Exception):
     """
-    Authentication error.
+    Authentication error, because token, user password not recognized
     """
     def __init__(self, message, http_code=HTTPStatus.UNAUTHORIZED):
         super(AuthException, self).__init__(message)
         self.http_code = http_code
+
+
+class AuthExceptionUnauthorized(AuthException):
+    """
+    Authentication error, because not having rights to make this operation
+    """
+    pass
 
 
 class AuthconnException(Exception):

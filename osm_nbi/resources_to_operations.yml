@@ -126,9 +126,9 @@ resources_to_operations:
 
   "POST /nslcm/v1/ns_instances/<nsInstanceId>/scale": "ns_instances:id:scale:post"
 
-  "GET /nslcm/v1/ns_instances/<nsInstanceId>/ns_lcm_op_occs": "ns_instances:id:opps:get"
+  "GET /nslcm/v1/ns_lcm_op_occs": "ns_instances:opps:get"
 
-  "GET /nslcm/v1/ns_instances/<nsInstanceId>/ns_lcm_op_occs/<nsLcmOpOccId>": "ns_instances:id:opps:id:get"
+  "GET /nslcm/v1/ns_lcm_op_occs/<nsLcmOpOccId>": "ns_instances:opps:id:get"
 
 ################################################################################
 ################################# VNF Instances ################################
@@ -355,12 +355,12 @@ resources_to_operations:
 
   "POST /nsilcm/v1/netslice_instances/<SliceInstanceId>/action": "slice_instances:id:action:post"
 
-  "GET /nsilcm/v1/netslice_instances/<SliceInstanceId>/nsi_lcm_op_occs": "slice_instances:id:opps:get"
+  "GET /nsilcm/v1/nsi_lcm_op_occs": "slice_instances:opps:get"
 
-  "GET /nsilcm/v1/netslice_instances/<SliceInstanceId>/nsi_lcm_op_occs/<nsiLcmOpOccId>": "slice_instances:id:opps:id:get"
+  "GET /nsilcm/v1/nsi_lcm_op_occs/<nsiLcmOpOccId>": "slice_instances:opps:id:get"
 
 ################################################################################
-############################ Admin          ####################################
+############################ QUERY STRING admin operations #####################
 ################################################################################
 
   "GET ADMIN": "admin"

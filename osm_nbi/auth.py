@@ -42,7 +42,7 @@ from time import time
 from os import path
 from base_topic import BaseTopic    # To allow project names in project_id
 
-from authconn import AuthException
+from authconn import AuthException, AuthExceptionUnauthorized
 from authconn_keystone import AuthconnKeystone
 from osm_common import dbmongo
 from osm_common import dbmemory
@@ -292,21 +292,18 @@ class Authenticator:
                 if not token:
                     raise AuthException("Needed a token or Authorization http header",
                                         http_code=HTTPStatus.UNAUTHORIZED)
-                try:
-                    token_info = self.backend.validate_token(token)
-                    # TODO add to token info remote host, port
+                token_info = self.backend.validate_token(token)
+                # TODO add to token info remote host, port
 
-                    self.check_permissions(token_info, cherrypy.request.path_info,
-                                           cherrypy.request.method)
-                    return token_info
-                except AuthException:
-                    self.del_token(token)
-                    raise
+                self.check_permissions(token_info, cherrypy.request.path_info,
+                                       cherrypy.request.method)
+                return token_info
         except AuthException as e:
-            if cherrypy.session.get('Authorization'):
-                del cherrypy.session['Authorization']
-            cherrypy.response.headers["WWW-Authenticate"] = 'Bearer realm="{}"'.format(e)
-            raise AuthException(str(e))
+            if not isinstance(e, AuthExceptionUnauthorized):
+                if cherrypy.session.get('Authorization'):
+                    del cherrypy.session['Authorization']
+                cherrypy.response.headers["WWW-Authenticate"] = 'Bearer realm="{}"'.format(e)
+            raise
 
     def new_token(self, session, indata, remote):
         if self.config["authentication"]["backend"] == "internal":
@@ -429,7 +426,7 @@ class Authenticator:
             if role in roles_required:
                 return
 
-        raise AuthException("Access denied: lack of permissions.")
+        raise AuthExceptionUnauthorized("Access denied: lack of permissions.")
 
     def get_user_list(self):
         return self.backend.get_user_list()
