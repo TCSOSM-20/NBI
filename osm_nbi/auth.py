@@ -314,7 +314,7 @@ class Authenticator:
                 current_token = session.get("token")
             token_info = self.backend.authenticate(
                 user=indata.get("username"),
-                password=indata.get("username"),
+                password=indata.get("password"),
                 token=current_token,
                 project=indata.get("project_id")
             )
