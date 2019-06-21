@@ -15,7 +15,7 @@
 
 import logging
 import yaml
-from osm_common import dbmongo, dbmemory, fslocal, msglocal, msgkafka, version as common_version
+from osm_common import dbmongo, dbmemory, fslocal, fsmongo, msglocal, msgkafka, version as common_version
 from osm_common.dbbase import DbException
 from osm_common.fsbase import FsException
 from osm_common.msgbase import MsgException
@@ -105,6 +105,9 @@ class Engine(object):
             if not self.fs:
                 if config["storage"]["driver"] == "local":
                     self.fs = fslocal.FsLocal()
+                    self.fs.fs_connect(config["storage"])
+                elif config["storage"]["driver"] == "mongo":
+                    self.fs = fsmongo.FsMongo()
                     self.fs.fs_connect(config["storage"])
                 else:
                     raise EngineException("Invalid configuration param '{}' at '[storage]':'driver'".format(

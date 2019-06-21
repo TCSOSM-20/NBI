@@ -64,7 +64,11 @@ ENV OSMNBI_SOCKET_PORT                          9999
 ENV OSMNBI_SERVER_SSL_CERTIFICATE               /app/NBI/osm_nbi/http/cert.pem
 ENV OSMNBI_SERVER_SSL_PRIVATE_KEY               /app/NBI/osm_nbi/http/privkey.pem
 # storage
+ENV OSMNBI_STORAGE_DRIVER                       local
 ENV OSMNBI_STORAGE_PATH                         /app/storage
+#ENV OSMNBI_STORAGE_DRIVER                       mongo
+#ENV OSMNBI_STORAGE_URI                          mongodb://mongo:27017
+#ENV OSMNBI_STORAGE_COLLECTION                   files
 # database
 ENV OSMNBI_DATABASE_DRIVER                      mongo
 ENV OSMNBI_DATABASE_HOST                        mongo
