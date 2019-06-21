@@ -25,6 +25,7 @@ from validation import validate_input
 from validation import ValidationError
 from validation import is_valid_uuid    # To check that User/Project Names don't look like UUIDs
 from base_topic import BaseTopic, EngineException
+from authconn_keystone import AuthconnKeystone
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
@@ -58,7 +59,7 @@ class UserTopic(BaseTopic):
             raise EngineException("username '{}' exists".format(indata["username"]), HTTPStatus.CONFLICT)
         # check projects
         if not session["force"]:
-            for p in indata.get("projects"):
+            for p in indata.get("projects") or []:
                 # To allow project addressing by Name as well as ID
                 if not self.db.get_one("projects", {BaseTopic.id_field("projects", p): p}, fail_on_empty=False,
                                        fail_on_more=False):
@@ -393,7 +394,7 @@ class UserTopicAuth(UserTopic):
         """
         username = indata.get("username")
         if is_valid_uuid(username):
-            raise EngineException("username '{}' cannot be a uuid format".format(username),
+            raise EngineException("username '{}' cannot have a uuid format".format(username),
                                   HTTPStatus.UNPROCESSABLE_ENTITY)
 
         # Check that username is not used, regardless keystone already checks this
@@ -418,7 +419,7 @@ class UserTopicAuth(UserTopic):
         if "username" in edit_content:
             username = edit_content.get("username")
             if is_valid_uuid(username):
-                raise EngineException("username '{}' cannot be an uuid format".format(username),
+                raise EngineException("username '{}' cannot have an uuid format".format(username),
                                       HTTPStatus.UNPROCESSABLE_ENTITY)
 
             # Check that username is not used, regardless keystone already checks this
@@ -703,7 +704,7 @@ class ProjectTopicAuth(ProjectTopic):
         """
         project_name = indata.get("name")
         if is_valid_uuid(project_name):
-            raise EngineException("project name '{}' cannot be an uuid format".format(project_name),
+            raise EngineException("project name '{}' cannot have an uuid format".format(project_name),
                                   HTTPStatus.UNPROCESSABLE_ENTITY)
 
         project_list = self.auth.get_project_list(filter_q={"name": project_name})
@@ -857,8 +858,8 @@ class ProjectTopicAuth(ProjectTopic):
 
 
 class RoleTopicAuth(BaseTopic):
-    topic = "roles_operations"
-    topic_msg = None  # "roles"
+    topic = "roles"
+    topic_msg = None    # "roles"
     schema_new = roles_new_schema
     schema_edit = roles_edit_schema
     multiproject = False
@@ -867,6 +868,7 @@ class RoleTopicAuth(BaseTopic):
         BaseTopic.__init__(self, db, fs, msg)
         self.auth = auth
         self.operations = ops
+        self.topic = "roles_operations" if isinstance(auth, AuthconnKeystone) else "roles"
 
     @staticmethod
     def validate_role_definition(operations, role_definitions):
@@ -963,10 +965,9 @@ class RoleTopicAuth(BaseTopic):
         :return: None if ok or raises EngineException with the conflict
         """
         roles = self.auth.get_role_list()
-        system_admin_role = [role for role in roles
-                             if role["name"] == "system_admin"][0]
+        system_admin_roles = [role for role in roles if role["name"] == "system_admin"]
 
-        if _id == system_admin_role["_id"]:
+        if system_admin_roles and _id == system_admin_roles[0]["_id"]:
             raise EngineException("You cannot delete system_admin role", http_code=HTTPStatus.FORBIDDEN)
 
     @staticmethod
@@ -1033,6 +1034,7 @@ class RoleTopicAuth(BaseTopic):
     #     :return: dictionary, raise exception if not found.
     #     """
     #     filter_db = {"_id": _id}
+    #     filter_db = { BaseTopic.id_field(self.topic, _id): _id }   # To allow role addressing by name
     #
     #     role = self.db.get_one(self.topic, filter_db)
     #     new_role = dict(role)
@@ -1108,7 +1110,8 @@ class RoleTopicAuth(BaseTopic):
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
         self.check_conflict_on_del(session, _id, None)
-        filter_q = {"_id": _id}
+        # filter_q = {"_id": _id}
+        filter_q = {BaseTopic.id_field(self.topic, _id): _id}   # To allow role addressing by name
         if not dry_run:
             self.auth.delete_role(_id)
             v = self.db.del_one(self.topic, filter_q)

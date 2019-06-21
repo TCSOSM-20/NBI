@@ -35,18 +35,18 @@ import yaml
 from base64 import standard_b64decode
 from copy import deepcopy
 # from functools import reduce
-from hashlib import sha256
 from http import HTTPStatus
-from random import choice as random_choice
 from time import time
 from os import path
-from base_topic import BaseTopic    # To allow project names in project_id
 
 from authconn import AuthException, AuthExceptionUnauthorized
 from authconn_keystone import AuthconnKeystone
+from authconn_internal import AuthconnInternal   # Comment out for testing&debugging, uncomment when ready
 from osm_common import dbmongo
 from osm_common import dbmemory
 from osm_common.dbbase import DbException
+
+from uuid import uuid4   # For Role _id with internal authentication backend
 
 
 class Authenticator:
@@ -72,6 +72,7 @@ class Authenticator:
         self.next_db_prune_time = 0  # time when next cleaning of expired tokens must be done
         self.resources_to_operations_file = None
         self.roles_to_operations_file = None
+        self.roles_to_operations_table = None
         self.resources_to_operations_mapping = {}
         self.operation_to_allowed_roles = {}
         self.logger = logging.getLogger("nbi.authenticator")
@@ -102,6 +103,7 @@ class Authenticator:
                 if config["authentication"]["backend"] == "keystone":
                     self.backend = AuthconnKeystone(self.config["authentication"])
                 elif config["authentication"]["backend"] == "internal":
+                    self.backend = AuthconnInternal(self.config["authentication"], self.db, self.tokens_cache)
                     self._internal_tokens_prune()
                 else:
                     raise AuthException("Unknown authentication backend: {}"
@@ -134,6 +136,10 @@ class Authenticator:
                             break
                     if not self.roles_to_operations_file:
                         raise AuthException("Invalid permission configuration: roles_to_operations file missing")
+            if not self.roles_to_operations_table:  # PROVISIONAL ?
+                self.roles_to_operations_table = "roles_operations" \
+                    if config["authentication"]["backend"] == "keystone" \
+                    else "roles"
         except Exception as e:
             raise AuthException(str(e))
 
@@ -155,8 +161,10 @@ class Authenticator:
         # Always reads operation to resource mapping from file (this is static, no need to store it in MongoDB)
         # Operations encoding: "<METHOD> <URL>"
         # Note: it is faster to rewrite the value than to check if it is already there or not
-        if self.config["authentication"]["backend"] == "internal":
-            return
+
+        # PCR 28/05/2019 Commented out to allow initialization for internal backend
+        # if self.config["authentication"]["backend"] == "internal":
+        #    return
 
         with open(self.resources_to_operations_file, "r") as stream:
             resources_to_operations_yaml = yaml.load(stream)
@@ -166,7 +174,7 @@ class Authenticator:
                 self.operations.append(operation)
             self.resources_to_operations_mapping[resource] = operation
 
-        records = self.db.get_list("roles_operations")
+        records = self.db.get_list(self.roles_to_operations_table)
 
         # Loading permissions to MongoDB if there is not any permission.
         if not records:
@@ -208,18 +216,18 @@ class Authenticator:
                     "modified": now,
                 }
 
-                if self.config["authentication"]["backend"] != "internal" and \
-                        role_with_operations["name"] != "anonymous":
+                if self.config["authentication"]["backend"] == "keystone":
+                    if role_with_operations["name"] != "anonymous":
+                        backend_roles = self.backend.get_role_list(filter_q={"name": role_with_operations["name"]})
+                        if backend_roles:
+                            backend_id = backend_roles[0]["_id"]
+                        else:
+                            backend_id = self.backend.create_role(role_with_operations["name"])
+                        role_with_operations["_id"] = backend_id
+                else:
+                    role_with_operations["_id"] = str(uuid4())
 
-                    backend_roles = self.backend.get_role_list(filter_q={"name": role_with_operations["name"]})
-
-                    if backend_roles:
-                        backend_id = backend_roles[0]["_id"]
-                    else:
-                        backend_id = self.backend.create_role(role_with_operations["name"])
-                    role_with_operations["_id"] = backend_id
-
-                self.db.create("roles_operations", role_with_operations)
+                self.db.create(self.roles_to_operations_table, role_with_operations)
 
         if self.config["authentication"]["backend"] != "internal":
             self.backend.assign_role_to_user("admin", "admin", "system_admin")
@@ -234,7 +242,7 @@ class Authenticator:
         """
 
         permissions = {oper: [] for oper in self.operations}
-        records = self.db.get_list("roles_operations")
+        records = self.db.get_list(self.roles_to_operations_table)
 
         ignore_fields = ["_id", "_admin", "name", "default"]
         for record in records:
@@ -286,18 +294,17 @@ class Authenticator:
                     outdata = self.new_token(None, {"username": user, "password": passwd})
                     token = outdata["id"]
                     cherrypy.session['Authorization'] = token
-            if self.config["authentication"]["backend"] == "internal":
-                return self._internal_authorize(token)
-            else:
-                if not token:
-                    raise AuthException("Needed a token or Authorization http header",
-                                        http_code=HTTPStatus.UNAUTHORIZED)
-                token_info = self.backend.validate_token(token)
-                # TODO add to token info remote host, port
 
-                self.check_permissions(token_info, cherrypy.request.path_info,
-                                       cherrypy.request.method)
-                return token_info
+            if not token:
+                raise AuthException("Needed a token or Authorization http header",
+                                    http_code=HTTPStatus.UNAUTHORIZED)
+            token_info = self.backend.validate_token(token)
+            # TODO add to token info remote host, port
+
+            self.check_permissions(token_info, cherrypy.request.path_info,
+                                   cherrypy.request.method)
+            return token_info
+
         except AuthException as e:
             if not isinstance(e, AuthExceptionUnauthorized):
                 if cherrypy.session.get('Authorization'):
@@ -306,67 +313,39 @@ class Authenticator:
             raise
 
     def new_token(self, session, indata, remote):
-        if self.config["authentication"]["backend"] == "internal":
-            return self._internal_new_token(session, indata, remote)
-        else:
-            current_token = None
-            if session:
-                current_token = session.get("token")
-            token_info = self.backend.authenticate(
-                user=indata.get("username"),
-                password=indata.get("password"),
-                token=current_token,
-                project=indata.get("project_id")
-            )
+        current_token = None
+        if session:
+            # current_token = session.get("token")
+            current_token = session.get("_id") if self.config["authentication"]["backend"] == "keystone" \
+                else session
+        token_info = self.backend.authenticate(
+            user=indata.get("username"),
+            password=indata.get("password"),
+            token=current_token,
+            project=indata.get("project_id")
+        )
 
-            # if indata.get("username"):
-            #     token, projects = self.backend.authenticate_with_user_password(
-            #         indata.get("username"), indata.get("password"))
-            # elif session:
-            #     token, projects = self.backend.authenticate_with_token(
-            #         session.get("id"), indata.get("project_id"))
-            # else:
-            #     raise AuthException("Provide credentials: username/password or Authorization Bearer token",
-            #                         http_code=HTTPStatus.UNAUTHORIZED)
-            #
-            # if indata.get("project_id"):
-            #     project_id = indata.get("project_id")
-            #     if project_id not in projects:
-            #         raise AuthException("Project {} not allowed for this user".format(project_id),
-            #                             http_code=HTTPStatus.UNAUTHORIZED)
-            # else:
-            #     project_id = projects[0]
-            #
-            # if not session:
-            #     token, projects = self.backend.authenticate_with_token(token, project_id)
-            #
-            # if project_id == "admin":
-            #     session_admin = True
-            # else:
-            #     session_admin = reduce(lambda x, y: x or (True if y == "admin" else False),
-            #                            projects, False)
+        now = time()
+        new_session = {
+            "_id": token_info["_id"],
+            "id": token_info["_id"],
+            "issued_at": now,
+            "expires": token_info.get("expires", now + 3600),
+            "project_id": token_info["project_id"],
+            "username": token_info.get("username") or session.get("username"),
+            "remote_port": remote.port,
+            "admin": True if token_info.get("project_name") == "admin" else False   # TODO put admin in RBAC
+        }
 
-            now = time()
-            new_session = {
-                "_id": token_info["_id"],
-                "id": token_info["_id"],
-                "issued_at": now,
-                "expires": token_info.get("expires", now + 3600),
-                "project_id": token_info["project_id"],
-                "username": token_info.get("username") or session.get("username"),
-                "remote_port": remote.port,
-                "admin": True if token_info.get("project_name") == "admin" else False   # TODO put admin in RBAC
-            }
+        if remote.name:
+            new_session["remote_host"] = remote.name
+        elif remote.ip:
+            new_session["remote_host"] = remote.ip
 
-            if remote.name:
-                new_session["remote_host"] = remote.name
-            elif remote.ip:
-                new_session["remote_host"] = remote.ip
+        # TODO: check if this can be avoided. Backend may provide enough information
+        self.tokens_cache[token_info["_id"]] = new_session
 
-            # TODO: check if this can be avoided. Backend may provide enough information
-            self.tokens_cache[token_info["_id"]] = new_session
-
-            return deepcopy(new_session)
+        return deepcopy(new_session)
 
     def get_token_list(self, session):
         if self.config["authentication"]["backend"] == "internal":
@@ -389,15 +368,12 @@ class Authenticator:
             return token_value
 
     def del_token(self, token):
-        if self.config["authentication"]["backend"] == "internal":
-            return self._internal_del_token(token)
-        else:
-            try:
-                self.backend.revoke_token(token)
-                del self.tokens_cache[token]
-                return "token '{}' deleted".format(token)
-            except KeyError:
-                raise AuthException("Token '{}' not found".format(token), http_code=HTTPStatus.NOT_FOUND)
+        try:
+            self.backend.revoke_token(token)
+            self.tokens_cache.pop(token, None)
+            return "token '{}' deleted".format(token)
+        except KeyError:
+            raise AuthException("Token '{}' not found".format(token), http_code=HTTPStatus.NOT_FOUND)
 
     def check_permissions(self, session, url, method):
         self.logger.info("Session: {}".format(session))
@@ -482,97 +458,6 @@ class Authenticator:
 
         return filtered_key, parameters
 
-    def _internal_authorize(self, token_id):
-        try:
-            if not token_id:
-                raise AuthException("Needed a token or Authorization http header", http_code=HTTPStatus.UNAUTHORIZED)
-            # try to get from cache first
-            now = time()
-            session = self.tokens_cache.get(token_id)
-            if session and session["expires"] < now:
-                # delete token. MUST be done with care, as another thread maybe already delete it. Do not use del
-                self.tokens_cache.pop(token_id, None)
-                session = None
-            if session:
-                return session
-
-            # get from database if not in cache
-            session = self.db.get_one("tokens", {"_id": token_id})
-            if session["expires"] < now:
-                raise AuthException("Expired Token or Authorization http header", http_code=HTTPStatus.UNAUTHORIZED)
-            self.tokens_cache[token_id] = session
-            return session
-        except DbException as e:
-            if e.http_code == HTTPStatus.NOT_FOUND:
-                raise AuthException("Invalid Token or Authorization http header", http_code=HTTPStatus.UNAUTHORIZED)
-            else:
-                raise
-
-        except AuthException:
-            if self.config["global"].get("test.user_not_authorized"):
-                return {"id": "fake-token-id-for-test",
-                        "project_id": self.config["global"].get("test.project_not_authorized", "admin"),
-                        "username": self.config["global"]["test.user_not_authorized"], "admin": True}
-            else:
-                raise
-
-    def _internal_new_token(self, session, indata, remote):
-        now = time()
-        user_content = None
-
-        # Try using username/password
-        if indata.get("username"):
-            user_rows = self.db.get_list("users", {"username": indata.get("username")})
-            if user_rows:
-                user_content = user_rows[0]
-                salt = user_content["_admin"]["salt"]
-                shadow_password = sha256(indata.get("password", "").encode('utf-8') + salt.encode('utf-8')).hexdigest()
-                if shadow_password != user_content["password"]:
-                    user_content = None
-            if not user_content:
-                raise AuthException("Invalid username/password", http_code=HTTPStatus.UNAUTHORIZED)
-        elif session:
-            user_rows = self.db.get_list("users", {"username": session["username"]})
-            if user_rows:
-                user_content = user_rows[0]
-            else:
-                raise AuthException("Invalid token", http_code=HTTPStatus.UNAUTHORIZED)
-        else:
-            raise AuthException("Provide credentials: username/password or Authorization Bearer token",
-                                http_code=HTTPStatus.UNAUTHORIZED)
-
-        token_id = ''.join(random_choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
-                           for _ in range(0, 32))
-        project_id = indata.get("project_id")
-        if project_id:
-            if project_id != "admin":
-                # To allow project names in project_id
-                proj = self.db.get_one("projects", {BaseTopic.id_field("projects", project_id): project_id})
-                if proj["_id"] not in user_content["projects"] and proj["name"] not in user_content["projects"]:
-                    raise AuthException("project {} not allowed for this user"
-                                        .format(project_id), http_code=HTTPStatus.UNAUTHORIZED)
-        else:
-            project_id = user_content["projects"][0]
-        if project_id == "admin":
-            session_admin = True
-        else:
-            # To allow project names in project_id
-            project = self.db.get_one("projects", {BaseTopic.id_field("projects", project_id): project_id})
-            session_admin = project.get("admin", False)
-        new_session = {"issued_at": now, "expires": now + 3600,
-                       "_id": token_id, "id": token_id, "project_id": project_id, "username": user_content["username"],
-                       "remote_port": remote.port, "admin": session_admin}
-        if remote.name:
-            new_session["remote_host"] = remote.name
-        elif remote.ip:
-            new_session["remote_host"] = remote.ip
-
-        self.tokens_cache[token_id] = new_session
-        self.db.create("tokens", new_session)
-        # check if database must be prune
-        self._internal_tokens_prune(now)
-        return deepcopy(new_session)
-
     def _internal_get_token_list(self, session):
         now = time()
         token_list = self.db.get_list("tokens", {"username": session["username"], "expires.gt": now})
@@ -585,17 +470,6 @@ class Authenticator:
         if token_value["username"] != session["username"] and not session["admin"]:
             raise AuthException("needed admin privileges", http_code=HTTPStatus.UNAUTHORIZED)
         return token_value
-
-    def _internal_del_token(self, token_id):
-        try:
-            self.tokens_cache.pop(token_id, None)
-            self.db.del_one("tokens", {"_id": token_id})
-            return "token '{}' deleted".format(token_id)
-        except DbException as e:
-            if e.http_code == HTTPStatus.NOT_FOUND:
-                raise AuthException("Token '{}' not found".format(token_id), http_code=HTTPStatus.NOT_FOUND)
-            else:
-                raise
 
     def _internal_tokens_prune(self, now=None):
         now = now or time()

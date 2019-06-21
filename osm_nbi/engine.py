@@ -22,6 +22,7 @@ from osm_common.msgbase import MsgException
 from http import HTTPStatus
 
 from authconn_keystone import AuthconnKeystone
+from authconn_internal import AuthconnInternal
 from base_topic import EngineException, versiontuple
 from admin_topics import UserTopic, ProjectTopic, VimAccountTopic, WimAccountTopic, SdnTopic
 from admin_topics import UserTopicAuth, ProjectTopicAuth, RoleTopicAuth
@@ -50,6 +51,7 @@ class Engine(object):
         "sdns": SdnTopic,
         "users": UserTopic,
         "projects": ProjectTopic,
+        "roles": RoleTopicAuth,   # Valid for both internal and keystone authentication backends
         "nsis": NsiTopic,
         "nsilcmops": NsiLcmOpTopic
         # [NEW_TOPIC]: add an entry here
@@ -117,6 +119,8 @@ class Engine(object):
             if not self.auth:
                 if config["authentication"]["backend"] == "keystone":
                     self.auth = AuthconnKeystone(config["authentication"])
+                else:
+                    self.auth = AuthconnInternal(config["authentication"], self.db, dict())   # TO BE CONFIRMED
             if not self.operations:
                 if "resources_to_operations" in config["rbac"]:
                     resources_to_operations_file = config["rbac"]["resources_to_operations"]
@@ -308,11 +312,10 @@ class Engine(object):
         users = self.db.get_one("users", fail_on_empty=False, fail_on_more=False)
         if users:
             return None
-            # raise EngineException("Unauthorized. Database users is not empty", HTTPStatus.UNAUTHORIZED)
         user_desc = {"username": "admin", "password": "admin", "projects": ["admin"]}
         fake_session = {"project_id": "admin", "username": "admin", "admin": True, "force": True, "public": None}
-        roolback_list = []
-        _id = self.map_topic["users"].new(roolback_list, fake_session, user_desc)
+        rollback_list = []
+        _id = self.map_topic["users"].new(rollback_list, fake_session, user_desc)
         return _id
 
     def create_admin(self):
@@ -322,10 +325,10 @@ class Engine(object):
         """
         project_id = self.create_admin_project()
         user_id = self.create_admin_user()
-        if not project_id and not user_id:
-            return None
-        else:
+        if project_id or user_id:
             return {'project_id': project_id, 'user_id': user_id}
+        else:
+            return None
 
     def upgrade_db(self, current_version, target_version):
         if target_version not in self.map_target_version_to_int.keys():
@@ -354,7 +357,8 @@ class Engine(object):
             current_version = "1.0"
             
         if current_version in ("1.0", "1.1") and target_version_int >= self.map_target_version_to_int["1.2"]:
-            self.db.del_list("roles_operations")
+            table = "roles_operations" if self.config['authentication']['backend'] == "keystone" else "roles"
+            self.db.del_list(table)
             
             version_data = {
                 "_id": "version",
@@ -387,8 +391,8 @@ class Engine(object):
         if db_version != target_version:
             self.upgrade_db(db_version, target_version)
 
-        # create user admin if not exist
-        if not self.auth:
+        # create admin project&user if they don't exist
+        if self.config['authentication']['backend'] == 'internal' or not self.auth:
             self.create_admin()
         
         return

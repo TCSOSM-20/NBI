@@ -61,7 +61,8 @@ class BaseTopic:
     alt_id_field = {
         "projects": "name",
         "users": "username",
-        "roles": "name"
+        "roles": "name",
+        "roles_operations": "name"
     }
 
     def __init__(self, db, fs, msg):
@@ -73,7 +74,7 @@ class BaseTopic:
     @staticmethod
     def id_field(topic, value):
         """Returns ID Field for given topic and field value"""
-        if topic in ["projects", "users"] and not is_valid_uuid(value):
+        if topic in BaseTopic.alt_id_field.keys() and not is_valid_uuid(value):
             return BaseTopic.alt_id_field[topic]
         else:
             return "_id"
