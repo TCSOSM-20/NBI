@@ -119,13 +119,13 @@ class Authconn:
         """
         self.config = config
 
-    def authenticate(self, user, password, project=None, token=None):
+    def authenticate(self, user, password, project=None, token_info=None):
         """
-        Authenticate a user using username/password or token, plus project
+        Authenticate a user using username/password or token_info, plus project
         :param user: user: name, id or None
         :param password: password or None
         :param project: name, id, or None. If None first found project will be used to get an scope token
-        :param token: previous token to obtain authorization
+        :param token_info: previous token_info to obtain authorization
         :return: the scoped token info or raises an exception. The token is a dictionary with:
             _id:  token string id,
             username: username,

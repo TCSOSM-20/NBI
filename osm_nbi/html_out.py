@@ -128,7 +128,7 @@ html_nsilcmop_body = """
 """
 
 
-def format(data, request, response, session):
+def format(data, request, response, toke_info):
     """
     Format a nice html response, depending on the data
     :param data:
@@ -182,11 +182,11 @@ def format(data, request, response, session):
     else:
         body = html_escape(str(data))
     user_text = "    "
-    if session:
-        if session.get("username"):
-            user_text += "user: {}".format(session.get("username"))
-        if session.get("project_id"):
-            user_text += ", project: {}".format(session.get("project_id"))
+    if toke_info:
+        if toke_info.get("username"):
+            user_text += "user: {}".format(toke_info.get("username"))
+        if toke_info.get("project_id"):
+            user_text += ", project: {}".format(toke_info.get("project_id"))
     return html_start.format(user_text) + body + html_end
     # yaml.safe_dump(data, explicit_start=True, indent=4, default_flow_style=False)
     # tags=False,

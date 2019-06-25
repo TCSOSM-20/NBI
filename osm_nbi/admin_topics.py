@@ -402,8 +402,13 @@ class UserTopicAuth(UserTopic):
             raise EngineException("username '{}' is already used".format(username), HTTPStatus.CONFLICT)
 
         if "projects" in indata.keys():
-            raise EngineException("Format invalid: the keyword \"projects\" is not allowed for keystone authentication",
-                                  HTTPStatus.BAD_REQUEST)
+            # convert to new format project_role_mappings
+            if not indata.get("project_role_mappings"):
+                indata["project_role_mappings"] = []
+            for project in indata["projects"]:
+                indata["project_role_mappings"].append({"project": project, "role": "project_user"})
+            # raise EngineException("Format invalid: the keyword 'projects' is not allowed for keystone authentication",
+            #                       HTTPStatus.BAD_REQUEST)
 
     def check_conflict_on_edit(self, session, final_content, edit_content, _id):
         """

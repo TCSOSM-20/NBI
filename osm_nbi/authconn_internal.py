@@ -120,30 +120,19 @@ class AuthconnInternal(Authconn):
 
             # try to get from cache first
             now = time()
-            session = self.token_cache.get(token)
-            if session and session["expires"] < now:
+            token_info = self.token_cache.get(token)
+            if token_info and token_info["expires"] < now:
                 # delete token. MUST be done with care, as another thread maybe already delete it. Do not use del
                 self.token_cache.pop(token, None)
-                session = None
+                token_info = None
 
             # get from database if not in cache
-            if not session:
-                session = self.db.get_one("tokens", {"_id": token})
-                if session["expires"] < now:
+            if not token_info:
+                token_info = self.db.get_one("tokens", {"_id": token})
+                if token_info["expires"] < now:
                     raise AuthException("Expired Token or Authorization HTTP header", http_code=HTTPStatus.UNAUTHORIZED)
 
-            # complete token information
-            pid = session["project_id"]
-            prj = self.db.get_one("projects", {BaseTopic.id_field("projects", pid): pid})
-            session["project_id"] = prj["_id"]
-            session["project_name"] = prj["name"]
-            session["user_id"] = self.db.get_one("users", {"username": session["username"]})["_id"]
-
-            # add token roles - PROVISIONAL
-            role_id = self.db.get_one("roles", {"name": "system_admin"})["_id"]
-            session["roles"] = [{"name": "system_admin", "id": role_id}]
-
-            return session
+            return token_info
 
         except DbException as e:
             if e.http_code == HTTPStatus.NOT_FOUND:
@@ -181,14 +170,14 @@ class AuthconnInternal(Authconn):
                 self.logger.exception(msg)
                 raise AuthException(msg, http_code=HTTPStatus.UNAUTHORIZED)
 
-    def authenticate(self, user, password, project=None, token=None):
+    def authenticate(self, user, password, project=None, token_info=None):
         """
-        Authenticate a user using username/password or token, plus project
+        Authenticate a user using username/password or previous token_info plus project; its creates a new token
 
         :param user: user: name, id or None
         :param password: password or None
         :param project: name, id, or None. If None first found project will be used to get an scope token
-        :param token: previous token to obtain authorization
+        :param token_info: previous token_info to obtain authorization
         :param remote: remote host information
         :return: the scoped token info or raises an exception. The token is a dictionary with:
             _id:  token string id,
@@ -213,8 +202,8 @@ class AuthconnInternal(Authconn):
                         user_content = None
                 if not user_content:
                     raise AuthException("Invalid username/password", http_code=HTTPStatus.UNAUTHORIZED)
-            elif token:
-                user_rows = self.db.get_list("users", {"username": token["username"]})
+            elif token_info:
+                user_rows = self.db.get_list("users", {"username": token_info["username"]})
                 if user_rows:
                     user_content = user_rows[0]
                 else:
@@ -225,34 +214,42 @@ class AuthconnInternal(Authconn):
 
             token_id = ''.join(random_choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
                                for _ in range(0, 32))
-            project_id = project
 
-            if project_id:
-                if project_id != "admin":
-                    # To allow project names in project_id
-                    proj = self.db.get_one("projects", {BaseTopic.id_field("projects", project_id): project_id})
-                    if proj["_id"] not in user_content["projects"] and proj["name"] not in user_content["projects"]:
-                        raise AuthException("project {} not allowed for this user"
-                                            .format(project_id), http_code=HTTPStatus.UNAUTHORIZED)
-            else:
-                project_id = user_content["projects"][0]
+            # TODO when user contained project_role_mappings with project_id,project_ name this checking to
+            #  database will not be needed
+            if not project:
+                project = user_content["projects"][0]
 
-            if project_id == "admin":
+            # To allow project names in project_id
+            proj = self.db.get_one("projects", {BaseTopic.id_field("projects", project): project})
+            if proj["_id"] not in user_content["projects"] and proj["name"] not in user_content["projects"]:
+                raise AuthException("project {} not allowed for this user".format(project),
+                                    http_code=HTTPStatus.UNAUTHORIZED)
+
+            # TODO remove admin, this vill be used by roles RBAC
+            if proj["name"] == "admin":
                 token_admin = True
             else:
-                # To allow project names in project_id
-                proj = self.db.get_one("projects", {BaseTopic.id_field("projects", project_id): project_id})
                 token_admin = proj.get("admin", False)
 
-            new_token = {"issued_at": now, "expires": now + 3600,
-                         "_id": token_id, "id": token_id,
-                         "project_id": project_id,
+            # TODO add token roles - PROVISIONAL. Get this list from user_content["project_role_mappings"]
+            role_id = self.db.get_one("roles", {"name": "system_admin"})["_id"]
+            roles_list = [{"name": "system_admin", "id": role_id}]
+
+            new_token = {"issued_at": now,
+                         "expires": now + 3600,
+                         "_id": token_id,
+                         "id": token_id,
+                         "project_id": proj["_id"],
+                         "project_name": proj["name"],
                          "username": user_content["username"],
-                         "admin": token_admin}
+                         "user_id": user_content["_id"],
+                         "admin": token_admin,
+                         "roles": roles_list,
+                         }
 
             self.token_cache[token_id] = new_token
             self.db.create("tokens", new_token)
-            # self._internal_tokens_prune(now)   # Belongs to Authenticator - REMOVE?
             return deepcopy(new_token)
 
         except Exception as e:

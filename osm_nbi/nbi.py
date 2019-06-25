@@ -190,6 +190,264 @@ Header field name	Reference	Example	Descriptions
     Retry-After	IETF RFC 7231 [19]	Fri, 31 Dec 1999 23:59:59 GMT
 """
 
+valid_query_string = ("ADMIN", "SET_PROJECT", "FORCE", "PUBLIC")
+# ^ Contains possible administrative query string words:
+#     ADMIN=True(by default)|Project|Project-list:  See all elements, or elements of a project
+#           (not owned by my session project).
+#     PUBLIC=True(by default)|False: See/hide public elements. Set/Unset a topic to be public
+#     FORCE=True(by default)|False: Force edition/deletion operations
+#     SET_PROJECT=Project|Project-list: Add/Delete the topic to the projects portfolio
+
+valid_url_methods = {
+    # contains allowed URL and methods, and the role_permission name
+    "admin": {
+        "v1": {
+            "tokens": {"METHODS": ("GET", "POST", "DELETE"),
+                       "ROLE_PERMISSION": "tokens:",
+                       "<ID>": {"METHODS": ("GET", "DELETE"),
+                                "ROLE_PERMISSION": "tokens:id:"
+                                }
+                       },
+            "users": {"METHODS": ("GET", "POST"),
+                      "ROLE_PERMISSION": "users:",
+                      "<ID>": {"METHODS": ("GET", "POST", "DELETE", "PATCH", "PUT"),
+                               "ROLE_PERMISSION": "users:id:"
+                               }
+                      },
+            "projects": {"METHODS": ("GET", "POST"),
+                         "ROLE_PERMISSION": "projects:",
+                         "<ID>": {"METHODS": ("GET", "DELETE", "PUT"),
+                                  "ROLE_PERMISSION": "projects:id:"}
+                         },
+            "roles": {"METHODS": ("GET", "POST"),
+                      "ROLE_PERMISSION": "roles:",
+                      "<ID>": {"METHODS": ("GET", "POST", "DELETE", "PUT"),
+                               "ROLE_PERMISSION": "roles:id:"
+                               }
+                      },
+            "vims": {"METHODS": ("GET", "POST"),
+                     "ROLE_PERMISSION": "vims:",
+                     "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT"),
+                              "ROLE_PERMISSION": "vims:id:"
+                              }
+                     },
+            "vim_accounts": {"METHODS": ("GET", "POST"),
+                             "ROLE_PERMISSION": "vim_accounts:",
+                             "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT"),
+                                      "ROLE_PERMISSION": "vim_accounts:id:"
+                                      }
+                             },
+            "wim_accounts": {"METHODS": ("GET", "POST"),
+                             "ROLE_PERMISSION": "wim_accounts:",
+                             "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT"),
+                                      "ROLE_PERMISSION": "wim_accounts:id:"
+                                      }
+                             },
+            "sdns": {"METHODS": ("GET", "POST"),
+                     "ROLE_PERMISSION": "sdn_controllers:",
+                     "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT"),
+                              "ROLE_PERMISSION": "sdn_controllers:id:"
+                              }
+                     },
+        }
+    },
+    "pdu": {
+        "v1": {
+            "pdu_descriptors": {"METHODS": ("GET", "POST"),
+                                "ROLE_PERMISSION": "pduds:",
+                                "<ID>": {"METHODS": ("GET", "POST", "DELETE", "PATCH", "PUT"),
+                                         "ROLE_PERMISSION": "pduds:id:"
+                                         }
+                                },
+        }
+    },
+    "nsd": {
+        "v1": {
+            "ns_descriptors_content": {"METHODS": ("GET", "POST"),
+                                       "ROLE_PERMISSION": "nsds:",
+                                       "<ID>": {"METHODS": ("GET", "PUT", "DELETE"),
+                                                "ROLE_PERMISSION": "nsds:id:"
+                                                }
+                                       },
+            "ns_descriptors": {"METHODS": ("GET", "POST"),
+                               "ROLE_PERMISSION": "nsds:",
+                               "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),
+                                        "ROLE_PERMISSION": "nsds:id:",
+                                        "nsd_content": {"METHODS": ("GET", "PUT"),
+                                                        "ROLE_PERMISSION": "nsds:id:content:",
+                                                        },
+                                        "nsd": {"METHODS": ("GET",),  # descriptor inside package
+                                                "ROLE_PERMISSION": "nsds:id:content:"
+                                                },
+                                        "artifacts": {"*": {"METHODS": ("GET",),
+                                                            "ROLE_PERMISSION": "nsds:id:nsd_artifact:"
+                                                            }
+                                                      }
+                                        }
+                               },
+            "pnf_descriptors": {"TODO": ("GET", "POST"),
+                                "<ID>": {"TODO": ("GET", "DELETE", "PATCH"),
+                                         "pnfd_content": {"TODO": ("GET", "PUT")}
+                                         }
+                                },
+            "subscriptions": {"TODO": ("GET", "POST"),
+                              "<ID>": {"TODO": ("GET", "DELETE")}
+                              },
+        }
+    },
+    "vnfpkgm": {
+        "v1": {
+            "vnf_packages_content": {"METHODS": ("GET", "POST"),
+                                     "ROLE_PERMISSION": "vnfds:",
+                                     "<ID>": {"METHODS": ("GET", "PUT", "DELETE"),
+                                              "ROLE_PERMISSION": "vnfds:id:"}
+                                     },
+            "vnf_packages": {"METHODS": ("GET", "POST"),
+                             "ROLE_PERMISSION": "vnfds:",
+                             "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),  # GET: vnfPkgInfo
+                                      "ROLE_PERMISSION": "vnfds:id:",
+                                      "package_content": {"METHODS": ("GET", "PUT"),  # package
+                                                          "ROLE_PERMISSION": "vnfds:id:",
+                                                          "upload_from_uri": {"METHODS": (),
+                                                                              "TODO": ("POST", ),
+                                                                              "ROLE_PERMISSION": "vnfds:id:upload:"
+                                                                              }
+                                                          },
+                                      "vnfd": {"METHODS": ("GET", ),  # descriptor inside package
+                                               "ROLE_PERMISSION": "vnfds:id:content:"
+                                               },
+                                      "artifacts": {"*": {"METHODS": ("GET", ),
+                                                          "ROLE_PERMISSION": "vnfds:id:vnfd_artifact:"
+                                                          }
+                                                    }
+                                      }
+                             },
+            "subscriptions": {"TODO": ("GET", "POST"),
+                              "<ID>": {"TODO": ("GET", "DELETE")}
+                              },
+        }
+    },
+    "nslcm": {
+        "v1": {
+            "ns_instances_content": {"METHODS": ("GET", "POST"),
+                                     "ROLE_PERMISSION": "ns_instances:",
+                                     "<ID>": {"METHODS": ("GET", "DELETE"),
+                                              "ROLE_PERMISSION": "ns_instances:id:"
+                                              }
+                                     },
+            "ns_instances": {"METHODS": ("GET", "POST"),
+                             "ROLE_PERMISSION": "ns_instances:",
+                             "<ID>": {"METHODS": ("GET", "DELETE"),
+                                      "ROLE_PERMISSION": "ns_instances:id:",
+                                      "scale": {"METHODS": ("POST",),
+                                                "ROLE_PERMISSION": "ns_instances:id:scale:"
+                                                },
+                                      "terminate": {"METHODS": ("POST",),
+                                                    "ROLE_PERMISSION": "ns_instances:id:terminate:"
+                                                    },
+                                      "instantiate": {"METHODS": ("POST",),
+                                                      "ROLE_PERMISSION": "ns_instances:id:instantiate:"
+                                                      },
+                                      "action": {"METHODS": ("POST",),
+                                                 "ROLE_PERMISSION": "ns_instances:id:action:"
+                                                 },
+                                      }
+                             },
+            "ns_lcm_op_occs": {"METHODS": ("GET",),
+                               "ROLE_PERMISSION": "ns_instances:opps:",
+                               "<ID>": {"METHODS": ("GET",),
+                                        "ROLE_PERMISSION": "ns_instances:opps:id:"
+                                        },
+                               },
+            "vnfrs": {"METHODS": ("GET",),
+                      "ROLE_PERMISSION": "vnf_instances:",
+                      "<ID>": {"METHODS": ("GET",),
+                               "ROLE_PERMISSION": "vnf_instances:id:"
+                               }
+                      },
+            "vnf_instances": {"METHODS": ("GET",),
+                              "ROLE_PERMISSION": "vnf_instances:",
+                              "<ID>": {"METHODS": ("GET",),
+                                       "ROLE_PERMISSION": "vnf_instances:id:"
+                                       }
+                              },
+        }
+    },
+    "nst": {
+        "v1": {
+            "netslice_templates_content": {"METHODS": ("GET", "POST"),
+                                           "ROLE_PERMISSION": "slice_templates:",
+                                           "<ID>": {"METHODS": ("GET", "PUT", "DELETE"),
+                                                    "ROLE_PERMISSION": "slice_templates:id:", }
+                                           },
+            "netslice_templates": {"METHODS": ("GET", "POST"),
+                                   "ROLE_PERMISSION": "slice_templates:",
+                                   "<ID>": {"METHODS": ("GET", "DELETE"),
+                                            "TODO": ("PATCH",),
+                                            "ROLE_PERMISSION": "slice_templates:id:",
+                                            "nst_content": {"METHODS": ("GET", "PUT"),
+                                                            "ROLE_PERMISSION": "slice_templates:id:content:"
+                                                            },
+                                            "nst": {"METHODS": ("GET",),  # descriptor inside package
+                                                    "ROLE_PERMISSION": "slice_templates:id:content:"
+                                                    },
+                                            "artifacts": {"*": {"METHODS": ("GET",),
+                                                                "ROLE_PERMISSION": "slice_templates:id:content:"
+                                                                }
+                                                          }
+                                            }
+                                   },
+            "subscriptions": {"TODO": ("GET", "POST"),
+                              "<ID>": {"TODO": ("GET", "DELETE")}
+                              },
+        }
+    },
+    "nsilcm": {
+        "v1": {
+            "netslice_instances_content": {"METHODS": ("GET", "POST"),
+                                           "ROLE_PERMISSION": "slice_instances:",
+                                           "<ID>": {"METHODS": ("GET", "DELETE"),
+                                                    "ROLE_PERMISSION": "slice_instances:id:"
+                                                    }
+                                           },
+            "netslice_instances": {"METHODS": ("GET", "POST"),
+                                   "ROLE_PERMISSION": "slice_instances:",
+                                   "<ID>": {"METHODS": ("GET", "DELETE"),
+                                            "ROLE_PERMISSION": "slice_instances:id:",
+                                            "terminate": {"METHODS": ("POST",),
+                                                          "ROLE_PERMISSION": "slice_instances:id:terminate:"
+                                                          },
+                                            "instantiate": {"METHODS": ("POST",),
+                                                            "ROLE_PERMISSION": "slice_instances:id:instantiate:"
+                                                            },
+                                            "action": {"METHODS": ("POST",),
+                                                       "ROLE_PERMISSION": "slice_instances:id:action:"
+                                                       },
+                                            }
+                                   },
+            "nsi_lcm_op_occs": {"METHODS": ("GET",),
+                                "ROLE_PERMISSION": "slice_instances:opps:",
+                                "<ID>": {"METHODS": ("GET",),
+                                         "ROLE_PERMISSION": "slice_instances:opps:id:",
+                                         },
+                                },
+        }
+    },
+    "nspm": {
+        "v1": {
+            "pm_jobs": {
+                "<ID>": {
+                    "reports": {
+                        "<ID>": {"METHODS": ("GET",),
+                                 "ROLE_PERMISSION": "reports:id:",
+                                 }
+                    }
+                },
+            },
+        },
+    },
+}
+
 
 class NbiException(Exception):
 
@@ -206,154 +464,7 @@ class Server(object):
     def __init__(self):
         self.instance += 1
         self.engine = Engine()
-        self.authenticator = Authenticator()
-        self.valid_methods = {   # contains allowed URL and methods
-            "admin": {
-                "v1": {
-                    "tokens": {"METHODS": ("GET", "POST", "DELETE"),
-                               "<ID>": {"METHODS": ("GET", "DELETE")}
-                               },
-                    "users": {"METHODS": ("GET", "POST"),
-                              "<ID>": {"METHODS": ("GET", "POST", "DELETE", "PATCH", "PUT")}
-                              },
-                    "projects": {"METHODS": ("GET", "POST"),
-                                 "<ID>": {"METHODS": ("GET", "DELETE", "PUT")}
-                                 },
-                    "roles": {"METHODS": ("GET", "POST"),
-                              "<ID>": {"METHODS": ("GET", "POST", "DELETE", "PUT")}
-                              },
-                    "vims": {"METHODS": ("GET", "POST"),
-                             "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT")}
-                             },
-                    "vim_accounts": {"METHODS": ("GET", "POST"),
-                                     "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT")}
-                                     },
-                    "wim_accounts": {"METHODS": ("GET", "POST"),
-                                     "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT")}
-                                     },
-                    "sdns": {"METHODS": ("GET", "POST"),
-                             "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT")}
-                             },
-                }
-            },
-            "pdu": {
-                "v1": {
-                    "pdu_descriptors": {"METHODS": ("GET", "POST"),
-                                        "<ID>": {"METHODS": ("GET", "POST", "DELETE", "PATCH", "PUT")}
-                                        },
-                }
-            },
-            "nsd": {
-                "v1": {
-                    "ns_descriptors_content": {"METHODS": ("GET", "POST"),
-                                               "<ID>": {"METHODS": ("GET", "PUT", "DELETE")}
-                                               },
-                    "ns_descriptors": {"METHODS": ("GET", "POST"),
-                                       "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),
-                                                "nsd_content": {"METHODS": ("GET", "PUT")},
-                                                "nsd": {"METHODS": "GET"},  # descriptor inside package
-                                                "artifacts": {"*": {"METHODS": "GET"}}
-                                                }
-                                       },
-                    "pnf_descriptors": {"TODO": ("GET", "POST"),
-                                        "<ID>": {"TODO": ("GET", "DELETE", "PATCH"),
-                                                 "pnfd_content": {"TODO": ("GET", "PUT")}
-                                                 }
-                                        },
-                    "subscriptions": {"TODO": ("GET", "POST"),
-                                      "<ID>": {"TODO": ("GET", "DELETE")}
-                                      },
-                }
-            },
-            "vnfpkgm": {
-                "v1": {
-                    "vnf_packages_content": {"METHODS": ("GET", "POST"),
-                                             "<ID>": {"METHODS": ("GET", "PUT", "DELETE")}
-                                             },
-                    "vnf_packages": {"METHODS": ("GET", "POST"),
-                                     "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),  # GET: vnfPkgInfo
-                                              "package_content": {"METHODS": ("GET", "PUT"),         # package
-                                                                  "upload_from_uri": {"TODO": "POST"}
-                                                                  },
-                                              "vnfd": {"METHODS": "GET"},                    # descriptor inside package
-                                              "artifacts": {"*": {"METHODS": "GET"}}
-                                              }
-                                     },
-                    "subscriptions": {"TODO": ("GET", "POST"),
-                                      "<ID>": {"TODO": ("GET", "DELETE")}
-                                      },
-                }
-            },
-            "nslcm": {
-                "v1": {
-                    "ns_instances_content": {"METHODS": ("GET", "POST"),
-                                             "<ID>": {"METHODS": ("GET", "DELETE")}
-                                             },
-                    "ns_instances": {"METHODS": ("GET", "POST"),
-                                     "<ID>": {"METHODS": ("GET", "DELETE"),
-                                              "scale": {"METHODS": "POST"},
-                                              "terminate": {"METHODS": "POST"},
-                                              "instantiate": {"METHODS": "POST"},
-                                              "action": {"METHODS": "POST"},
-                                              }
-                                     },
-                    "ns_lcm_op_occs": {"METHODS": "GET",
-                                       "<ID>": {"METHODS": "GET"},
-                                       },
-                    "vnfrs": {"METHODS": ("GET"),
-                              "<ID>": {"METHODS": ("GET")}
-                              },
-                    "vnf_instances": {"METHODS": ("GET"),
-                                      "<ID>": {"METHODS": ("GET")}
-                                      },
-                }
-            },
-            "nst": {
-                "v1": {
-                    "netslice_templates_content": {"METHODS": ("GET", "POST"),
-                                                   "<ID>": {"METHODS": ("GET", "PUT", "DELETE")}
-                                                   },
-                    "netslice_templates": {"METHODS": ("GET", "POST"),
-                                           "<ID>": {"METHODS": ("GET", "DELETE"), "TODO": "PATCH",
-                                                    "nst_content": {"METHODS": ("GET", "PUT")},
-                                                    "nst": {"METHODS": "GET"},  # descriptor inside package
-                                                    "artifacts": {"*": {"METHODS": "GET"}}
-                                                    }
-                                           },
-                    "subscriptions": {"TODO": ("GET", "POST"),
-                                      "<ID>": {"TODO": ("GET", "DELETE")}
-                                      },
-                }
-            },
-            "nsilcm": {
-                "v1": {
-                    "netslice_instances_content": {"METHODS": ("GET", "POST"),
-                                                   "<ID>": {"METHODS": ("GET", "DELETE")}
-                                                   },
-                    "netslice_instances": {"METHODS": ("GET", "POST"),
-                                           "<ID>": {"METHODS": ("GET", "DELETE"),
-                                                    "terminate": {"METHODS": "POST"},
-                                                    "instantiate": {"METHODS": "POST"},
-                                                    "action": {"METHODS": "POST"},
-                                                    }
-                                           },
-                    "nsi_lcm_op_occs": {"METHODS": "GET",
-                                        "<ID>": {"METHODS": "GET"},
-                                        },
-                }
-            },
-            "nspm": {
-                "v1": {
-                    "pm_jobs": {
-                        "<ID>": {
-                            "reports": {
-                                "<ID>": {"METHODS": ("GET")}
-                            }
-                        },
-                    },
-                },
-            },
-        }
+        self.authenticator = Authenticator(valid_url_methods, valid_query_string)
 
     def _format_in(self, kwargs):
         try:
@@ -439,18 +550,18 @@ class Server(object):
             raise NbiException(error_text + str(exc), HTTPStatus.BAD_REQUEST)
 
     @staticmethod
-    def _format_out(data, session=None, _format=None):
+    def _format_out(data, token_info=None, _format=None):
         """
         return string of dictionary data according to requested json, yaml, xml. By default json
         :param data: response to be sent. Can be a dict, text or file
-        :param session:
+        :param token_info: Contains among other username and project
         :param _format: The format to be set as Content-Type ir data is a file
         :return: None
         """
         accept = cherrypy.request.headers.get("Accept")
         if data is None:
             if accept and "text/html" in accept:
-                return html.format(data, cherrypy.request, cherrypy.response, session)
+                return html.format(data, cherrypy.request, cherrypy.response, token_info)
             # cherrypy.response.status = HTTPStatus.NO_CONTENT.value
             return
         elif hasattr(data, "read"):  # file object
@@ -468,7 +579,7 @@ class Server(object):
                 a = json.dumps(data, indent=4) + "\n"
                 return a.encode("utf8")
             elif "text/html" in accept:
-                return html.format(data, cherrypy.request, cherrypy.response, session)
+                return html.format(data, cherrypy.request, cherrypy.response, token_info)
 
             elif "application/yaml" in accept or "*/*" in accept or "text/plain" in accept:
                 pass
@@ -483,21 +594,21 @@ class Server(object):
 
     @cherrypy.expose
     def index(self, *args, **kwargs):
-        session = None
+        token_info = None
         try:
             if cherrypy.request.method == "GET":
-                session = self.authenticator.authorize()
+                token_info = self.authenticator.authorize()
                 outdata = "Index page"
             else:
                 raise cherrypy.HTTPError(HTTPStatus.METHOD_NOT_ALLOWED.value,
                                          "Method {} not allowed for tokens".format(cherrypy.request.method))
 
-            return self._format_out(outdata, session)
+            return self._format_out(outdata, token_info)
 
         except (EngineException, AuthException) as e:
-            cherrypy.log("index Exception {}".format(e))
+            # cherrypy.log("index Exception {}".format(e))
             cherrypy.response.status = e.http_code.value
-            return self._format_out("Welcome to OSM!", session)
+            return self._format_out("Welcome to OSM!", token_info)
 
     @cherrypy.expose
     def version(self, *args, **kwargs):
@@ -520,27 +631,27 @@ class Server(object):
 
     @cherrypy.expose
     def token(self, method, token_id=None, kwargs=None):
-        session = None
+        token_info = None
         # self.engine.load_dbase(cherrypy.request.app.config)
         indata = self._format_in(kwargs)
         if not isinstance(indata, dict):
             raise NbiException("Expected application/yaml or application/json Content-Type", HTTPStatus.BAD_REQUEST)
         try:
             if method == "GET":
-                session = self.authenticator.authorize()
+                token_info = self.authenticator.authorize()
                 if token_id:
-                    outdata = self.authenticator.get_token(session, token_id)
+                    outdata = self.authenticator.get_token(token_info, token_id)
                 else:
-                    outdata = self.authenticator.get_token_list(session)
+                    outdata = self.authenticator.get_token_list(token_info)
             elif method == "POST":
                 try:
-                    session = self.authenticator.authorize()
+                    token_info = self.authenticator.authorize()
                 except Exception:
-                    session = None
+                    token_info = None
                 if kwargs:
                     indata.update(kwargs)
-                outdata = self.authenticator.new_token(session, indata, cherrypy.request.remote)
-                session = outdata
+                outdata = self.authenticator.new_token(token_info, indata, cherrypy.request.remote)
+                token_info = outdata
                 cherrypy.session['Authorization'] = outdata["_id"]
                 self._set_location_header("admin", "v1", "tokens", outdata["_id"])
                 # cherrypy.response.cookie["Authorization"] = outdata["id"]
@@ -549,16 +660,16 @@ class Server(object):
                 if not token_id and "id" in kwargs:
                     token_id = kwargs["id"]
                 elif not token_id:
-                    session = self.authenticator.authorize()
-                    token_id = session["_id"]
+                    token_info = self.authenticator.authorize()
+                    token_id = token_info["_id"]
                 outdata = self.authenticator.del_token(token_id)
-                session = None
+                token_info = None
                 cherrypy.session['Authorization'] = "logout"
                 # cherrypy.response.cookie["Authorization"] = token_id
                 # cherrypy.response.cookie["Authorization"]['expires'] = 0
             else:
                 raise NbiException("Method {} not allowed for token".format(method), HTTPStatus.METHOD_NOT_ALLOWED)
-            return self._format_out(outdata, session)
+            return self._format_out(outdata, token_info)
         except (NbiException, EngineException, DbException, AuthException) as e:
             cherrypy.log("tokens Exception {}".format(e))
             cherrypy.response.status = e.http_code.value
@@ -567,7 +678,7 @@ class Server(object):
                 "status": e.http_code.value,
                 "detail": str(e),
             }
-            return self._format_out(problem_details, session)
+            return self._format_out(problem_details, token_info)
 
     @cherrypy.expose
     def test(self, *args, **kwargs):
@@ -661,11 +772,12 @@ class Server(object):
         return_text += "</pre></html>"
         return return_text
 
-    def _check_valid_url_method(self, method, *args):
+    @staticmethod
+    def _check_valid_url_method(method, *args):
         if len(args) < 3:
             raise NbiException("URL must contain at least 'main_topic/version/topic'", HTTPStatus.METHOD_NOT_ALLOWED)
 
-        reference = self.valid_methods
+        reference = valid_url_methods
         for arg in args:
             if arg is None:
                 break
@@ -686,7 +798,7 @@ class Server(object):
             raise NbiException("Method {} not supported yet for this URL".format(method), HTTPStatus.NOT_IMPLEMENTED)
         elif "METHODS" in reference and method not in reference["METHODS"]:
             raise NbiException("Method {} not supported for this URL".format(method), HTTPStatus.METHOD_NOT_ALLOWED)
-        return
+        return reference["ROLE_PERMISSION"] + method.lower()
 
     @staticmethod
     def _set_location_header(main_topic, version, topic, id):
@@ -703,11 +815,25 @@ class Server(object):
         return
 
     @staticmethod
-    def _manage_admin_query(session, kwargs, method, _id):
+    def _extract_query_string_operations(kwargs, method):
+        """
+
+        :param kwargs:
+        :return:
+        """
+        query_string_operations = []
+        if kwargs:
+            for qs in ("FORCE", "PUBLIC", "ADMIN", "SET_PROJECT"):
+                if qs in kwargs and kwargs[qs].lower() != "false":
+                    query_string_operations.append(qs.lower() + ":" + method.lower())
+        return query_string_operations
+
+    @staticmethod
+    def _manage_admin_query(token_info, kwargs, method, _id):
         """
         Processes the administrator query inputs (if any) of FORCE, ADMIN, PUBLIC, SET_PROJECT
         Check that users has rights to use them and returs the admin_query
-        :param session: session rights obtained by token
+        :param token_info: token_info rights obtained by token
         :param kwargs: query string input.
         :param method: http method: GET, POSST, PUT, ...
         :param _id:
@@ -718,8 +844,8 @@ class Server(object):
             set_project: tuple with projects that a created element will belong to
             method: show, list, delete, write
         """
-        admin_query = {"force": False, "project_id": (session["project_id"], ), "username": session["username"],
-                       "admin": session["admin"], "public": None}
+        admin_query = {"force": False, "project_id": (token_info["project_id"], ), "username": token_info["username"],
+                       "admin": token_info["admin"], "public": None}
         if kwargs:
             # FORCE
             if "FORCE" in kwargs:
@@ -737,7 +863,7 @@ class Server(object):
             if "ADMIN" in kwargs:
                 behave_as = kwargs.pop("ADMIN")
                 if behave_as.lower() != "false":
-                    if not session["admin"]:
+                    if not token_info["admin"]:
                         raise NbiException("Only admin projects can use 'ADMIN' query string", HTTPStatus.UNAUTHORIZED)
                     if not behave_as or behave_as.lower() == "true":  # convert True, None to empty list
                         admin_query["project_id"] = ()
@@ -762,7 +888,7 @@ class Server(object):
             # PROJECT_READ
             # if "PROJECT_READ" in kwargs:
             #     admin_query["project"] = kwargs.pop("project")
-            #     if admin_query["project"] == session["project_id"]:
+            #     if admin_query["project"] == token_info["project_id"]:
         if method == "GET":
             if _id:
                 admin_query["method"] = "show"
@@ -776,13 +902,13 @@ class Server(object):
 
     @cherrypy.expose
     def default(self, main_topic=None, version=None, topic=None, _id=None, item=None, *args, **kwargs):
-        session = None
+        token_info = None
         outdata = None
         _format = None
         method = "DONE"
         engine_topic = None
         rollback = []
-        session = None
+        engine_session = None
         try:
             if not main_topic or not version or not topic:
                 raise NbiException("URL must contain at least 'main_topic/version/topic'",
@@ -798,14 +924,15 @@ class Server(object):
             else:
                 method = cherrypy.request.method
 
-            self._check_valid_url_method(method, main_topic, version, topic, _id, item, *args)
-
+            role_permission = self._check_valid_url_method(method, main_topic, version, topic, _id, item, *args)
+            query_string_operations = self._extract_query_string_operations(kwargs, method)
             if main_topic == "admin" and topic == "tokens":
                 return self.token(method, _id, kwargs)
 
             # self.engine.load_dbase(cherrypy.request.app.config)
-            session = self.authenticator.authorize()
-            session = self._manage_admin_query(session, kwargs, method, _id)
+
+            token_info = self.authenticator.authorize(role_permission, query_string_operations)
+            engine_session = self._manage_admin_query(token_info, kwargs, method, _id)
             indata = self._format_in(kwargs)
             engine_topic = topic
             if topic == "subscriptions":
@@ -844,22 +971,23 @@ class Server(object):
                         path = ()
                     else:
                         path = None
-                    file, _format = self.engine.get_file(session, engine_topic, _id, path,
+                    file, _format = self.engine.get_file(engine_session, engine_topic, _id, path,
                                                          cherrypy.request.headers.get("Accept"))
                     outdata = file
                 elif not _id:
-                    outdata = self.engine.get_item_list(session, engine_topic, kwargs)
+                    outdata = self.engine.get_item_list(engine_session, engine_topic, kwargs)
                 else:
                     if item == "reports":
                         # TODO check that project_id (_id in this context) has permissions
                         _id = args[0]
-                    outdata = self.engine.get_item(session, engine_topic, _id)
+                    outdata = self.engine.get_item(engine_session, engine_topic, _id)
             elif method == "POST":
                 if topic in ("ns_descriptors_content", "vnf_packages_content", "netslice_templates_content"):
                     _id = cherrypy.request.headers.get("Transaction-Id")
                     if not _id:
-                        _id = self.engine.new_item(rollback, session, engine_topic, {}, None, cherrypy.request.headers)
-                    completed = self.engine.upload_content(session, engine_topic, _id, indata, kwargs,
+                        _id = self.engine.new_item(rollback, engine_session, engine_topic, {}, None,
+                                                   cherrypy.request.headers)
+                    completed = self.engine.upload_content(engine_session, engine_topic, _id, indata, kwargs,
                                                            cherrypy.request.headers)
                     if completed:
                         self._set_location_header(main_topic, version, topic, _id)
@@ -868,38 +996,38 @@ class Server(object):
                     outdata = {"id": _id}
                 elif topic == "ns_instances_content":
                     # creates NSR
-                    _id = self.engine.new_item(rollback, session, engine_topic, indata, kwargs)
+                    _id = self.engine.new_item(rollback, engine_session, engine_topic, indata, kwargs)
                     # creates nslcmop
                     indata["lcmOperationType"] = "instantiate"
                     indata["nsInstanceId"] = _id
-                    nslcmop_id = self.engine.new_item(rollback, session, "nslcmops", indata, None)
+                    nslcmop_id = self.engine.new_item(rollback, engine_session, "nslcmops", indata, None)
                     self._set_location_header(main_topic, version, topic, _id)
                     outdata = {"id": _id, "nslcmop_id": nslcmop_id}
                 elif topic == "ns_instances" and item:
                     indata["lcmOperationType"] = item
                     indata["nsInstanceId"] = _id
-                    _id = self.engine.new_item(rollback, session, "nslcmops", indata, kwargs)
+                    _id = self.engine.new_item(rollback, engine_session, "nslcmops", indata, kwargs)
                     self._set_location_header(main_topic, version, "ns_lcm_op_occs", _id)
                     outdata = {"id": _id}
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
                 elif topic == "netslice_instances_content":
                     # creates NetSlice_Instance_record (NSIR)
-                    _id = self.engine.new_item(rollback, session, engine_topic, indata, kwargs)
+                    _id = self.engine.new_item(rollback, engine_session, engine_topic, indata, kwargs)
                     self._set_location_header(main_topic, version, topic, _id)
                     indata["lcmOperationType"] = "instantiate"
                     indata["netsliceInstanceId"] = _id
-                    nsilcmop_id = self.engine.new_item(rollback, session, "nsilcmops", indata, kwargs)
+                    nsilcmop_id = self.engine.new_item(rollback, engine_session, "nsilcmops", indata, kwargs)
                     outdata = {"id": _id, "nsilcmop_id": nsilcmop_id}
 
                 elif topic == "netslice_instances" and item:
                     indata["lcmOperationType"] = item
                     indata["netsliceInstanceId"] = _id
-                    _id = self.engine.new_item(rollback, session, "nsilcmops", indata, kwargs)
+                    _id = self.engine.new_item(rollback, engine_session, "nsilcmops", indata, kwargs)
                     self._set_location_header(main_topic, version, "nsi_lcm_op_occs", _id)
                     outdata = {"id": _id}
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
                 else:
-                    _id = self.engine.new_item(rollback, session, engine_topic, indata, kwargs,
+                    _id = self.engine.new_item(rollback, engine_session, engine_topic, indata, kwargs,
                                                cherrypy.request.headers)
                     self._set_location_header(main_topic, version, topic, _id)
                     outdata = {"id": _id}
@@ -908,50 +1036,50 @@ class Server(object):
 
             elif method == "DELETE":
                 if not _id:
-                    outdata = self.engine.del_item_list(session, engine_topic, kwargs)
+                    outdata = self.engine.del_item_list(engine_session, engine_topic, kwargs)
                     cherrypy.response.status = HTTPStatus.OK.value
                 else:  # len(args) > 1
                     delete_in_process = False
-                    if topic == "ns_instances_content" and not session["force"]:
+                    if topic == "ns_instances_content" and not engine_session["force"]:
                         nslcmop_desc = {
                             "lcmOperationType": "terminate",
                             "nsInstanceId": _id,
                             "autoremove": True
                         }
-                        opp_id = self.engine.new_item(rollback, session, "nslcmops", nslcmop_desc, None)
+                        opp_id = self.engine.new_item(rollback, engine_session, "nslcmops", nslcmop_desc, None)
                         if opp_id:
                             delete_in_process = True
                             outdata = {"_id": opp_id}
                             cherrypy.response.status = HTTPStatus.ACCEPTED.value
-                    elif topic == "netslice_instances_content" and not session["force"]:
+                    elif topic == "netslice_instances_content" and not engine_session["force"]:
                         nsilcmop_desc = {
                             "lcmOperationType": "terminate",
                             "netsliceInstanceId": _id,
                             "autoremove": True
                         }
-                        opp_id = self.engine.new_item(rollback, session, "nsilcmops", nsilcmop_desc, None)
+                        opp_id = self.engine.new_item(rollback, engine_session, "nsilcmops", nsilcmop_desc, None)
                         if opp_id:
                             delete_in_process = True
                             outdata = {"_id": opp_id}
                             cherrypy.response.status = HTTPStatus.ACCEPTED.value
                     if not delete_in_process:
-                        self.engine.del_item(session, engine_topic, _id)
+                        self.engine.del_item(engine_session, engine_topic, _id)
                         cherrypy.response.status = HTTPStatus.NO_CONTENT.value
                 if engine_topic in ("vim_accounts", "wim_accounts", "sdns"):
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
 
             elif method in ("PUT", "PATCH"):
                 outdata = None
-                if not indata and not kwargs and not session.get("set_project"):
+                if not indata and not kwargs and not engine_session.get("set_project"):
                     raise NbiException("Nothing to update. Provide payload and/or query string",
                                        HTTPStatus.BAD_REQUEST)
                 if item in ("nsd_content", "package_content", "nst_content") and method == "PUT":
-                    completed = self.engine.upload_content(session, engine_topic, _id, indata, kwargs,
+                    completed = self.engine.upload_content(engine_session, engine_topic, _id, indata, kwargs,
                                                            cherrypy.request.headers)
                     if not completed:
                         cherrypy.response.headers["Transaction-Id"] = id
                 else:
-                    self.engine.edit_item(session, engine_topic, _id, indata, kwargs)
+                    self.engine.edit_item(engine_session, engine_topic, _id, indata, kwargs)
                 cherrypy.response.status = HTTPStatus.NO_CONTENT.value
             else:
                 raise NbiException("Method {} not allowed".format(method), HTTPStatus.METHOD_NOT_ALLOWED)
@@ -959,7 +1087,7 @@ class Server(object):
             # if Role information changes, it is needed to reload the information of roles
             if topic == "roles" and method != "GET":
                 self.authenticator.load_operation_to_allowed_roles()
-            return self._format_out(outdata, session, _format)
+            return self._format_out(outdata, token_info, _format)
         except Exception as e:
             if isinstance(e, (NbiException, EngineException, DbException, FsException, MsgException, AuthException,
                               ValidationError)):
@@ -994,7 +1122,7 @@ class Server(object):
                 "status": http_code_value,
                 "detail": error_text,
             }
-            return self._format_out(problem_details, session)
+            return self._format_out(problem_details, token_info)
             # raise cherrypy.HTTPError(e.http_code.value, str(e))
 
 

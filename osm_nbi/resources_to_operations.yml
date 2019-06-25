@@ -16,6 +16,8 @@
 # contact: esousa@whitestack.com or glavado@whitestack.com
 ##
 
+### NOTE: This is INFORMATIVE ONLY!!!!
+### The right values are at module osm_nbi/nbi.py variable 'valid_url_methods' under ROLE_OPERATIONS key
 ---
 resources_to_operations:
 
@@ -363,4 +365,26 @@ resources_to_operations:
 ############################ QUERY STRING admin operations #####################
 ################################################################################
 
-  "GET ADMIN": "admin"
+  "GET ?ADMIN":    "admin:get"
+  "POST ?ADMIN":   "admin:post"
+  "PATCH ?ADMIN":  "admin:patch"
+  "PUT ?ADMIN":    "admin:put"
+  "DELETE ?ADMIN": "admin:delete"
+
+  "GET ?FORCE":    "force:get"
+  "POST ?FORCE":   "force:post"
+  "PATCH ?FORCE":  "force:patch"
+  "PUT ?FORCE":    "force:put"
+  "DELETE ?FORCE": "force:delete"
+
+  "GET ?PUBLIC":    "public:get"
+  "POST ?PUBLIC":   "public:post"
+  "PATCH ?PUBLIC":  "public:patch"
+  "PUT ?PUBLIC":    "public:put"
+  "DELETE ?PUBLIC": "public:delete"
+
+  "GET ?SET_PROJECT":    "set_project:get"
+  "POST ?SET_PROJECT":   "set_project:post"
+  "PATCH ?SET_PROJECT":  "set_project:patch"
+  "PUT ?SET_PROJECT":    "set_project:put"
+  "DELETE ?SET_PROJECT": "set_project:delete"

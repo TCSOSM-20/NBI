@@ -92,7 +92,7 @@ roles:
         default: true
         # Users
         users:post:      false
-        users:id:post:   false
+        users:id:patch:  false
         users:id:delete: false
         users:id:put:    false
         # Projects
