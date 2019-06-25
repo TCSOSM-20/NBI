@@ -19,12 +19,13 @@
 
 function usage(){
     echo -e "usage: $0 [OPTIONS]"
-    echo -e "TEST NBI API is used to clean database content, except user admin. Useful for testing."
+    echo -e "TEST NBI API is used to clean database content, except admin users,projects and roles. Useful for testing."
     echo -e "NOTE: database is cleaned but not the content of other modules as RO or VCA that must be cleaned manually."
     echo -e "  OPTIONS"
     echo -e "     -h --help:   show this help"
     echo -e "     -f --force:  Do not ask for confirmation"
-    echo -e "     --completely:  It cleans also user admin. NBI will need to be restarted to init database"
+    echo -e "     --completely:  It cleans also admin user/project and roles. It only works for internal" \
+            "authentication. NBI will need to be restarted to init database"
     echo -e "     --clean-RO:  clean RO content. RO client (openmano) must be installed and configured"
     echo -e "     --clean-VCA: clean VCA content. juju  must be installed and configured"
     echo -e "  ENV variable 'OSMNBI_URL' is used for the URL of the NBI server. If missing, it uses" \
@@ -84,14 +85,37 @@ for item in vim_accounts wim_accounts sdns nsrs vnfrs nslcmops nsds vnfds projec
 do
     curl --insecure ${OSMNBI_URL}/test/db-clear/${item}
 done
-    curl --insecure ${OSMNBI_URL}/test/fs-clear
+curl --insecure ${OSMNBI_URL}/test/fs-clear
 if [ -n "$OSMNBI_COMPLETELY" ] ; then
+    # delete all users. It will only works for internal backend
     curl --insecure ${OSMNBI_URL}/test/db-clear/users
-    curl --insecure ${OSMNBI_URL}/test/db-clear/admin
-else
-    # delete all users except admin
-    curl --insecure ${OSMNBI_URL}/test/db-clear/users?username.ne=admin
+    curl --insecure ${OSMNBI_URL}/test/db-clear/projects
+    curl --insecure ${OSMNBI_URL}/test/db-clear/roles
 fi
+
+    [[ -z "$OSM_USER" ]] && OSM_USER=admin
+    [[ -z "$OSM_PASSWORD" ]] && OSM_PASSWORD=admin
+    [[ -z "$OSM_PROJECT" ]] && OSM_PROJECT=admin
+
+    TOKEN=`curl --insecure -H "Content-Type: application/yaml" -H "Accept: application/yaml" \
+        --data "{username: '$OSM_USER', password: '$OSM_PASSWORD', project_id: '$OSM_PROJECT'}" \
+        ${OSMNBI_URL}/admin/v1/tokens 2>/dev/null | awk '($1=="_id:"){print $2}'`;
+    echo "TOKEN='$TOKEN'"
+
+    echo "delete users, prujects,roles. Ignore response errors due that own user,project cannot be deleted"
+    for topic in users projects roles
+    do
+        elements=`curl --insecure ${OSMNBI_URL}/admin/v1/$topic -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/yaml" 2>/dev/null | awk '($1=="_id:"){print $2};($2=="_id:"){print $3}'`;
+        for element in $elements
+        do
+            # not needed to check if own user, project, etc; because OSM will deny deletion
+            echo deleting $topic _id=$element
+            curl --insecure ${OSMNBI_URL}/admin/v1/$topic/$element -H "Authorization: Bearer $TOKEN" \
+                -H "Accept: application/yaml" -X DELETE 2>/dev/null
+        done
+    done
+
 
 if [ -n "$OSMNBI_CLEAN_RO" ]
 then
