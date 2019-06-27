@@ -31,6 +31,7 @@ __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 class NsrTopic(BaseTopic):
     topic = "nsrs"
     topic_msg = "ns"
+    schema_new = ns_instantiate
 
     def __init__(self, db, fs, msg):
         BaseTopic.__init__(self, db, fs, msg)
