@@ -982,11 +982,12 @@ class Server(object):
                         _id = args[0]
                     outdata = self.engine.get_item(engine_session, engine_topic, _id)
             elif method == "POST":
+                cherrypy.response.status = HTTPStatus.CREATED.value
                 if topic in ("ns_descriptors_content", "vnf_packages_content", "netslice_templates_content"):
                     _id = cherrypy.request.headers.get("Transaction-Id")
                     if not _id:
-                        _id = self.engine.new_item(rollback, engine_session, engine_topic, {}, None,
-                                                   cherrypy.request.headers)
+                        _id, _ = self.engine.new_item(rollback, engine_session, engine_topic, {}, None,
+                                                      cherrypy.request.headers)
                     completed = self.engine.upload_content(engine_session, engine_topic, _id, indata, kwargs,
                                                            cherrypy.request.headers)
                     if completed:
@@ -996,43 +997,45 @@ class Server(object):
                     outdata = {"id": _id}
                 elif topic == "ns_instances_content":
                     # creates NSR
-                    _id = self.engine.new_item(rollback, engine_session, engine_topic, indata, kwargs)
+                    _id, _ = self.engine.new_item(rollback, engine_session, engine_topic, indata, kwargs)
                     # creates nslcmop
                     indata["lcmOperationType"] = "instantiate"
                     indata["nsInstanceId"] = _id
-                    nslcmop_id = self.engine.new_item(rollback, engine_session, "nslcmops", indata, None)
+                    nslcmop_id, _ = self.engine.new_item(rollback, engine_session, "nslcmops", indata, None)
                     self._set_location_header(main_topic, version, topic, _id)
                     outdata = {"id": _id, "nslcmop_id": nslcmop_id}
                 elif topic == "ns_instances" and item:
                     indata["lcmOperationType"] = item
                     indata["nsInstanceId"] = _id
-                    _id = self.engine.new_item(rollback, engine_session, "nslcmops", indata, kwargs)
+                    _id, _ = self.engine.new_item(rollback, engine_session, "nslcmops", indata, kwargs)
                     self._set_location_header(main_topic, version, "ns_lcm_op_occs", _id)
                     outdata = {"id": _id}
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
                 elif topic == "netslice_instances_content":
                     # creates NetSlice_Instance_record (NSIR)
-                    _id = self.engine.new_item(rollback, engine_session, engine_topic, indata, kwargs)
+                    _id, _ = self.engine.new_item(rollback, engine_session, engine_topic, indata, kwargs)
                     self._set_location_header(main_topic, version, topic, _id)
                     indata["lcmOperationType"] = "instantiate"
                     indata["netsliceInstanceId"] = _id
-                    nsilcmop_id = self.engine.new_item(rollback, engine_session, "nsilcmops", indata, kwargs)
+                    nsilcmop_id, _ = self.engine.new_item(rollback, engine_session, "nsilcmops", indata, kwargs)
                     outdata = {"id": _id, "nsilcmop_id": nsilcmop_id}
 
                 elif topic == "netslice_instances" and item:
                     indata["lcmOperationType"] = item
                     indata["netsliceInstanceId"] = _id
-                    _id = self.engine.new_item(rollback, engine_session, "nsilcmops", indata, kwargs)
+                    _id, _ = self.engine.new_item(rollback, engine_session, "nsilcmops", indata, kwargs)
                     self._set_location_header(main_topic, version, "nsi_lcm_op_occs", _id)
                     outdata = {"id": _id}
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
                 else:
-                    _id = self.engine.new_item(rollback, engine_session, engine_topic, indata, kwargs,
-                                               cherrypy.request.headers)
+                    _id, op_id = self.engine.new_item(rollback, engine_session, engine_topic, indata, kwargs,
+                                                      cherrypy.request.headers)
                     self._set_location_header(main_topic, version, topic, _id)
                     outdata = {"id": _id}
+                    if op_id:
+                        outdata["op_id"] = op_id
+                        cherrypy.response.status = HTTPStatus.ACCEPTED.value
                     # TODO form NsdInfo when topic in ("ns_descriptors", "vnf_packages")
-                cherrypy.response.status = HTTPStatus.CREATED.value
 
             elif method == "DELETE":
                 if not _id:
@@ -1046,7 +1049,7 @@ class Server(object):
                             "nsInstanceId": _id,
                             "autoremove": True
                         }
-                        opp_id = self.engine.new_item(rollback, engine_session, "nslcmops", nslcmop_desc, None)
+                        opp_id, _ = self.engine.new_item(rollback, engine_session, "nslcmops", nslcmop_desc, None)
                         if opp_id:
                             delete_in_process = True
                             outdata = {"_id": opp_id}
@@ -1057,7 +1060,7 @@ class Server(object):
                             "netsliceInstanceId": _id,
                             "autoremove": True
                         }
-                        opp_id = self.engine.new_item(rollback, engine_session, "nsilcmops", nsilcmop_desc, None)
+                        opp_id, _ = self.engine.new_item(rollback, engine_session, "nsilcmops", nsilcmop_desc, None)
                         if opp_id:
                             delete_in_process = True
                             outdata = {"_id": opp_id}
@@ -1069,7 +1072,7 @@ class Server(object):
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
 
             elif method in ("PUT", "PATCH"):
-                outdata = None
+                op_id = None
                 if not indata and not kwargs and not engine_session.get("set_project"):
                     raise NbiException("Nothing to update. Provide payload and/or query string",
                                        HTTPStatus.BAD_REQUEST)
@@ -1079,8 +1082,14 @@ class Server(object):
                     if not completed:
                         cherrypy.response.headers["Transaction-Id"] = id
                 else:
-                    self.engine.edit_item(engine_session, engine_topic, _id, indata, kwargs)
-                cherrypy.response.status = HTTPStatus.NO_CONTENT.value
+                    op_id = self.engine.edit_item(engine_session, engine_topic, _id, indata, kwargs)
+
+                if op_id:
+                    cherrypy.response.status = HTTPStatus.ACCEPTED.value
+                    outdata = {"op_id": op_id}
+                else:
+                    cherrypy.response.status = HTTPStatus.NO_CONTENT.value
+                    outdata = None
             else:
                 raise NbiException("Method {} not allowed".format(method), HTTPStatus.METHOD_NOT_ALLOWED)
 

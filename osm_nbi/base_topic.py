@@ -164,7 +164,7 @@ class BaseTopic:
         """
         Check that the data to be edited/uploaded is valid
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
-        :param final_content: data once modified. This methdo may change it.
+        :param final_content: data once modified. This method may change it.
         :param edit_content: incremental data that contains the modifications to apply
         :param _id: internal _id
         :return: None or raises EngineException
@@ -210,7 +210,7 @@ class BaseTopic:
         :param content: descriptor to be modified
         :param project_id: if included, it add project read/write permissions. Can be None or a list
         :param make_public: if included it is generated as public for reading.
-        :return: None, but content is modified
+        :return: op_id: operation id on asynchronous operation, None otherwise. In addition content is modified
         """
         now = time()
         if "_admin" not in content:
@@ -227,12 +227,20 @@ class BaseTopic:
                     content["_admin"]["projects_read"].append("ANY")
             if not content["_admin"].get("projects_write"):
                 content["_admin"]["projects_write"] = list(project_id)
+        return None
 
     @staticmethod
     def format_on_edit(final_content, edit_content):
+        """
+        Modifies final_content to admin information upon edition
+        :param final_content: final content to be stored at database
+        :param edit_content: user requested update content
+        :return: operation id, if this edit implies an asynchronous operation; None otherwise
+        """
         if final_content.get("_admin"):
             now = time()
             final_content["_admin"]["modified"] = now
+        return None
 
     def _send_msg(self, action, content):
         if self.topic_msg:
@@ -337,7 +345,9 @@ class BaseTopic:
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :return: _id: identity of the inserted data.
+        :return: _id, op_id:
+            _id: identity of the inserted data.
+             op_id: operation id if this is asynchronous, None otherwise
         """
         try:
             content = self._remove_envelop(indata)
@@ -346,11 +356,13 @@ class BaseTopic:
             self._update_input_with_kwargs(content, kwargs)
             content = self._validate_input_new(content, force=session["force"])
             self.check_conflict_on_new(session, content)
-            self.format_on_new(content, project_id=session["project_id"], make_public=session["public"])
+            op_id = self.format_on_new(content, project_id=session["project_id"], make_public=session["public"])
             _id = self.db.create(self.topic, content)
             rollback.append({"topic": self.topic, "_id": _id})
+            if op_id:
+                content["op_id"] = op_id
             self._send_msg("create", content)
-            return _id
+            return _id, op_id
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
@@ -400,7 +412,7 @@ class BaseTopic:
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :param dry_run: make checking but do not delete
-        :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
+        :return: operation id (None if there is not operation), raise exception if error or not found, conflict, ...
         """
 
         # To allow addressing projects and users by name AS WELL AS by _id
@@ -417,18 +429,20 @@ class BaseTopic:
             filter_q.update(self._get_project_filter(session))
         if self.multiproject and session["project_id"]:
             # remove reference from project_read. If not last delete
+            # if this topic is not part of session["project_id"] no midification at database is done and an exception
+            # is raised
             self.db.set_one(self.topic, filter_q, update_dict=None,
                             pull={"_admin.projects_read": {"$in": session["project_id"]}})
             # try to delete if there is not any more reference from projects. Ignore if it is not deleted
             filter_q = {'_id': _id, '_admin.projects_read': [[], ["ANY"]]}
             v = self.db.del_one(self.topic, filter_q, fail_on_empty=False)
             if not v or not v["deleted"]:
-                return v
+                return None
         else:
-            v = self.db.del_one(self.topic, filter_q)
+            self.db.del_one(self.topic, filter_q)
         self.delete_extra(session, _id, item_content)
         self._send_msg("deleted", {"_id": _id})
-        return v
+        return None
 
     def edit(self, session, _id, indata=None, kwargs=None, content=None):
         """
@@ -438,7 +452,7 @@ class BaseTopic:
         :param indata: contains the changes to apply
         :param kwargs: modifies indata
         :param content: original content of the item
-        :return:
+        :return: op_id: operation id if this is processed asynchronously, None otherwise
         """
         indata = self._remove_envelop(indata)
 
@@ -455,16 +469,20 @@ class BaseTopic:
             if not content:
                 content = self.show(session, _id)
             deep_update_rfc7396(content, indata)
+
+            # To allow project addressing by name AS WELL AS _id. Get the _id, just in case the provided one is a name
+            _id = content.get("_id") or _id
+
             self.check_conflict_on_edit(session, content, indata, _id=_id)
-            self.format_on_edit(content, indata)
-            # To allow project addressing by name AS WELL AS _id
-            # self.db.replace(self.topic, _id, content)
-            cid = content.get("_id")
-            self.db.replace(self.topic, cid if cid else _id, content)
+            op_id = self.format_on_edit(content, indata)
+
+            self.db.replace(self.topic, _id, content)
 
             indata.pop("_admin", None)
+            if op_id:
+                indata["op_id"] = op_id
             indata["_id"] = _id
             self._send_msg("edit", indata)
-            return _id
+            return op_id
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)

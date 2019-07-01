@@ -267,7 +267,7 @@ class Engine(object):
         :param session: contains the used login username and working project
         :param topic: it can be: users, projects, vnfds, nsds, ...
         :param _id: server id of the item
-        :return: dictionary with deleted item _id. It raises exception if not found.
+        :return: operation id (None if there is not operation), raise exception if error or not found.
         """
         if topic not in self.map_topic:
             raise EngineException("Unknown topic {}!!!".format(topic), HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -282,7 +282,7 @@ class Engine(object):
         :param _id: identifier to be updated
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
-        :return: dictionary, raise exception if not found.
+        :return: operation id (None if there is not operation), raise exception if error or not found.
         """
         if topic not in self.map_topic:
             raise EngineException("Unknown topic {}!!!".format(topic), HTTPStatus.INTERNAL_SERVER_ERROR)

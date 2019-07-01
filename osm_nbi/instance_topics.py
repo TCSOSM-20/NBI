@@ -54,6 +54,7 @@ class NsrTopic(BaseTopic):
     def format_on_new(content, project_id=None, make_public=False):
         BaseTopic.format_on_new(content, project_id=project_id, make_public=make_public)
         content["_admin"]["nsState"] = "NOT_INSTANTIATED"
+        return None
 
     def check_conflict_on_del(self, session, _id, db_content):
         """
@@ -362,7 +363,7 @@ class NsrTopic(BaseTopic):
                     member_vnf["vnfd-id-ref"], member_vnf["member-vnf-index"])
 
                 # add at database
-                BaseTopic.format_on_new(vnfr_descriptor, session["project_id"], make_public=session["public"])
+                self.format_on_new(vnfr_descriptor, session["project_id"], make_public=session["public"])
                 self.db.create("vnfrs", vnfr_descriptor)
                 rollback.append({"topic": "vnfrs", "_id": vnfr_id})
                 nsr_descriptor["constituent-vnfr-ref"].append(vnfr_id)
@@ -375,12 +376,12 @@ class NsrTopic(BaseTopic):
             step = "creating nsr temporal folder"
             self.fs.mkdir(nsr_id)
 
-            return nsr_id
+            return nsr_id, None
+        except ValidationError as e:   # TODO remove try Except, it is captured at nbi.py
+            raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
         except Exception as e:
             self.logger.exception("Exception {} at NsrTopic.new()".format(e), exc_info=True)
             raise EngineException("Error {}: {}".format(step, e))
-        except ValidationError as e:
-            raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
     def edit(self, session, _id, indata=None, kwargs=None, content=None):
         raise EngineException("Method edit called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -811,8 +812,8 @@ class NsLcmOpTopic(BaseTopic):
             rollback.append({"topic": "nslcmops", "_id": _id})
             if not slice_object:
                 self.msg.write("ns", operation, nslcmop_desc)
-            return _id
-        except ValidationError as e:
+            return _id, None
+        except ValidationError as e:  # TODO remove try Except, it is captured at nbi.py
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
         # except DbException as e:
         #     raise EngineException("Cannot get ns_instance '{}': {}".format(e), HTTPStatus.NOT_FOUND)
@@ -1115,7 +1116,7 @@ class NsiTopic(BaseTopic):
                                 break                   
 
                     # Creates Nsr objects
-                    _id_nsr = self.nsrTopic.new(rollback, session, indata_ns, kwargs, headers)
+                    _id_nsr, _ = self.nsrTopic.new(rollback, session, indata_ns, kwargs, headers)
                 nsrs_item = {"nsrId": _id_nsr, "shared": service.get("is-shared-nss"), "nsd-id": service["nsd-ref"], 
                              "nslcmop_instantiate": None}
                 indata_ns["nss-id"] = service["id"]
@@ -1132,8 +1133,8 @@ class NsiTopic(BaseTopic):
             # Creating the entry in the database
             self.db.create("nsis", nsi_descriptor)
             rollback.append({"topic": "nsis", "_id": nsi_id})
-            return nsi_id
-        except Exception as e:
+            return nsi_id, None
+        except Exception as e:   # TODO remove try Except, it is captured at nbi.py
             self.logger.exception("Exception {} at NsiTopic.new()".format(e), exc_info=True)
             raise EngineException("Error {}: {}".format(step, e))
         except ValidationError as e:
@@ -1297,8 +1298,8 @@ class NsiLcmOpTopic(BaseTopic):
                     indata_ns["netsliceInstanceId"] = netsliceInstanceId
                     # Creating NS_LCM_OP with the flag slice_object=True to not trigger the service instantiation
                     # message via kafka bus
-                    nslcmop = self.nsi_NsLcmOpTopic.new(rollback, session, indata_ns, kwargs, headers, 
-                                                        slice_object=True)
+                    nslcmop, _ = self.nsi_NsLcmOpTopic.new(rollback, session, indata_ns, kwargs, headers,
+                                                           slice_object=True)
                     nslcmops.append(nslcmop)
                     if operation == "terminate":
                         nslcmop = None
@@ -1320,7 +1321,7 @@ class NsiLcmOpTopic(BaseTopic):
             _id = self.db.create("nsilcmops", nsilcmop_desc)
             rollback.append({"topic": "nsilcmops", "_id": _id})
             self.msg.write("nsi", operation, nsilcmop_desc)
-            return _id
+            return _id, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 

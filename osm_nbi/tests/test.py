@@ -346,7 +346,7 @@ class TestRest:
             vim_data = "{schema_version: '1.0', name: fakeVim, vim_type: openstack, vim_url: 'http://10.11.12.13/fake'"\
                        ", vim_tenant_name: 'vimtenant', vim_user: vimuser, vim_password: vimpassword}"
         self.test("Create VIM", "POST", "/admin/v1/vim_accounts", headers_yaml, vim_data,
-                  (201), {"Location": "/admin/v1/vim_accounts/", "Content-Type": "application/yaml"}, "yaml")
+                  (201, 202), {"Location": "/admin/v1/vim_accounts/", "Content-Type": "application/yaml"}, "yaml")
         return self.last_id
 
     def print_results(self):
@@ -604,6 +604,13 @@ class TestProjectsDescriptors:
         vnfd_ids = []
         engine.set_test_name("ProjectDescriptors")
         engine.get_autorization()
+
+        project_admin_id = None
+        res = engine.test("Get my project Padmin", "GET", "/admin/v1/projects/{}".format(engine.project), headers_json,
+                          None, 200, r_header_json, "json")
+        if res:
+            response = res.json()
+            project_admin_id = response["_id"]
         engine.test("Create project Padmin", "POST", "/admin/v1/projects", headers_json,
                     {"name": "Padmin", "admin": True}, (201, 204),
                     {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
@@ -658,7 +665,8 @@ class TestProjectsDescriptors:
             engine.failed_tests += 1
 
         # list vnfds belonging to project "admin"
-        res = engine.test("List VNFD of admin project", "GET", "/vnfpkgm/v1/vnf_packages?ADMIN=admin",
+        res = engine.test("List VNFD of admin project", "GET",
+                          "/vnfpkgm/v1/vnf_packages?ADMIN={}".format(project_admin_id),
                           headers_json, None, 200, r_header_json, "json")
         response = res.json()
         if len(response) != 3:
@@ -769,7 +777,7 @@ class TestFakeVim:
 
         engine.set_test_name("FakeVim")
         engine.get_autorization()
-        engine.test("Create VIM", "POST", "/admin/v1/vim_accounts", headers_json, self.vim, (201, 204),
+        engine.test("Create VIM", "POST", "/admin/v1/vim_accounts", headers_json, self.vim, (201, 202),
                     {"Location": "/admin/v1/vim_accounts/", "Content-Type": "application/json"}, "json")
         vim_id = engine.last_id
         engine.test("Create VIM without name, bad schema", "POST", "/admin/v1/vim_accounts", headers_json,
@@ -814,28 +822,28 @@ class TestVIMSDN(TestFakeVim):
         engine.set_test_name("VimSdn")
         engine.get_autorization()
         # Added SDN
-        engine.test("Create SDN", "POST", "/admin/v1/sdns", headers_json, self.sdn, (201, 204),
+        engine.test("Create SDN", "POST", "/admin/v1/sdns", headers_json, self.sdn, (201, 202),
                     {"Location": "/admin/v1/sdns/", "Content-Type": "application/json"}, "json")
         sdnc_id = engine.last_id
         # sleep(5)
         # Edit SDN
         engine.test("Edit SDN", "PATCH", "/admin/v1/sdns/{}".format(sdnc_id), headers_json, {"name": "new_sdn_name"},
-                    204, None, None)
+                    (202, 204), None, None)
         # sleep(5)
         # VIM with SDN
         self.vim["config"]["sdn-controller"] = sdnc_id
         self.vim["config"]["sdn-port-mapping"] = self.port_mapping
-        engine.test("Create VIM", "POST", "/admin/v1/vim_accounts", headers_json, self.vim, (200, 204, 201),
+        engine.test("Create VIM", "POST", "/admin/v1/vim_accounts", headers_json, self.vim, (200, 202, 201),
                     {"Location": "/admin/v1/vim_accounts/", "Content-Type": "application/json"}, "json"),
 
         vim_id = engine.last_id
         self.port_mapping[0]["compute_node"] = "compute node XX"
         engine.test("Edit VIM change port-mapping", "PUT", "/admin/v1/vim_accounts/{}".format(vim_id), headers_json,
-                    {"config": {"sdn-port-mapping": self.port_mapping}}, 204, None, None)
+                    {"config": {"sdn-port-mapping": self.port_mapping}}, (202, 204), None, None)
         engine.test("Edit VIM remove port-mapping", "PUT", "/admin/v1/vim_accounts/{}".format(vim_id), headers_json,
-                    {"config": {"sdn-port-mapping": None}}, 204, None, None)
+                    {"config": {"sdn-port-mapping": None}}, (202, 204), None, None)
 
-        engine.test("Create WIM", "POST", "/admin/v1/wim_accounts", headers_json, self.wim, (200, 204, 201),
+        engine.test("Create WIM", "POST", "/admin/v1/wim_accounts", headers_json, self.wim, (200, 202, 201),
                     {"Location": "/admin/v1/wim_accounts/", "Content-Type": "application/json"}, "json"),
         wim_id = engine.last_id
 
@@ -991,14 +999,14 @@ class TestDeploy:
         ns_data_text = yaml.safe_dump(ns_data, default_flow_style=True, width=256)
         # create NS Two steps
         r = engine.test("Create NS step 1", "POST", "/nslcm/v1/ns_instances",
-                        headers_yaml, ns_data_text, 201,
+                        headers_yaml, ns_data_text, (201, 202),
                         {"Location": "nslcm/v1/ns_instances/", "Content-Type": "application/yaml"}, "yaml")
         if not r:
             return
         self.ns_id = engine.last_id
         engine.test("Instantiate NS step 2", "POST",
                     "/nslcm/v1/ns_instances/{}/instantiate".format(self.ns_id), headers_yaml, ns_data_text,
-                    201, r_headers_yaml_location_nslcmop, "yaml")
+                    (201, 202), r_headers_yaml_location_nslcmop, "yaml")
         nslcmop_id = engine.last_id
 
         if test_osm:
@@ -1010,7 +1018,7 @@ class TestDeploy:
         # remove deployment
         if test_osm:
             engine.test("Terminate NS", "POST", "/nslcm/v1/ns_instances/{}/terminate".format(self.ns_id), headers_yaml,
-                        None, 201, r_headers_yaml_location_nslcmop, "yaml")
+                        None, (201, 202), r_headers_yaml_location_nslcmop, "yaml")
             nslcmop2_id = engine.last_id
             # Wait until status is Ok
             engine.wait_operation_ready("ns", nslcmop2_id, timeout_deploy)
@@ -1275,7 +1283,7 @@ class TestDeployHackfestCirrosScaling(TestDeploy):
         for i in range(0, 2):
             engine.test("Execute scale action over NS", "POST",
                         "/nslcm/v1/ns_instances/{}/scale".format(self.ns_id), headers_yaml, payload,
-                        201, r_headers_yaml_location_nslcmop, "yaml")
+                        (201, 202), r_headers_yaml_location_nslcmop, "yaml")
             nslcmop2_scale_out = engine.last_id
             engine.wait_operation_ready("ns", nslcmop2_scale_out, timeout_deploy)
             if manual_check:
@@ -1288,7 +1296,7 @@ class TestDeployHackfestCirrosScaling(TestDeploy):
         for i in range(0, 2):
             engine.test("Execute scale IN action over NS", "POST",
                         "/nslcm/v1/ns_instances/{}/scale".format(self.ns_id), headers_yaml, payload,
-                        201, r_headers_yaml_location_nslcmop, "yaml")
+                        (201, 202), r_headers_yaml_location_nslcmop, "yaml")
             nslcmop2_scale_in = engine.last_id
             engine.wait_operation_ready("ns", nslcmop2_scale_in, timeout_deploy)
             if manual_check:
@@ -1298,7 +1306,7 @@ class TestDeployHackfestCirrosScaling(TestDeploy):
         # perform scale in that must fail as reached limit
         engine.test("Execute scale IN out of limit action over NS", "POST",
                     "/nslcm/v1/ns_instances/{}/scale".format(self.ns_id), headers_yaml, payload,
-                    201, r_headers_yaml_location_nslcmop, "yaml")
+                    (201, 202), r_headers_yaml_location_nslcmop, "yaml")
         nslcmop2_scale_in = engine.last_id
         engine.wait_operation_ready("ns", nslcmop2_scale_in, timeout_deploy, expected_fail=True)
 
@@ -1478,7 +1486,7 @@ class TestDeployHackfest3Charmed(TestDeploy):
         payload = '{member_vnf_index: "2", primitive: touch, primitive_params: { filename: /home/ubuntu/OSMTESTNBI }}'
         engine.test("Exec service primitive over NS", "POST",
                     "/nslcm/v1/ns_instances/{}/action".format(self.ns_id), headers_yaml, payload,
-                    201, r_headers_yaml_location_nslcmop, "yaml")
+                    (201, 202), r_headers_yaml_location_nslcmop, "yaml")
         nslcmop2_action = engine.last_id
         # Wait until status is Ok
         engine.wait_operation_ready("ns", nslcmop2_action, timeout_deploy)
@@ -1497,7 +1505,7 @@ class TestDeployHackfest3Charmed(TestDeploy):
         #           '{scaling-group-descriptor: scale_dataVM, member-vnf-index: "1"}}}'
         # engine.test("Execute scale action over NS", "POST",
         #             "/nslcm/v1/ns_instances/{}/scale".format(self.ns_id), headers_yaml, payload,
-        #             201, r_headers_yaml_location_nslcmop, "yaml")
+        #             (201, 202), r_headers_yaml_location_nslcmop, "yaml")
         # nslcmop2_scale_out = engine.last_id
         # engine.wait_operation_ready("ns", nslcmop2_scale_out, timeout_deploy)
         # if manual_check:
@@ -1509,7 +1517,7 @@ class TestDeployHackfest3Charmed(TestDeploy):
         #           '{scaling-group-descriptor: scale_dataVM, member-vnf-index: "1"}}}'
         # engine.test("Execute scale action over NS", "POST",
         #             "/nslcm/v1/ns_instances/{}/scale".format(self.ns_id), headers_yaml, payload,
-        #             201, r_headers_yaml_location_nslcmop, "yaml")
+        #             (201, 202), r_headers_yaml_location_nslcmop, "yaml")
         # nslcmop2_scale_in = engine.last_id
         # engine.wait_operation_ready("ns", nslcmop2_scale_in, timeout_deploy)
         # if manual_check:
@@ -1664,7 +1672,7 @@ class TestDeployHackfest3Charmed3(TestDeployHackfest3Charmed):
                   '{scaling-group-descriptor: scale_dataVM, member-vnf-index: "1"}}}'
         engine.test("Execute scale action over NS", "POST",
                     "/nslcm/v1/ns_instances/{}/scale".format(self.ns_id), headers_yaml, payload,
-                    201, r_headers_yaml_location_nslcmop, "yaml")
+                    (201, 202), r_headers_yaml_location_nslcmop, "yaml")
         nslcmop2_scale_out = engine.last_id
         engine.wait_operation_ready("ns", nslcmop2_scale_out, timeout_deploy)
         if manual_check:
@@ -1679,7 +1687,7 @@ class TestDeployHackfest3Charmed3(TestDeployHackfest3Charmed):
                   '{scaling-group-descriptor: scale_dataVM, member-vnf-index: "1"}}}'
         engine.test("Execute scale action over NS", "POST",
                     "/nslcm/v1/ns_instances/{}/scale".format(self.ns_id), headers_yaml, payload,
-                    201, r_headers_yaml_location_nslcmop, "yaml")
+                    (201, 202), r_headers_yaml_location_nslcmop, "yaml")
         nslcmop2_scale_in = engine.last_id
         engine.wait_operation_ready("ns", nslcmop2_scale_in, timeout_deploy)
         if manual_check:
@@ -2238,7 +2246,7 @@ class TestNetSliceInstances:
     def create_slice(self, engine, nsi_data, name):
         ns_data_text = yaml.safe_dump(nsi_data, default_flow_style=True, width=256)
         r = engine.test(name, "POST", "/nsilcm/v1/netslice_instances",
-                        headers_yaml, ns_data_text, 201,
+                        headers_yaml, ns_data_text, (201, 202),
                         {"Location": "nsilcm/v1/netslice_instances/", "Content-Type": "application/yaml"}, "yaml")
         return r
 
@@ -2246,11 +2254,11 @@ class TestNetSliceInstances:
         ns_data_text = yaml.safe_dump(nsi_data, default_flow_style=True, width=256)
         engine.test(name, "POST",
                     "/nsilcm/v1/netslice_instances/{}/instantiate".format(nsi_id), headers_yaml, ns_data_text,
-                    201, r_headers_yaml_location_nsilcmop, "yaml")
+                    (201, 202), r_headers_yaml_location_nsilcmop, "yaml")
 
     def terminate_slice(self, engine, nsi_id, name):
         engine.test(name, "POST", "/nsilcm/v1/netslice_instances/{}/terminate".format(nsi_id),
-                    headers_yaml, None, 201, r_headers_yaml_location_nsilcmop, "yaml")
+                    headers_yaml, None, (201, 202), r_headers_yaml_location_nsilcmop, "yaml")
 
     def delete_slice(self, engine, nsi_id, name):
         engine.test(name, "DELETE", "/nsilcm/v1/netslice_instances/{}".format(nsi_id), headers_yaml, None,

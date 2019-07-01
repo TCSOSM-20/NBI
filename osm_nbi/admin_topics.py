@@ -101,6 +101,7 @@ class UserTopic(BaseTopic):
             final_content["_admin"]["salt"] = salt
             final_content["password"] = sha256(edit_content["password"].encode('utf-8') +
                                                salt.encode('utf-8')).hexdigest()
+        return None
 
     def edit(self, session, _id, indata=None, kwargs=None, content=None):
         if not session["admin"]:
@@ -196,51 +197,106 @@ class ProjectTopic(BaseTopic):
         return BaseTopic.new(self, rollback, session, indata=indata, kwargs=kwargs, headers=headers)
 
 
-class VimAccountTopic(BaseTopic):
-    topic = "vim_accounts"
-    topic_msg = "vim_account"
-    schema_new = vim_account_new_schema
-    schema_edit = vim_account_edit_schema
-    vim_config_encrypted = ("admin_password", "nsx_password", "vcenter_password")
-    multiproject = True
+class CommonVimWimSdn(BaseTopic):
+    """Common class for VIM, WIM SDN just to unify methods that are equal to all of them"""
+    config_to_encrypt = ()     # what keys at config must be encrypted because contains passwords
+    password_to_encrypt = ""   # key that contains a password
 
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
+    @staticmethod
+    def _create_operation(op_type, params=None):
+        """
+        Creates a dictionary with the information to an operation, similar to ns-lcm-op
+        :param op_type: can be create, edit, delete
+        :param params: operation input parameters
+        :return: new dictionary with
+        """
+        now = time()
+        return {
+            "lcmOperationType": op_type,
+            "operationState": "PROCESSING",
+            "startTime": now,
+            "statusEnteredTime": now,
+            "detailed-status": "",
+            "operationParams": params,
+        }
 
     def check_conflict_on_new(self, session, indata):
+        """
+        Check that the data to be inserted is valid. It is checked that name is unique
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param indata: data to be inserted
+        :return: None or raises EngineException
+        """
         self.check_unique_name(session, indata["name"], _id=None)
 
     def check_conflict_on_edit(self, session, final_content, edit_content, _id):
+        """
+        Check that the data to be edited/uploaded is valid. It is checked that name is unique
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param final_content: data once modified. This method may change it.
+        :param edit_content: incremental data that contains the modifications to apply
+        :param _id: internal _id
+        :return: None or raises EngineException
+        """
         if not session["force"] and edit_content.get("name"):
             self.check_unique_name(session, edit_content["name"], _id=_id)
+
+    def format_on_edit(self, final_content, edit_content):
+        """
+        Modifies final_content inserting admin information upon edition
+        :param final_content: final content to be stored at database
+        :param edit_content: user requested update content
+        :return: operation id
+        """
 
         # encrypt passwords
         schema_version = final_content.get("schema_version")
         if schema_version:
-            if edit_content.get("vim_password"):
-                final_content["vim_password"] = self.db.encrypt(edit_content["vim_password"],
-                                                                schema_version=schema_version, salt=_id)
-            if edit_content.get("config"):
-                for p in self.vim_config_encrypted:
+            if edit_content.get(self.password_to_encrypt):
+                final_content[self.password_to_encrypt] = self.db.encrypt(edit_content[self.password_to_encrypt],
+                                                                          schema_version=schema_version,
+                                                                          salt=final_content["_id"])
+            if edit_content.get("config") and self.config_to_encrypt:
+                for p in self.config_to_encrypt:
                     if edit_content["config"].get(p):
                         final_content["config"][p] = self.db.encrypt(edit_content["config"][p],
-                                                                     schema_version=schema_version, salt=_id)
+                                                                     schema_version=schema_version,
+                                                                     salt=final_content["_id"])
+
+        # create edit operation
+        final_content["_admin"]["operations"].append(self._create_operation("edit"))
+        return "{}:{}".format(final_content["_id"], len(final_content["_admin"]["operations"]) - 1)
 
     def format_on_new(self, content, project_id=None, make_public=False):
-        BaseTopic.format_on_new(content, project_id=project_id, make_public=make_public)
+        """
+        Modifies content descriptor to include _admin and insert create operation
+        :param content: descriptor to be modified
+        :param project_id: if included, it add project read/write permissions. Can be None or a list
+        :param make_public: if included it is generated as public for reading.
+        :return: op_id: operation id on asynchronous operation, None otherwise. In addition content is modified
+        """
+        super().format_on_new(content, project_id=project_id, make_public=make_public)
         content["schema_version"] = schema_version = "1.1"
 
         # encrypt passwords
-        if content.get("vim_password"):
-            content["vim_password"] = self.db.encrypt(content["vim_password"], schema_version=schema_version,
-                                                      salt=content["_id"])
-        if content.get("config"):
-            for p in self.vim_config_encrypted:
+        if content.get(self.password_to_encrypt):
+            content[self.password_to_encrypt] = self.db.encrypt(content[self.password_to_encrypt],
+                                                                schema_version=schema_version,
+                                                                salt=content["_id"])
+        if content.get("config") and self.config_to_encrypt:
+            for p in self.config_to_encrypt:
                 if content["config"].get(p):
-                    content["config"][p] = self.db.encrypt(content["config"][p], schema_version=schema_version,
+                    content["config"][p] = self.db.encrypt(content["config"][p],
+                                                           schema_version=schema_version,
                                                            salt=content["_id"])
 
         content["_admin"]["operationalState"] = "PROCESSING"
+
+        # create operation
+        content["_admin"]["operations"] = [self._create_operation("create")]
+        content["_admin"]["current_operation"] = None
+
+        return "{}:0".format(content["_id"])
 
     def delete(self, session, _id, dry_run=False):
         """
@@ -248,130 +304,84 @@ class VimAccountTopic(BaseTopic):
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :param dry_run: make checking but do not delete
-        :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
+        :return: operation id if it is ordered to delete. None otherwise
         """
-        # TODO add admin to filter, validate rights
-        if dry_run or session["force"]:    # delete completely
-            return BaseTopic.delete(self, session, _id, dry_run)
-        else:  # if not, sent to kafka
-            v = BaseTopic.delete(self, session, _id, dry_run=True)
-            self.db.set_one("vim_accounts", {"_id": _id}, {"_admin.to_delete": True})  # TODO change status
-            self._send_msg("delete", {"_id": _id})
-            return v  # TODO indicate an offline operation to return 202 ACCEPTED
+
+        filter_q = self._get_project_filter(session)
+        filter_q["_id"] = _id
+        db_content = self.db.get_one(self.topic, filter_q)
+
+        self.check_conflict_on_del(session, _id, db_content)
+        if dry_run:
+            return None
+
+        # remove reference from project_read. If not last delete
+        if session["project_id"]:
+            for project_id in session["project_id"]:
+                if project_id in db_content["_admin"]["projects_read"]:
+                    db_content["_admin"]["projects_read"].remove(project_id)
+                if project_id in db_content["_admin"]["projects_write"]:
+                    db_content["_admin"]["projects_write"].remove(project_id)
+        else:
+            db_content["_admin"]["projects_read"].clear()
+            db_content["_admin"]["projects_write"].clear()
+
+        update_dict = {"_admin.projects_read": db_content["_admin"]["projects_read"],
+                       "_admin.projects_write": db_content["_admin"]["projects_write"]
+                       }
+
+        # check if there are projects referencing it (apart from ANY that means public)....
+        if db_content["_admin"]["projects_read"] and (len(db_content["_admin"]["projects_read"]) > 1 or
+                                                      db_content["_admin"]["projects_read"][0] != "ANY"):
+            self.db.set_one(self.topic, filter_q, update_dict=update_dict)  # remove references but not delete
+            return None
+
+        # It must be deleted
+        if session["force"]:
+            self.db.del_one(self.topic, {"_id": _id})
+            op_id = None
+            self._send_msg("deleted", {"_id": _id, "op_id": op_id})
+        else:
+            update_dict["_admin.to_delete"] = True
+            self.db.set_one(self.topic, {"_id": _id},
+                            update_dict=update_dict,
+                            push={"_admin.operations": self._create_operation("delete")}
+                            )
+            # the number of operations is the operation_id. db_content does not contains the new operation inserted,
+            # so the -1 is not needed
+            op_id = "{}:{}".format(db_content["_id"], len(db_content["_admin"]["operations"]))
+            self._send_msg("delete", {"_id": _id, "op_id": op_id})
+        return op_id
 
 
-class WimAccountTopic(BaseTopic):
+class VimAccountTopic(CommonVimWimSdn):
+    topic = "vim_accounts"
+    topic_msg = "vim_account"
+    schema_new = vim_account_new_schema
+    schema_edit = vim_account_edit_schema
+    multiproject = True
+    password_to_encrypt = "vim_password"
+    config_to_encrypt = ("admin_password", "nsx_password", "vcenter_password")
+
+
+class WimAccountTopic(CommonVimWimSdn):
     topic = "wim_accounts"
     topic_msg = "wim_account"
     schema_new = wim_account_new_schema
     schema_edit = wim_account_edit_schema
     multiproject = True
-    wim_config_encrypted = ()
-
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
-
-    def check_conflict_on_new(self, session, indata):
-        self.check_unique_name(session, indata["name"], _id=None)
-
-    def check_conflict_on_edit(self, session, final_content, edit_content, _id):
-        if not session["force"] and edit_content.get("name"):
-            self.check_unique_name(session, edit_content["name"], _id=_id)
-
-        # encrypt passwords
-        schema_version = final_content.get("schema_version")
-        if schema_version:
-            if edit_content.get("wim_password"):
-                final_content["wim_password"] = self.db.encrypt(edit_content["wim_password"],
-                                                                schema_version=schema_version, salt=_id)
-            if edit_content.get("config"):
-                for p in self.wim_config_encrypted:
-                    if edit_content["config"].get(p):
-                        final_content["config"][p] = self.db.encrypt(edit_content["config"][p],
-                                                                     schema_version=schema_version, salt=_id)
-
-    def format_on_new(self, content, project_id=None, make_public=False):
-        BaseTopic.format_on_new(content, project_id=project_id, make_public=make_public)
-        content["schema_version"] = schema_version = "1.1"
-
-        # encrypt passwords
-        if content.get("wim_password"):
-            content["wim_password"] = self.db.encrypt(content["wim_password"], schema_version=schema_version,
-                                                      salt=content["_id"])
-        if content.get("config"):
-            for p in self.wim_config_encrypted:
-                if content["config"].get(p):
-                    content["config"][p] = self.db.encrypt(content["config"][p], schema_version=schema_version,
-                                                           salt=content["_id"])
-
-        content["_admin"]["operationalState"] = "PROCESSING"
-
-    def delete(self, session, _id, dry_run=False):
-        """
-        Delete item by its internal _id
-        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
-        :param _id: server internal id
-        :param dry_run: make checking but do not delete
-        :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
-        """
-        # TODO add admin to filter, validate rights
-        if dry_run or session["force"]:    # delete completely
-            return BaseTopic.delete(self, session, _id, dry_run)
-        else:  # if not, sent to kafka
-            v = BaseTopic.delete(self, session, _id, dry_run=True)
-            self.db.set_one("wim_accounts", {"_id": _id}, {"_admin.to_delete": True})  # TODO change status
-            self._send_msg("delete", {"_id": _id})
-            return v  # TODO indicate an offline operation to return 202 ACCEPTED
+    password_to_encrypt = "wim_password"
+    config_to_encrypt = ()
 
 
-class SdnTopic(BaseTopic):
+class SdnTopic(CommonVimWimSdn):
     topic = "sdns"
     topic_msg = "sdn"
     schema_new = sdn_new_schema
     schema_edit = sdn_edit_schema
     multiproject = True
-
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
-
-    def check_conflict_on_new(self, session, indata):
-        self.check_unique_name(session, indata["name"], _id=None)
-
-    def check_conflict_on_edit(self, session, final_content, edit_content, _id):
-        if not session["force"] and edit_content.get("name"):
-            self.check_unique_name(session, edit_content["name"], _id=_id)
-
-        # encrypt passwords
-        schema_version = final_content.get("schema_version")
-        if schema_version and edit_content.get("password"):
-            final_content["password"] = self.db.encrypt(edit_content["password"], schema_version=schema_version,
-                                                        salt=_id)
-
-    def format_on_new(self, content, project_id=None, make_public=False):
-        BaseTopic.format_on_new(content, project_id=project_id, make_public=make_public)
-        content["schema_version"] = schema_version = "1.1"
-        # encrypt passwords
-        if content.get("password"):
-            content["password"] = self.db.encrypt(content["password"], schema_version=schema_version,
-                                                  salt=content["_id"])
-
-        content["_admin"]["operationalState"] = "PROCESSING"
-
-    def delete(self, session, _id, dry_run=False):
-        """
-        Delete item by its internal _id
-        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
-        :param _id: server internal id
-        :param dry_run: make checking but do not delete
-        :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
-        """
-        if dry_run or session["force"]:  # delete completely
-            return BaseTopic.delete(self, session, _id, dry_run)
-        else:  # if not sent to kafka
-            v = BaseTopic.delete(self, session, _id, dry_run=True)
-            self.db.set_one("sdns", {"_id": _id}, {"_admin.to_delete": True})  # TODO change status
-            self._send_msg("delete", {"_id": _id})
-            return v   # TODO indicate an offline operation to return 202 ACCEPTED
+    password_to_encrypt = "password"
+    config_to_encrypt = ()
 
 
 class UserTopicAuth(UserTopic):
@@ -1018,6 +1028,7 @@ class RoleTopicAuth(BaseTopic):
             final_content["permissions"]["default"] = False
         if "admin" not in final_content["permissions"]:
             final_content["permissions"]["admin"] = False
+        return None
 
     # @staticmethod
     # def format_on_show(content):

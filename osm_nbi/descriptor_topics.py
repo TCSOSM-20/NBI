@@ -117,7 +117,7 @@ class DescriptorTopic(BaseTopic):
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :return: _id: identity of the inserted data.
+        :return: _id, None: identity of the inserted data; and None as there is not any operation
         """
 
         try:
@@ -136,7 +136,7 @@ class DescriptorTopic(BaseTopic):
             self.format_on_new(content, session["project_id"], make_public=session["public"])
             _id = self.db.create(self.topic, content)
             rollback.append({"topic": self.topic, "_id": _id})
-            return _id
+            return _id, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 

@@ -807,5 +807,5 @@ def is_valid_uuid(x):
     try:
         if UUID(x):
             return True
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, AttributeError):
         return False
