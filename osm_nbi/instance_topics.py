@@ -181,6 +181,7 @@ class NsrTopic(BaseTopic):
         """
 
         try:
+            step = "validating input parameters"
             ns_request = self._remove_envelop(indata)
             # Override descriptor with query string kwargs
             self._update_input_with_kwargs(ns_request, kwargs)
@@ -227,7 +228,7 @@ class NsrTopic(BaseTopic):
                 "id": nsr_id,
                 "_id": nsr_id,
                 # "input-parameter": xpath, value,
-                "ssh-authorized-key": ns_request.get("key-pair-ref"),  # TODO remove
+                "ssh-authorized-key": ns_request.get("ssh_keys"),  # TODO remove
             }
             ns_request["nsr_id"] = nsr_id
             # Create vld
@@ -988,12 +989,12 @@ class NsiTopic(BaseTopic):
         """
 
         try:
+            step = ""
             slice_request = self._remove_envelop(indata)
             # Override descriptor with query string kwargs
             self._update_input_with_kwargs(slice_request, kwargs)
             self._validate_input_new(slice_request, session["force"])
 
-            step = ""
             # look for nstd
             step = "getting nstd id='{}' from database".format(slice_request.get("nstId"))
             _filter = self._get_project_filter(session)
@@ -1102,7 +1103,8 @@ class NsiTopic(BaseTopic):
                     indata_ns["nsName"] = slice_request.get("nsiName") + "." + service["id"]
                     indata_ns["vimAccountId"] = slice_request.get("vimAccountId")
                     indata_ns["nsDescription"] = service["description"]
-                    indata_ns["key-pair-ref"] = slice_request.get("key-pair-ref")
+                    if slice_request.get("ssh_keys"):
+                        indata_ns["ssh_keys"] = slice_request.get("ssh_keys")
 
                     if ns_params:
                         for ns_param in ns_params:
@@ -1293,8 +1295,7 @@ class NsiLcmOpTopic(BaseTopic):
                     indata_ns["nsInstanceId"] = service["_id"]
                     # Including netslice_id in the ns instantiate Operation
                     indata_ns["netsliceInstanceId"] = netsliceInstanceId
-                    del indata_ns["key-pair-ref"]
-                    # Creating NS_LCM_OP with the flag slice_object=True to not trigger the service instantiation 
+                    # Creating NS_LCM_OP with the flag slice_object=True to not trigger the service instantiation
                     # message via kafka bus
                     nslcmop = self.nsi_NsLcmOpTopic.new(rollback, session, indata_ns, kwargs, headers, 
                                                         slice_object=True)
