@@ -27,6 +27,7 @@ __author__ = "Eduardo Sousa <esousa@whitestack.com>"
 __date__ = "$27-jul-2018 23:59:59$"
 
 from http import HTTPStatus
+from base_topic import BaseTopic
 
 
 class AuthException(Exception):
@@ -108,7 +109,7 @@ class Authconn:
     Each Auth backend connector plugin must be a subclass of
     Authconn class.
     """
-    def __init__(self, config):
+    def __init__(self, config, db, token_cache):
         """
         Constructor of the Authconn class.
 
@@ -136,18 +137,6 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    # def authenticate_with_token(self, token, project=None):
-    #     """
-    #     Authenticate a user using a token. Can be used to revalidate the token
-    #     or to get a scoped token.
-    #
-    #     :param token: a valid token.
-    #     :param project: (optional) project for a scoped token.
-    #     :return: return a revalidated token, scoped if a project was passed or
-    #     the previous token was already scoped.
-    #     """
-    #     raise AuthconnNotImplementedException("Should have implemented this")
-
     def validate_token(self, token):
         """
         Check if the token is valid.
@@ -166,43 +155,21 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def get_user_project_list(self, token):
-        """
-        Get all the projects associated with a user.
-
-        :param token: valid token
-        :return: list of projects
-        """
-        raise AuthconnNotImplementedException("Should have implemented this")
-
-    def get_user_role_list(self, token):
-        """
-        Get role list for a scoped project.
-
-        :param token: scoped token.
-        :return: returns the list of roles for the user in that project. If
-        the token is unscoped it returns None.
-        """
-        raise AuthconnNotImplementedException("Should have implemented this")
-
-    def create_user(self, user, password):
+    def create_user(self, user_info):
         """
         Create a user.
 
-        :param user: username.
-        :param password: password.
+        :param user_info: full user info.
         :raises AuthconnOperationException: if user creation failed.
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def update_user(self, user, new_name=None, new_password=None):
+    def update_user(self, user_info):
         """
         Change the user name and/or password.
 
-        :param user: username or user_id
-        :param new_name: new name
-        :param new_password: new password.
-        :raises AuthconnOperationException: if change failed.
+        :param user_info:  user info modifications
+        :raises AuthconnNotImplementedException: if function not implemented
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
@@ -223,11 +190,21 @@ class Authconn:
         :return: returns a list of users.
         """
 
-    def create_role(self, role):
+    def get_user(self, id, fail=True):
+        filt = {BaseTopic.id_field("users", id): id}
+        users = self.get_user_list(filt)
+        if not users:
+            if fail:
+                raise AuthconnNotFoundException("User with {} not found".format(filt), http_code=HTTPStatus.NOT_FOUND)
+            else:
+                return None
+        return users[0]
+
+    def create_role(self, role_info):
         """
         Create a role.
 
-        :param role: role name.
+        :param role_info: full role info.
         :raises AuthconnOperationException: if role creation failed.
         """
         raise AuthconnNotImplementedException("Should have implemented this")
@@ -250,20 +227,29 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def update_role(self, role, new_name):
+    def get_role(self, id, fail=True):
+        filt = {BaseTopic.id_field("roles", id): id}
+        roles = self.get_role_list(filt)
+        if not roles:
+            if fail:
+                raise AuthconnNotFoundException("Role with {} not found".format(filt))
+            else:
+                return None
+        return roles[0]
+
+    def update_role(self, role_info):
         """
-        Change the name of a role
-        :param role: role name or id to be changed
-        :param new_name: new name
+        Change the information of a role
+        :param role_info: full role info
         :return: None
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def create_project(self, project):
+    def create_project(self, project_info):
         """
         Create a project.
 
-        :param project: project name.
+        :param project_info: full project info.
         :return: the internal id of the created project
         :raises AuthconnOperationException: if project creation failed.
         """
@@ -287,33 +273,21 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def update_project(self, project_id, new_name):
+    def get_project(self, id, fail=True):
+        filt = {BaseTopic.id_field("projects", id): id}
+        projs = self.get_project_list(filt)
+        if not projs:
+            if fail:
+                raise AuthconnNotFoundException("project with {} not found".format(filt))
+            else:
+                return None
+        return projs[0]
+
+    def update_project(self, project_id, project_info):
         """
-        Change the name of a project
+        Change the information of a project
         :param project_id: project to be changed
-        :param new_name: new name
+        :param project_info: full project info
         :return: None
-        """
-        raise AuthconnNotImplementedException("Should have implemented this")
-
-    def assign_role_to_user(self, user, project, role):
-        """
-        Assigning a role to a user in a project.
-
-        :param user: username.
-        :param project: project name.
-        :param role: role name.
-        :raises AuthconnOperationException: if role assignment failed.
-        """
-        raise AuthconnNotImplementedException("Should have implemented this")
-
-    def remove_role_from_user(self, user, project, role):
-        """
-        Remove a role from a user in a project.
-
-        :param user: username.
-        :param project: project name.
-        :param role: role name.
-        :raises AuthconnOperationException: if role assignment revocation failed.
         """
         raise AuthconnNotImplementedException("Should have implemented this")

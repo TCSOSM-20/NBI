@@ -24,7 +24,7 @@ import logging.handlers
 import getopt
 import sys
 
-from authconn import AuthException
+from authconn import AuthException, AuthconnException
 from auth import Authenticator
 from engine import Engine, EngineException
 from subscriptions import SubscriptionThread
@@ -598,7 +598,7 @@ class Server(object):
         try:
             if cherrypy.request.method == "GET":
                 token_info = self.authenticator.authorize()
-                outdata = "Index page"
+                outdata = token_info   # Home page
             else:
                 raise cherrypy.HTTPError(HTTPStatus.METHOD_NOT_ALLOWED.value,
                                          "Method {} not allowed for tokens".format(cherrypy.request.method))
@@ -1110,7 +1110,7 @@ class Server(object):
             return self._format_out(outdata, token_info, _format)
         except Exception as e:
             if isinstance(e, (NbiException, EngineException, DbException, FsException, MsgException, AuthException,
-                              ValidationError)):
+                              ValidationError, AuthconnException)):
                 http_code_value = cherrypy.response.status = e.http_code.value
                 http_code_name = e.http_code.name
                 cherrypy.log("Exception {}".format(e))
@@ -1255,7 +1255,10 @@ def _start_service():
     try:
         with open("{}/version".format(engine_config["/static"]['tools.staticdir.dir'])) as version_file:
             version_data = version_file.read()
-            cherrypy.log.error("Starting OSM NBI Version: {}".format(version_data.replace("\n", " ")))
+            version = version_data.replace("\n", " ")
+            backend = engine_config["authentication"]["backend"]
+            cherrypy.log.error("Starting OSM NBI Version {} with {} authentication backend"
+                               .format(version, backend))
     except Exception:
         pass
 

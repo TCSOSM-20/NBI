@@ -25,7 +25,9 @@ from validation import validate_input
 from validation import ValidationError
 from validation import is_valid_uuid    # To check that User/Project Names don't look like UUIDs
 from base_topic import BaseTopic, EngineException
-from authconn_keystone import AuthconnKeystone
+from osm_common.dbbase import deep_update_rfc7396
+from authconn import AuthconnNotFoundException, AuthconnConflictException
+# from authconn_keystone import AuthconnKeystone
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
@@ -86,7 +88,7 @@ class UserTopic(BaseTopic):
         if content.get("password"):
             content["password"] = sha256(content["password"].encode('utf-8') + salt.encode('utf-8')).hexdigest()
         if content.get("project_role_mappings"):
-            projects = [mapping[0] for mapping in content["project_role_mappings"]]
+            projects = [mapping["project"] for mapping in content["project_role_mappings"]]
 
             if content.get("projects"):
                 content["projects"] += projects
@@ -413,10 +415,19 @@ class UserTopicAuth(UserTopic):
 
         if "projects" in indata.keys():
             # convert to new format project_role_mappings
+            role = self.auth.get_role_list({"name": "project_admin"})
+            if not role:
+                role = self.auth.get_role_list()
+            if not role:
+                raise AuthconnNotFoundException("Can't find default role for user '{}'".format(username))
+            rid = role[0]["_id"]
             if not indata.get("project_role_mappings"):
                 indata["project_role_mappings"] = []
             for project in indata["projects"]:
-                indata["project_role_mappings"].append({"project": project, "role": "project_user"})
+                pid = self.auth.get_project(project)["_id"]
+                prm = {"project": pid, "role": rid}
+                if prm not in indata["project_role_mappings"]:
+                    indata["project_role_mappings"].append(prm)
             # raise EngineException("Format invalid: the keyword 'projects' is not allowed for keystone authentication",
             #                       HTTPStatus.BAD_REQUEST)
 
@@ -458,40 +469,7 @@ class UserTopicAuth(UserTopic):
         """
         if db_content["username"] == session["username"]:
             raise EngineException("You cannot delete your own login user ", http_code=HTTPStatus.CONFLICT)
-
-    # @staticmethod
-    # def format_on_new(content, project_id=None, make_public=False):
-    #     """
-    #     Modifies content descriptor to include _id.
-    #
-    #     NOTE: No password salt required because the authentication backend
-    #     should handle these security concerns.
-    #
-    #     :param content: descriptor to be modified
-    #     :param make_public: if included it is generated as public for reading.
-    #     :return: None, but content is modified
-    #     """
-    #     BaseTopic.format_on_new(content, make_public=False)
-    #     content["_id"] = content["username"]
-    #     content["password"] = content["password"]
-
-    # @staticmethod
-    # def format_on_edit(final_content, edit_content):
-    #     """
-    #     Modifies final_content descriptor to include the modified date.
-    #
-    #     NOTE: No password salt required because the authentication backend
-    #     should handle these security concerns.
-    #
-    #     :param final_content: final descriptor generated
-    #     :param edit_content: alterations to be include
-    #     :return: None, but final_content is modified
-    #     """
-    #     BaseTopic.format_on_edit(final_content, edit_content)
-    #     if "password" in edit_content:
-    #         final_content["password"] = edit_content["password"]
-    #     else:
-    #         final_content["project_role_mappings"] = edit_content["project_role_mappings"]
+        # TODO: Check that user is not logged in ? How? (Would require listing current tokens)
 
     @staticmethod
     def format_on_show(content):
@@ -501,14 +479,14 @@ class UserTopicAuth(UserTopic):
         """
         project_role_mappings = []
 
-        for project in content["projects"]:
-            for role in project["roles"]:
-                project_role_mappings.append({"project": project["_id"],
-                                              "project_name": project["name"],
-                                              "role": role["_id"],
-                                              "role_name": role["name"]})
-
-        del content["projects"]
+        if "projects" in content:
+            for project in content["projects"]:
+                for role in project["roles"]:
+                    project_role_mappings.append({"project": project["_id"],
+                                                  "project_name": project["name"],
+                                                  "role": role["_id"],
+                                                  "role_name": role["name"]})
+            del content["projects"]
         content["project_role_mappings"] = project_role_mappings
 
         return content
@@ -524,7 +502,7 @@ class UserTopicAuth(UserTopic):
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :return: _id: identity of the inserted data.
+        :return: _id: identity of the inserted data, operation _id (None)
         """
         try:
             content = BaseTopic._remove_envelop(indata)
@@ -534,16 +512,25 @@ class UserTopicAuth(UserTopic):
             content = self._validate_input_new(content, session["force"])
             self.check_conflict_on_new(session, content)
             # self.format_on_new(content, session["project_id"], make_public=session["public"])
-            _id = self.auth.create_user(content["username"], content["password"])["_id"]
-
-            if "project_role_mappings" in content.keys():
-                for mapping in content["project_role_mappings"]:
-                    self.auth.assign_role_to_user(_id, mapping["project"], mapping["role"])
+            now = time()
+            content["_admin"] = {"created": now, "modified": now}
+            prms = []
+            for prm in content.get("project_role_mappings", []):
+                proj = self.auth.get_project(prm["project"], not session["force"])
+                role = self.auth.get_role(prm["role"], not session["force"])
+                pid = proj["_id"] if proj else None
+                rid = role["_id"] if role else None
+                prl = {"project": pid, "role": rid}
+                if prl not in prms:
+                    prms.append(prl)
+            content["project_role_mappings"] = prms
+            # _id = self.auth.create_user(content["username"], content["password"])["_id"]
+            _id = self.auth.create_user(content)["_id"]
 
             rollback.append({"topic": self.topic, "_id": _id})
             # del content["password"]
             # self._send_msg("create", content)
-            return _id
+            return _id, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
@@ -590,18 +577,30 @@ class UserTopicAuth(UserTopic):
             self.check_conflict_on_edit(session, content, indata, _id=_id)
             # self.format_on_edit(content, indata)
 
-            if "password" in indata or "username" in indata:
-                self.auth.update_user(_id, new_name=indata.get("username"), new_password=indata.get("password"))
-            if not indata.get("remove_project_role_mappings") and not indata.get("add_project_role_mappings") and \
-                    not indata.get("project_role_mappings"):
+            if not ("password" in indata or "username" in indata or indata.get("remove_project_role_mappings") or
+                    indata.get("add_project_role_mappings") or indata.get("project_role_mappings") or
+                    indata.get("projects") or indata.get("add_projects")):
                 return _id
-            if indata.get("project_role_mappings") and \
-                    (indata.get("remove_project_role_mappings") or indata.get("add_project_role_mappings")):
+            if indata.get("project_role_mappings") \
+                    and (indata.get("remove_project_role_mappings") or indata.get("add_project_role_mappings")):
                 raise EngineException("Option 'project_role_mappings' is incompatible with 'add_project_role_mappings"
                                       "' or 'remove_project_role_mappings'", http_code=HTTPStatus.BAD_REQUEST)
 
-            user = self.show(session, _id)
-            original_mapping = user["project_role_mappings"]
+            if indata.get("projects") or indata.get("add_projects"):
+                role = self.auth.get_role_list({"name": "project_admin"})
+                if not role:
+                    role = self.auth.get_role_list()
+                if not role:
+                    raise AuthconnNotFoundException("Can't find a default role for user '{}'"
+                                                    .format(content["username"]))
+                rid = role[0]["_id"]
+                if "add_project_role_mappings" not in indata:
+                    indata["add_project_role_mappings"] = []
+                for proj in indata.get("projects", []) + indata.get("add_projects", []):
+                    indata["add_project_role_mappings"].append({"project": proj, "role": rid})
+
+            # user = self.show(session, _id)   # Already in 'content'
+            original_mapping = content["project_role_mappings"]
 
             mappings_to_add = []
             mappings_to_remove = []
@@ -623,7 +622,9 @@ class UserTopicAuth(UserTopic):
                             mappings_to_remove.remove(mapping)
                         break  # do not add, it is already at user
                 else:
-                    mappings_to_add.append(to_add)
+                    pid = self.auth.get_project(to_add["project"])["_id"]
+                    rid = self.auth.get_role(to_add["role"])["_id"]
+                    mappings_to_add.append({"project": pid, "role": rid})
 
             # set
             if indata.get("project_role_mappings"):
@@ -631,12 +632,13 @@ class UserTopicAuth(UserTopic):
                     for mapping in original_mapping:
                         if to_set["project"] in (mapping["project"], mapping["project_name"]) and \
                                 to_set["role"] in (mapping["role"], mapping["role_name"]):
-
                             if mapping in mappings_to_remove:   # do not remove
                                 mappings_to_remove.remove(mapping)
                             break  # do not add, it is already at user
                     else:
-                        mappings_to_add.append(to_set)
+                        pid = self.auth.get_project(to_set["project"])["_id"]
+                        rid = self.auth.get_role(to_set["role"])["_id"]
+                        mappings_to_add.append({"project": pid, "role": rid})
                 for mapping in original_mapping:
                     for to_set in indata["project_role_mappings"]:
                         if to_set["project"] in (mapping["project"], mapping["project_name"]) and \
@@ -647,21 +649,12 @@ class UserTopicAuth(UserTopic):
                         if mapping not in mappings_to_remove:   # do not remove
                             mappings_to_remove.append(mapping)
 
-            for mapping in mappings_to_remove:
-                self.auth.remove_role_from_user(
-                    _id,
-                    mapping["project"],
-                    mapping["role"]
-                )
+            self.auth.update_user({"_id": _id, "username": indata.get("username"), "password": indata.get("password"),
+                                   "add_project_role_mappings": mappings_to_add,
+                                   "remove_project_role_mappings": mappings_to_remove
+                                   })
 
-            for mapping in mappings_to_add:
-                self.auth.assign_role_to_user(
-                    _id,
-                    mapping["project"],
-                    mapping["role"]
-                )
-
-            return "_id"
+            # return _id
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
@@ -687,14 +680,11 @@ class UserTopicAuth(UserTopic):
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
         # Allow _id to be a name or uuid
-        filter_q = {self.id_field(self.topic, _id): _id}
-        user_list = self.auth.get_user_list(filter_q)
-        if not user_list:
-            raise EngineException("User '{}' not found".format(_id), http_code=HTTPStatus.NOT_FOUND)
-        _id = user_list[0]["_id"]
-        self.check_conflict_on_del(session, _id, user_list[0])
+        user = self.auth.get_user(_id)
+        uid = user["_id"]
+        self.check_conflict_on_del(session, uid, user)
         if not dry_run:
-            v = self.auth.delete_user(_id)
+            v = self.auth.delete_user(uid)
             return v
         return None
 
@@ -739,10 +729,13 @@ class ProjectTopicAuth(ProjectTopic):
         """
 
         project_name = edit_content.get("name")
-        if project_name:
+        if project_name != final_content["name"]:  # It is a true renaming
             if is_valid_uuid(project_name):
-                raise EngineException("project name  '{}' cannot be an uuid format".format(project_name),
+                raise EngineException("project name  '{}' cannot have an uuid format".format(project_name),
                                       HTTPStatus.UNPROCESSABLE_ENTITY)
+
+            if final_content["name"] == "admin":
+                raise EngineException("You cannot rename project 'admin'", http_code=HTTPStatus.CONFLICT)
 
             # Check that project name is not used, regardless keystone already checks this
             if self.auth.get_project_list(filter_q={"name": project_name}):
@@ -757,12 +750,32 @@ class ProjectTopicAuth(ProjectTopic):
         :param db_content: The database content of this item _id
         :return: None if ok or raises EngineException with the conflict
         """
-        # projects = self.auth.get_project_list()
-        # current_project = [project for project in projects
-        #                    if project["name"] in session["project_id"]][0]
-        # TODO check that any user is using this project, raise CONFLICT exception
-        if _id == session["project_id"]:
+
+        def check_rw_projects(topic, title, id_field):
+            for desc in self.db.get_list(topic):
+                if _id in desc["_admin"]["projects_read"] + desc["_admin"]["projects_write"]:
+                    raise EngineException("Project '{}' ({}) is being used by {} '{}'"
+                                          .format(db_content["name"], _id, title, desc[id_field]), HTTPStatus.CONFLICT)
+
+        if _id in session["project_id"]:
             raise EngineException("You cannot delete your own project", http_code=HTTPStatus.CONFLICT)
+
+        if db_content["name"] == "admin":
+            raise EngineException("You cannot delete project 'admin'", http_code=HTTPStatus.CONFLICT)
+
+        # If any user is using this project, raise CONFLICT exception
+        if not session["force"]:
+            for user in self.auth.get_user_list():
+                if _id in [proj["_id"] for proj in user.get("projects", [])]:
+                    raise EngineException("Project '{}' ({}) is being used by user '{}'"
+                                          .format(db_content["name"], _id, user["username"]), HTTPStatus.CONFLICT)
+
+        # If any VNFD, NSD, NST, PDU, etc. is using this project, raise CONFLICT exception
+        if not session["force"]:
+            check_rw_projects("vnfds", "VNF Descriptor", "id")
+            check_rw_projects("nsds", "NS Descriptor", "id")
+            check_rw_projects("nsts", "NS Template", "id")
+            check_rw_projects("pdus", "PDU Descriptor", "name")
 
     def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
@@ -775,7 +788,7 @@ class ProjectTopicAuth(ProjectTopic):
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :return: _id: identity of the inserted data.
+        :return: _id: identity of the inserted data, operation _id (None)
         """
         try:
             content = BaseTopic._remove_envelop(indata)
@@ -785,10 +798,10 @@ class ProjectTopicAuth(ProjectTopic):
             content = self._validate_input_new(content, session["force"])
             self.check_conflict_on_new(session, content)
             self.format_on_new(content, project_id=session["project_id"], make_public=session["public"])
-            _id = self.auth.create_project(content["name"])
+            _id = self.auth.create_project(content)
             rollback.append({"topic": self.topic, "_id": _id})
             # self._send_msg("create", content)
-            return _id
+            return _id, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
@@ -831,14 +844,11 @@ class ProjectTopicAuth(ProjectTopic):
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
         # Allow _id to be a name or uuid
-        filter_q = {self.id_field(self.topic, _id): _id}
-        project_list = self.auth.get_project_list(filter_q)
-        if not project_list:
-            raise EngineException("Project '{}' not found".format(_id), http_code=HTTPStatus.NOT_FOUND)
-        _id = project_list[0]["_id"]
-        self.check_conflict_on_del(session, _id, project_list[0])
+        proj = self.auth.get_project(_id)
+        pid = proj["_id"]
+        self.check_conflict_on_del(session, pid, proj)
         if not dry_run:
-            v = self.auth.delete_project(_id)
+            v = self.auth.delete_project(pid)
             return v
         return None
 
@@ -864,10 +874,11 @@ class ProjectTopicAuth(ProjectTopic):
             if not content:
                 content = self.show(session, _id)
             self.check_conflict_on_edit(session, content, indata, _id=_id)
-            # self.format_on_edit(content, indata)
+            self.format_on_edit(content, indata)
 
             if "name" in indata:
-                self.auth.update_project(content["_id"], indata["name"])
+                content["name"] = indata["name"]
+            self.auth.update_project(content["_id"], content)
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
@@ -883,7 +894,7 @@ class RoleTopicAuth(BaseTopic):
         BaseTopic.__init__(self, db, fs, msg)
         self.auth = auth
         self.operations = ops
-        self.topic = "roles_operations" if isinstance(auth, AuthconnKeystone) else "roles"
+        # self.topic = "roles_operations" if isinstance(auth, AuthconnKeystone) else "roles"
 
     @staticmethod
     def validate_role_definition(operations, role_definitions):
@@ -946,8 +957,10 @@ class RoleTopicAuth(BaseTopic):
         :return: None or raises EngineException
         """
         # check name not exists
-        if self.db.get_one(self.topic, {"name": indata.get("name")}, fail_on_empty=False, fail_on_more=False):
-            raise EngineException("role name '{}' exists".format(indata["name"]), HTTPStatus.CONFLICT)
+        name = indata["name"]
+        # if self.db.get_one(self.topic, {"name": indata.get("name")}, fail_on_empty=False, fail_on_more=False):
+        if self.auth.get_role_list({"name": name}):
+            raise EngineException("role name '{}' exists".format(name), HTTPStatus.CONFLICT)
 
     def check_conflict_on_edit(self, session, final_content, edit_content, _id):
         """
@@ -967,7 +980,9 @@ class RoleTopicAuth(BaseTopic):
         # check name not exists
         if "name" in edit_content:
             role_name = edit_content["name"]
-            if self.db.get_one(self.topic, {"name": role_name, "_id.ne": _id}, fail_on_empty=False, fail_on_more=False):
+            # if self.db.get_one(self.topic, {"name":role_name,"_id.ne":_id}, fail_on_empty=False, fail_on_more=False):
+            roles = self.auth.get_role_list({"name": role_name})
+            if roles and roles[0][BaseTopic.id_field("roles", _id)] != _id:
                 raise EngineException("role name '{}' exists".format(role_name), HTTPStatus.CONFLICT)
 
     def check_conflict_on_del(self, session, _id, db_content):
@@ -979,14 +994,18 @@ class RoleTopicAuth(BaseTopic):
         :param db_content: The database content of this item _id
         :return: None if ok or raises EngineException with the conflict
         """
-        roles = self.auth.get_role_list()
-        system_admin_roles = [role for role in roles if role["name"] == "system_admin"]
+        role = self.auth.get_role(_id)
+        if role["name"] in ["system_admin", "project_admin"]:
+            raise EngineException("You cannot delete role '{}'".format(role["name"]), http_code=HTTPStatus.FORBIDDEN)
 
-        if system_admin_roles and _id == system_admin_roles[0]["_id"]:
-            raise EngineException("You cannot delete system_admin role", http_code=HTTPStatus.FORBIDDEN)
+        # If any user is using this role, raise CONFLICT exception
+        for user in self.auth.get_user_list():
+            if _id in [prl["_id"] for proj in user.get("projects", []) for prl in proj.get("roles", [])]:
+                raise EngineException("Role '{}' ({}) is being used by user '{}'"
+                                      .format(role["name"], _id, user["username"]), HTTPStatus.CONFLICT)
 
     @staticmethod
-    def format_on_new(content, project_id=None, make_public=False):
+    def format_on_new(content, project_id=None, make_public=False):   # TO BE REMOVED ?
         """
         Modifies content descriptor to include _admin
 
@@ -1019,7 +1038,8 @@ class RoleTopicAuth(BaseTopic):
         :param edit_content: alterations to be include
         :return: None, but final_content is modified
         """
-        final_content["_admin"]["modified"] = time()
+        if "_admin" in final_content:
+            final_content["_admin"]["modified"] = time()
 
         if "permissions" not in final_content:
             final_content["permissions"] = {}
@@ -1030,62 +1050,31 @@ class RoleTopicAuth(BaseTopic):
             final_content["permissions"]["admin"] = False
         return None
 
-    # @staticmethod
-    # def format_on_show(content):
-    #     """
-    #     Modifies the content of the role information to separate the role
-    #     metadata from the role definition. Eases the reading process of the
-    #     role definition.
-    #
-    #     :param definition: role definition to be processed
-    #     """
-    #     content["_id"] = str(content["_id"])
-    #
-    # def show(self, session, _id):
-    #     """
-    #     Get complete information on an topic
-    #
-    #     :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
-    #     :param _id: server internal id
-    #     :return: dictionary, raise exception if not found.
-    #     """
-    #     filter_db = {"_id": _id}
-    #     filter_db = { BaseTopic.id_field(self.topic, _id): _id }   # To allow role addressing by name
-    #
-    #     role = self.db.get_one(self.topic, filter_db)
-    #     new_role = dict(role)
-    #     self.format_on_show(new_role)
-    #
-    #     return new_role
+    def show(self, session, _id):
+        """
+        Get complete information on an topic
 
-    # def list(self, session, filter_q=None):
-    #     """
-    #     Get a list of the topic that matches a filter
-    #
-    #     :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
-    #     :param filter_q: filter of data to be applied
-    #     :return: The list, it can be empty if no one match the filter.
-    #     """
-    #     if not filter_q:
-    #         filter_q = {}
-    #
-    #     if ":" in filter_q:
-    #         filter_q["root"] = filter_q[":"]
-    #
-    #     for key in filter_q.keys():
-    #         if key == "name":
-    #             continue
-    #         filter_q[key] = filter_q[key] in ["True", "true"]
-    #
-    #     roles = self.db.get_list(self.topic, filter_q)
-    #     new_roles = []
-    #
-    #     for role in roles:
-    #         new_role = dict(role)
-    #         self.format_on_show(new_role)
-    #         new_roles.append(new_role)
-    #
-    #     return new_roles
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id: server internal id
+        :return: dictionary, raise exception if not found.
+        """
+        filter_q = {BaseTopic.id_field(self.topic, _id): _id}
+        roles = self.auth.get_role_list(filter_q)
+        if not roles:
+            raise AuthconnNotFoundException("Not found any role with filter {}".format(filter_q))
+        elif len(roles) > 1:
+            raise AuthconnConflictException("Found more than one role with filter {}".format(filter_q))
+        return roles[0]
+
+    def list(self, session, filter_q=None):
+        """
+        Get a list of the topic that matches a filter
+
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param filter_q: filter of data to be applied
+        :return: The list, it can be empty if no one match the filter.
+        """
+        return self.auth.get_role_list(filter_q)
 
     def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
@@ -1096,7 +1085,7 @@ class RoleTopicAuth(BaseTopic):
         :param indata: data to be inserted
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :return: _id: identity of the inserted data.
+        :return: _id: identity of the inserted data, operation _id (None)
         """
         try:
             content = self._remove_envelop(indata)
@@ -1106,13 +1095,13 @@ class RoleTopicAuth(BaseTopic):
             content = self._validate_input_new(content, session["force"])
             self.check_conflict_on_new(session, content)
             self.format_on_new(content, project_id=session["project_id"], make_public=session["public"])
-            role_name = content["name"]
-            role_id = self.auth.create_role(role_name)
-            content["_id"] = role_id
-            _id = self.db.create(self.topic, content)
-            rollback.append({"topic": self.topic, "_id": _id})
+            # role_name = content["name"]
+            rid = self.auth.create_role(content)
+            content["_id"] = rid
+            # _id = self.db.create(self.topic, content)
+            rollback.append({"topic": self.topic, "_id": rid})
             # self._send_msg("create", content)
-            return _id
+            return rid, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
@@ -1125,12 +1114,19 @@ class RoleTopicAuth(BaseTopic):
         :param dry_run: make checking but do not delete
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
-        self.check_conflict_on_del(session, _id, None)
+        filter_q = {BaseTopic.id_field(self.topic, _id): _id}
+        roles = self.auth.get_role_list(filter_q)
+        if not roles:
+            raise AuthconnNotFoundException("Not found any role with filter {}".format(filter_q))
+        elif len(roles) > 1:
+            raise AuthconnConflictException("Found more than one role with filter {}".format(filter_q))
+        rid = roles[0]["_id"]
+        self.check_conflict_on_del(session, rid, None)
         # filter_q = {"_id": _id}
-        filter_q = {BaseTopic.id_field(self.topic, _id): _id}   # To allow role addressing by name
+        # filter_q = {BaseTopic.id_field(self.topic, _id): _id}   # To allow role addressing by name
         if not dry_run:
-            self.auth.delete_role(_id)
-            v = self.db.del_one(self.topic, filter_q)
+            v = self.auth.delete_role(rid)
+            # v = self.db.del_one(self.topic, filter_q)
             return v
         return None
 
@@ -1145,6 +1141,15 @@ class RoleTopicAuth(BaseTopic):
         :param content:
         :return: _id: identity of the inserted data.
         """
-        _id = super().edit(session, _id, indata, kwargs, content)
-        if indata.get("name"):
-            self.auth.update_role(_id, name=indata.get("name"))
+        if kwargs:
+            self._update_input_with_kwargs(indata, kwargs)
+        try:
+            indata = self._validate_input_edit(indata, force=session["force"])
+            if not content:
+                content = self.show(session, _id)
+            deep_update_rfc7396(content, indata)
+            self.check_conflict_on_edit(session, content, indata, _id=_id)
+            self.format_on_edit(content, indata)
+            self.auth.update_role(content)
+        except ValidationError as e:
+            raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)

@@ -44,8 +44,8 @@ from validation import is_valid_uuid
 
 
 class AuthconnKeystone(Authconn):
-    def __init__(self, config):
-        Authconn.__init__(self, config)
+    def __init__(self, config, db, token_cache):
+        Authconn.__init__(self, config, db, token_cache)
 
         self.logger = logging.getLogger("nbi.authenticator.keystone")
 
@@ -157,35 +157,6 @@ class AuthconnKeystone(Authconn):
             raise AuthException("Error during user authentication using Keystone: {}".format(e),
                                 http_code=HTTPStatus.UNAUTHORIZED)
 
-    # def authenticate_with_token(self, token, project=None):
-    #     """
-    #     Authenticate a user using a token. Can be used to revalidate the token
-    #     or to get a scoped token.
-    #
-    #     :param token: a valid token.
-    #     :param project: (optional) project for a scoped token.
-    #     :return: return a revalidated token, scoped if a project was passed or
-    #     the previous token was already scoped.
-    #     """
-    #     try:
-    #         token_info = self.keystone.tokens.validate(token=token)
-    #         projects = self.keystone.projects.list(user=token_info["user"]["id"])
-    #         project_names = [project.name for project in projects]
-    #
-    #         new_token = self.keystone.get_raw_token_from_identity_service(
-    #             auth_url=self.auth_url,
-    #             token=token,
-    #             project_name=project,
-    #             project_id=None,
-    #             user_domain_name=self.user_domain_name,
-    #             project_domain_name=self.project_domain_name)
-    #
-    #         return new_token["auth_token"], project_names
-    #     except ClientException as e:
-    #         # self.logger.exception("Error during user authentication using keystone. Method: bearer: {}".format(e))
-    #         raise AuthException("Error during user authentication using Keystone: {}".format(e),
-    #                             http_code=HTTPStatus.UNAUTHORIZED)
-
     def validate_token(self, token):
         """
         Check if the token is valid.
@@ -238,55 +209,20 @@ class AuthconnKeystone(Authconn):
             raise AuthException("Error during token revocation using Keystone: {}".format(e),
                                 http_code=HTTPStatus.UNAUTHORIZED)
 
-    def get_user_project_list(self, token):
-        """
-        Get all the projects associated with a user.
-
-        :param token: valid token
-        :return: list of projects
-        """
-        try:
-            token_info = self.keystone.tokens.validate(token=token)
-            projects = self.keystone.projects.list(user=token_info["user"]["id"])
-            project_names = [project.name for project in projects]
-
-            return project_names
-        except ClientException as e:
-            # self.logger.exception("Error during user project listing using keystone: {}".format(e))
-            raise AuthException("Error during user project listing using Keystone: {}".format(e),
-                                http_code=HTTPStatus.UNAUTHORIZED)
-
-    def get_user_role_list(self, token):
-        """
-        Get role list for a scoped project.
-
-        :param token: scoped token.
-        :return: returns the list of roles for the user in that project. If
-        the token is unscoped it returns None.
-        """
-        try:
-            token_info = self.keystone.tokens.validate(token=token)
-            roles_info = self.keystone.roles.list(user=token_info["user"]["id"], project=token_info["project"]["id"])
-
-            roles = [role.name for role in roles_info]
-
-            return roles
-        except ClientException as e:
-            # self.logger.exception("Error during user role listing using keystone: {}".format(e))
-            raise AuthException("Error during user role listing using Keystone: {}".format(e),
-                                http_code=HTTPStatus.UNAUTHORIZED)
-
-    def create_user(self, user, password):
+    def create_user(self, user_info):
         """
         Create a user.
 
-        :param user: username.
-        :param password: password.
+        :param user_info: full user info.
         :raises AuthconnOperationException: if user creation failed.
         :return: returns the id of the user in keystone.
         """
         try:
-            new_user = self.keystone.users.create(user, password=password, domain=self.user_domain_name)
+            new_user = self.keystone.users.create(user_info["username"], password=user_info["password"],
+                                                  domain=self.user_domain_name, _admin=user_info["_admin"])
+            if "project_role_mappings" in user_info.keys():
+                for mapping in user_info["project_role_mappings"]:
+                    self.assign_role_to_user(new_user.id, mapping["project"], mapping["role"])
             return {"username": new_user.name, "_id": new_user.id}
         except Conflict as e:
             # self.logger.exception("Error during user creation using keystone: {}".format(e))
@@ -295,28 +231,34 @@ class AuthconnKeystone(Authconn):
             # self.logger.exception("Error during user creation using keystone: {}".format(e))
             raise AuthconnOperationException("Error during user creation using Keystone: {}".format(e))
 
-    def update_user(self, user, new_name=None, new_password=None):
+    def update_user(self, user_info):
         """
         Change the user name and/or password.
 
-        :param user: username or user_id
-        :param new_name: new name
-        :param new_password: new password.
+        :param user_info: user info modifications
         :raises AuthconnOperationException: if change failed.
         """
         try:
+            user = user_info.get("_id") or user_info.get("username")
             if is_valid_uuid(user):
-                user_id = user
+                user_obj_list = [self.keystone.users.get(user)]
             else:
                 user_obj_list = self.keystone.users.list(name=user)
-                if not user_obj_list:
-                    raise AuthconnNotFoundException("User '{}' not found".format(user))
-                user_id = user_obj_list[0].id
-
-            self.keystone.users.update(user_id, password=new_password, name=new_name)
+            if not user_obj_list:
+                raise AuthconnNotFoundException("User '{}' not found".format(user))
+            user_obj = user_obj_list[0]
+            user_id = user_obj.id
+            if user_info.get("password") or user_info.get("username") \
+                    or user_info.get("add_project_role_mappings") or user_info.get("remove_project_role_mappings"):
+                self.keystone.users.update(user_id, password=user_info.get("password"), name=user_info.get("username"),
+                                           _admin={"created": user_obj._admin["created"], "modified": time.time()})
+            for mapping in user_info.get("remove_project_role_mappings", []):
+                self.remove_role_from_user(user_id, mapping["project"], mapping["role"])
+            for mapping in user_info.get("add_project_role_mappings", []):
+                self.assign_role_to_user(user_id, mapping["project"], mapping["role"])
         except ClientException as e:
             # self.logger.exception("Error during user password/name update using keystone: {}".format(e))
-            raise AuthconnOperationException("Error during user password/name update using Keystone: {}".format(e))
+            raise AuthconnOperationException("Error during user update using Keystone: {}".format(e))
 
     def delete_user(self, user_id):
         """
@@ -326,14 +268,9 @@ class AuthconnKeystone(Authconn):
         :raises AuthconnOperationException: if user deletion failed.
         """
         try:
-            # users = self.keystone.users.list()
-            # user_obj = [user for user in users if user.id == user_id][0]
-            # result, _ = self.keystone.users.delete(user_obj)
-
             result, detail = self.keystone.users.delete(user_id)
             if result.status_code != 204:
                 raise ClientException("error {} {}".format(result.status_code, detail))
-
             return True
         except ClientException as e:
             # self.logger.exception("Error during user deletion using keystone: {}".format(e))
@@ -354,7 +291,8 @@ class AuthconnKeystone(Authconn):
             users = [{
                 "username": user.name,
                 "_id": user.id,
-                "id": user.id
+                "id": user.id,
+                "_admin": user.to_dict().get("_admin", {})   # TODO: REVISE
             } for user in users if user.name != self.admin_username]
 
             if filter_q and filter_q.get("_id"):
@@ -399,7 +337,9 @@ class AuthconnKeystone(Authconn):
 
             roles = [{
                 "name": role.name,
-                "_id": role.id
+                "_id": role.id,
+                "_admin": role.to_dict().get("_admin", {}),
+                "permissions": role.to_dict().get("permissions", {})
             } for role in roles_list if role.name != "service"]
 
             if filter_q and filter_q.get("_id"):
@@ -411,15 +351,16 @@ class AuthconnKeystone(Authconn):
             raise AuthException("Error during user role listing using Keystone: {}".format(e),
                                 http_code=HTTPStatus.UNAUTHORIZED)
 
-    def create_role(self, role):
+    def create_role(self, role_info):
         """
         Create a role.
 
-        :param role: role name.
+        :param role_info: full role info.
         :raises AuthconnOperationException: if role creation failed.
         """
         try:
-            result = self.keystone.roles.create(role)
+            result = self.keystone.roles.create(role_info["name"], permissions=role_info.get("permissions"),
+                                                _admin=role_info.get("_admin"))
             return result.id
         except Conflict as ex:
             raise AuthconnConflictException(str(ex))
@@ -445,22 +386,21 @@ class AuthconnKeystone(Authconn):
             # self.logger.exception("Error during role deletion using keystone: {}".format(e))
             raise AuthconnOperationException("Error during role deletion using Keystone: {}".format(e))
 
-    def update_role(self, role, new_name):
+    def update_role(self, role_info):
         """
         Change the name of a role
-        :param role: role  name or id to be changed
-        :param new_name: new name
+        :param role_info: full role info
         :return: None
         """
         try:
-            if is_valid_uuid(role):
-                role_id = role
-            else:
-                role_obj_list = self.keystone.roles.list(name=role)
+            rid = role_info["_id"]
+            if not is_valid_uuid(rid):   # Is this required?
+                role_obj_list = self.keystone.roles.list(name=rid)
                 if not role_obj_list:
-                    raise AuthconnNotFoundException("Role '{}' not found".format(role))
-                role_id = role_obj_list[0].id
-            self.keystone.roles.update(role_id, name=new_name)
+                    raise AuthconnNotFoundException("Role '{}' not found".format(rid))
+                rid = role_obj_list[0].id
+            self.keystone.roles.update(rid, name=role_info["name"], permissions=role_info.get("permissions"),
+                                       _admin=role_info.get("_admin"))
         except ClientException as e:
             # self.logger.exception("Error during role update using keystone: {}".format(e))
             raise AuthconnOperationException("Error during role updating using Keystone: {}".format(e))
@@ -480,7 +420,8 @@ class AuthconnKeystone(Authconn):
 
             projects = [{
                 "name": project.name,
-                "_id": project.id
+                "_id": project.id,
+                "_admin": project.to_dict().get("_admin", {})  # TODO: REVISE
             } for project in projects]
 
             if filter_q and filter_q.get("_id"):
@@ -493,16 +434,17 @@ class AuthconnKeystone(Authconn):
             raise AuthException("Error during user project listing using Keystone: {}".format(e),
                                 http_code=HTTPStatus.UNAUTHORIZED)
 
-    def create_project(self, project):
+    def create_project(self, project_info):
         """
         Create a project.
 
-        :param project: project name.
+        :param project_info: full project info.
         :return: the internal id of the created project
         :raises AuthconnOperationException: if project creation failed.
         """
         try:
-            result = self.keystone.projects.create(project, self.project_domain_name)
+            result = self.keystone.projects.create(project_info["name"], self.project_domain_name,
+                                                   _admin=project_info["_admin"])
             return result.id
         except ClientException as e:
             # self.logger.exception("Error during project creation using keystone: {}".format(e))
@@ -529,18 +471,18 @@ class AuthconnKeystone(Authconn):
             # self.logger.exception("Error during project deletion using keystone: {}".format(e))
             raise AuthconnOperationException("Error during project deletion using Keystone: {}".format(e))
 
-    def update_project(self, project_id, new_name):
+    def update_project(self, project_id, project_info):
         """
         Change the name of a project
         :param project_id: project to be changed
-        :param new_name: new name
+        :param project_info: full project info
         :return: None
         """
         try:
-            self.keystone.projects.update(project_id, name=new_name)
+            self.keystone.projects.update(project_id, name=project_info["name"], _admin=project_info["_admin"])
         except ClientException as e:
             # self.logger.exception("Error during project update using keystone: {}".format(e))
-            raise AuthconnOperationException("Error during project deletion using Keystone: {}".format(e))
+            raise AuthconnOperationException("Error during project update using Keystone: {}".format(e))
 
     def assign_role_to_user(self, user, project, role):
         """

@@ -27,11 +27,12 @@ OSM Internal Authentication Backend and leverages the RBAC model
 __author__ = "Pedro de la Cruz Ramos <pdelacruzramos@altran.com>"
 __date__ = "$06-jun-2019 11:16:08$"
 
-from authconn import Authconn, AuthException
+from authconn import Authconn, AuthException   # , AuthconnOperationException
 from osm_common.dbbase import DbException
 from base_topic import BaseTopic
 
 import logging
+import re
 from time import time
 from http import HTTPStatus
 from uuid import uuid4
@@ -42,7 +43,7 @@ from random import choice as random_choice
 
 class AuthconnInternal(Authconn):
     def __init__(self, config, db, token_cache):
-        Authconn.__init__(self, config)
+        Authconn.__init__(self, config, db, token_cache)
 
         self.logger = logging.getLogger("nbi.authenticator.internal")
 
@@ -55,48 +56,6 @@ class AuthconnInternal(Authconn):
         # To be Confirmed
         self.auth = None
         self.sess = None
-
-    # def create_token (self, user, password, projects=[], project=None, remote=None):
-    # Not Required
-
-    # def authenticate_with_user_password(self, user, password, project=None, remote=None):
-    # Not Required
-
-    # def authenticate_with_token(self, token, project=None, remote=None):
-    # Not Required
-
-    # def get_user_project_list(self, token):
-    # Not Required
-
-    # def get_user_role_list(self, token):
-    # Not Required
-
-    # def create_user(self, user, password):
-    # Not Required
-
-    # def change_password(self, user, new_password):
-    # Not Required
-
-    # def delete_user(self, user_id):
-    # Not Required
-
-    # def get_user_list(self, filter_q={}):
-    # Not Required
-
-    # def get_project_list(self, filter_q={}):
-    # Not required
-
-    # def create_project(self, project):
-    # Not required
-
-    # def delete_project(self, project_id):
-    # Not required
-
-    # def assign_role_to_user(self, user, project, role):
-    # Not required in Phase 1
-
-    # def remove_role_from_user(self, user, project, role):
-    # Not required in Phase 1
 
     def validate_token(self, token):
         """
@@ -190,100 +149,105 @@ class AuthconnInternal(Authconn):
         now = time()
         user_content = None
 
-        try:
-            # Try using username/password
-            if user:
-                user_rows = self.db.get_list("users", {BaseTopic.id_field("users", user): user})
-                if user_rows:
-                    user_content = user_rows[0]
-                    salt = user_content["_admin"]["salt"]
-                    shadow_password = sha256(password.encode('utf-8') + salt.encode('utf-8')).hexdigest()
-                    if shadow_password != user_content["password"]:
-                        user_content = None
-                if not user_content:
-                    raise AuthException("Invalid username/password", http_code=HTTPStatus.UNAUTHORIZED)
-            elif token_info:
-                user_rows = self.db.get_list("users", {"username": token_info["username"]})
-                if user_rows:
-                    user_content = user_rows[0]
-                else:
-                    raise AuthException("Invalid token", http_code=HTTPStatus.UNAUTHORIZED)
+        # Try using username/password
+        if user:
+            user_rows = self.db.get_list("users", {BaseTopic.id_field("users", user): user})
+            if user_rows:
+                user_content = user_rows[0]
+                salt = user_content["_admin"]["salt"]
+                shadow_password = sha256(password.encode('utf-8') + salt.encode('utf-8')).hexdigest()
+                if shadow_password != user_content["password"]:
+                    user_content = None
+            if not user_content:
+                raise AuthException("Invalid username/password", http_code=HTTPStatus.UNAUTHORIZED)
+        elif token_info:
+            user_rows = self.db.get_list("users", {"username": token_info["username"]})
+            if user_rows:
+                user_content = user_rows[0]
             else:
-                raise AuthException("Provide credentials: username/password or Authorization Bearer token",
-                                    http_code=HTTPStatus.UNAUTHORIZED)
+                raise AuthException("Invalid token", http_code=HTTPStatus.UNAUTHORIZED)
+        else:
+            raise AuthException("Provide credentials: username/password or Authorization Bearer token",
+                                http_code=HTTPStatus.UNAUTHORIZED)
 
-            token_id = ''.join(random_choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
-                               for _ in range(0, 32))
+        token_id = ''.join(random_choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
+                           for _ in range(0, 32))
 
-            # TODO when user contained project_role_mappings with project_id,project_ name this checking to
-            #  database will not be needed
-            if not project:
-                project = user_content["projects"][0]
+        # projects = user_content.get("projects", [])
+        prm_list = user_content.get("project_role_mappings", [])
 
-            # To allow project names in project_id
-            proj = self.db.get_one("projects", {BaseTopic.id_field("projects", project): project})
-            if proj["_id"] not in user_content["projects"] and proj["name"] not in user_content["projects"]:
-                raise AuthException("project {} not allowed for this user".format(project),
-                                    http_code=HTTPStatus.UNAUTHORIZED)
+        if not project:
+            project = prm_list[0]["project"] if prm_list else None
+        if not project:
+            raise AuthException("can't find a default project for this user", http_code=HTTPStatus.UNAUTHORIZED)
 
-            # TODO remove admin, this vill be used by roles RBAC
-            if proj["name"] == "admin":
-                token_admin = True
-            else:
-                token_admin = proj.get("admin", False)
+        projects = [prm["project"] for prm in prm_list]
 
-            # TODO add token roles - PROVISIONAL. Get this list from user_content["project_role_mappings"]
-            role_id = self.db.get_one("roles", {"name": "system_admin"})["_id"]
-            roles_list = [{"name": "system_admin", "id": role_id}]
+        proj = self.db.get_one("projects", {BaseTopic.id_field("projects", project): project})
+        project_name = proj["name"]
+        project_id = proj["_id"]
+        if project_name not in projects and project_id not in projects:
+            raise AuthException("project {} not allowed for this user".format(project),
+                                http_code=HTTPStatus.UNAUTHORIZED)
 
-            new_token = {"issued_at": now,
-                         "expires": now + 3600,
-                         "_id": token_id,
-                         "id": token_id,
-                         "project_id": proj["_id"],
-                         "project_name": proj["name"],
-                         "username": user_content["username"],
-                         "user_id": user_content["_id"],
-                         "admin": token_admin,
-                         "roles": roles_list,
-                         }
+        # TODO remove admin, this vill be used by roles RBAC
+        if project_name == "admin":
+            token_admin = True
+        else:
+            token_admin = proj.get("admin", False)
 
-            self.token_cache[token_id] = new_token
-            self.db.create("tokens", new_token)
-            return deepcopy(new_token)
+        # add token roles
+        roles = []
+        roles_list = []
+        for prm in prm_list:
+            if prm["project"] in [project_id, project_name]:
+                role = self.db.get_one("roles", {BaseTopic.id_field("roles", prm["role"]): prm["role"]})
+                rid = role["_id"]
+                if rid not in roles:
+                    rnm = role["name"]
+                    roles.append(rid)
+                    roles_list.append({"name": rnm, "id": rid})
+        if not roles_list:
+            rid = self.db.get_one("roles", {"name": "project_admin"})["_id"]
+            roles_list = [{"name": "project_admin", "id": rid}]
 
-        except Exception as e:
-            msg = "Error during user authentication using internal backend: {}".format(e)
-            self.logger.exception(msg)
-            raise AuthException(msg, http_code=HTTPStatus.UNAUTHORIZED)
+        new_token = {"issued_at": now,
+                     "expires": now + 3600,
+                     "_id": token_id,
+                     "id": token_id,
+                     "project_id": proj["_id"],
+                     "project_name": proj["name"],
+                     "username": user_content["username"],
+                     "user_id": user_content["_id"],
+                     "admin": token_admin,
+                     "roles": roles_list,
+                     }
 
-    def get_role_list(self):
+        self.token_cache[token_id] = new_token
+        self.db.create("tokens", new_token)
+        return deepcopy(new_token)
+
+    def get_role_list(self, filter_q={}):
         """
         Get role list.
 
         :return: returns the list of roles.
         """
-        try:
-            role_list = self.db.get_list("roles")
-            roles = [{"name": role["name"], "_id": role["_id"]} for role in role_list]   # if role.name != "service" ?
-            return roles
-        except Exception:
-            raise AuthException("Error during role listing using internal backend", http_code=HTTPStatus.UNAUTHORIZED)
+        return self.db.get_list("roles", filter_q)
 
-    def create_role(self, role):
+    def create_role(self, role_info):
         """
         Create a role.
 
-        :param role: role name.
+        :param role_info: full role info.
+        :return: returns the role id.
         :raises AuthconnOperationException: if role creation failed.
         """
-        # try:
         # TODO: Check that role name does not exist ?
-        return str(uuid4())
-        # except Exception:
-        #     raise AuthconnOperationException("Error during role creation using internal backend")
-        # except Conflict as ex:
-        #     self.logger.info("Duplicate entry: %s", str(ex))
+        rid = str(uuid4())
+        role_info["_id"] = rid
+        rid = self.db.create("roles", role_info)
+        return rid
 
     def delete_role(self, role_id):
         """
@@ -292,8 +256,162 @@ class AuthconnInternal(Authconn):
         :param role_id: role identifier.
         :raises AuthconnOperationException: if role deletion failed.
         """
-        # try:
-        # TODO: Check that role exists ?
+        return self.db.del_one("roles", {"_id": role_id})
+
+    def update_role(self, role_info):
+        """
+        Update a role.
+
+        :param role_info: full role info.
+        :return: returns the role name and id.
+        :raises AuthconnOperationException: if user creation failed.
+        """
+        rid = role_info["_id"]
+        self.db.set_one("roles", {"_id": rid}, role_info)   # CONFIRM
+        return {"_id": rid, "name": role_info["name"]}
+
+    def create_user(self, user_info):
+        """
+        Create a user.
+
+        :param user_info: full user info.
+        :return: returns the username and id of the user.
+        """
+        BaseTopic.format_on_new(user_info, make_public=False)
+        salt = uuid4().hex
+        user_info["_admin"]["salt"] = salt
+        if "password" in user_info:
+            user_info["password"] = sha256(user_info["password"].encode('utf-8') + salt.encode('utf-8')).hexdigest()
+        # "projects" are not stored any more
+        if "projects" in user_info:
+            del user_info["projects"]
+        self.db.create("users", user_info)
+        return {"username": user_info["username"], "_id": user_info["_id"]}
+
+    def update_user(self, user_info):
+        """
+        Change the user name and/or password.
+
+        :param user_info: user info modifications
+        """
+        uid = user_info["_id"]
+        user_data = self.db.get_one("users", {BaseTopic.id_field("users", uid): uid})
+        BaseTopic.format_on_edit(user_data, user_info)
+        # User Name
+        usnm = user_info.get("username")
+        if usnm:
+            user_data["username"] = usnm
+        # If password is given and is not already encripted
+        pswd = user_info.get("password")
+        if pswd and (len(pswd) != 64 or not re.match('[a-fA-F0-9]*', pswd)):   # TODO: Improve check?
+            salt = uuid4().hex
+            if "_admin" not in user_data:
+                user_data["_admin"] = {}
+            user_data["_admin"]["salt"] = salt
+            user_data["password"] = sha256(pswd.encode('utf-8') + salt.encode('utf-8')).hexdigest()
+        # Project-Role Mappings
+        # TODO: Check that user_info NEVER includes "project_role_mappings"
+        if "project_role_mappings" not in user_data:
+            user_data["project_role_mappings"] = []
+        for prm in user_info.get("add_project_role_mappings", []):
+            user_data["project_role_mappings"].append(prm)
+        for prm in user_info.get("remove_project_role_mappings", []):
+            for pidf in ["project", "project_name"]:
+                for ridf in ["role", "role_name"]:
+                    try:
+                        user_data["project_role_mappings"].remove({"role": prm[ridf], "project": prm[pidf]})
+                    except KeyError:
+                        pass
+                    except ValueError:
+                        pass
+        self.db.set_one("users", {BaseTopic.id_field("users", uid): uid}, user_data)   # CONFIRM
+
+    def delete_user(self, user_id):
+        """
+        Delete user.
+
+        :param user_id: user identifier.
+        :raises AuthconnOperationException: if user deletion failed.
+        """
+        self.db.del_one("users", {"_id": user_id})
         return True
-        # except Exception:
-        #     raise AuthconnOperationException("Error during role deletion using internal backend")
+
+    def get_user_list(self, filter_q=None):
+        """
+        Get user list.
+
+        :param filter_q: dictionary to filter user list by name (username is also admited) and/or _id
+        :return: returns a list of users.
+        """
+        filt = filter_q or {}
+        if "name" in filt:
+            filt["username"] = filt["name"]
+            del filt["name"]
+        users = self.db.get_list("users", filt)
+        for user in users:
+            projects = []
+            projs_with_roles = []
+            prms = user.get("project_role_mappings", [])
+            for prm in prms:
+                if prm["project"] not in projects:
+                    projects.append(prm["project"])
+            for project in projects:
+                roles = []
+                roles_for_proj = []
+                for prm in prms:
+                    if prm["project"] == project and prm["role"] not in roles:
+                        role = prm["role"]
+                        roles.append(role)
+                        rl = self.db.get_one("roles", {BaseTopic.id_field("roles", role): role})
+                        roles_for_proj.append({"name": rl["name"], "_id": rl["_id"], "id": rl["_id"]})
+                try:
+                    pr = self.db.get_one("projects", {BaseTopic.id_field("projects", project): project})
+                    projs_with_roles.append({"name": pr["name"], "_id": pr["_id"], "id": pr["_id"],
+                                             "roles": roles_for_proj})
+                except Exception as e:
+                    self.logger.exception("Error during user listing using internal backend: {}".format(e))
+            user["projects"] = projs_with_roles
+            if "project_role_mappings" in user:
+                del user["project_role_mappings"]
+        return users
+
+    def get_project_list(self, filter_q={}):
+        """
+        Get role list.
+
+        :return: returns the list of projects.
+        """
+        return self.db.get_list("projects", filter_q)
+
+    def create_project(self, project_info):
+        """
+        Create a project.
+
+        :param project: full project info.
+        :return: the internal id of the created project
+        :raises AuthconnOperationException: if project creation failed.
+        """
+        pid = self.db.create("projects", project_info)
+        return pid
+
+    def delete_project(self, project_id):
+        """
+        Delete a project.
+
+        :param project_id: project identifier.
+        :raises AuthconnOperationException: if project deletion failed.
+        """
+        filter_q = {BaseTopic.id_field("projects", project_id): project_id}
+        r = self.db.del_one("projects", filter_q)
+        return r
+
+    def update_project(self, project_id, project_info):
+        """
+        Change the name of a project
+
+        :param project_id: project to be changed
+        :param project_info: full project info
+        :return: None
+        :raises AuthconnOperationException: if project update failed.
+        """
+        self.db.set_one("projects", {BaseTopic.id_field("projects", project_id): project_id}, project_info)

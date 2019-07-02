@@ -61,8 +61,7 @@ class BaseTopic:
     alt_id_field = {
         "projects": "name",
         "users": "username",
-        "roles": "name",
-        "roles_operations": "name"
+        "roles": "name"
     }
 
     def __init__(self, db, fs, msg):

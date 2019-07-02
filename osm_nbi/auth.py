@@ -47,7 +47,7 @@ from osm_common import dbmemory
 from osm_common.dbbase import DbException
 from itertools import chain
 
-from uuid import uuid4   # For Role _id with internal authentication backend
+from uuid import uuid4
 
 
 class Authenticator:
@@ -72,7 +72,7 @@ class Authenticator:
         self.tokens_cache = dict()
         self.next_db_prune_time = 0  # time when next cleaning of expired tokens must be done
         self.roles_to_operations_file = None
-        self.roles_to_operations_table = None
+        # self.roles_to_operations_table = None
         self.resources_to_operations_mapping = {}
         self.operation_to_allowed_roles = {}
         self.logger = logging.getLogger("nbi.authenticator")
@@ -103,7 +103,7 @@ class Authenticator:
                                         .format(config["database"]["driver"]))
             if not self.backend:
                 if config["authentication"]["backend"] == "keystone":
-                    self.backend = AuthconnKeystone(self.config["authentication"])
+                    self.backend = AuthconnKeystone(self.config["authentication"], self.db, self.tokens_cache)
                 elif config["authentication"]["backend"] == "internal":
                     self.backend = AuthconnInternal(self.config["authentication"], self.db, self.tokens_cache)
                     self._internal_tokens_prune()
@@ -125,11 +125,6 @@ class Authenticator:
                             break
                 if not self.roles_to_operations_file:
                     raise AuthException("Invalid permission configuration: roles_to_operations file missing")
-
-            if not self.roles_to_operations_table:  # PROVISIONAL ?
-                self.roles_to_operations_table = "roles_operations" \
-                    if config["authentication"]["backend"] == "keystone" \
-                    else "roles"
 
             # load role_permissions
             def load_role_permissions(method_dict):
@@ -161,6 +156,50 @@ class Authenticator:
         except DbException as e:
             raise AuthException(str(e), http_code=e.http_code)
 
+    def create_admin_project(self):
+        """
+        Creates a new project 'admin' into database if it doesn't exist. Useful for initialization.
+        :return: _id identity of the 'admin' project
+        """
+
+        # projects = self.db.get_one("projects", fail_on_empty=False, fail_on_more=False)
+        project_desc = {"name": "admin"}
+        projects = self.backend.get_project_list(project_desc)
+        if projects:
+            return projects[0]["_id"]
+        now = time()
+        project_desc["_id"] = str(uuid4())
+        project_desc["_admin"] = {"created": now, "modified": now}
+        pid = self.backend.create_project(project_desc)
+        self.logger.info("Project '{}' created at database".format(project_desc["name"]))
+        return pid
+
+    def create_admin_user(self, project_id):
+        """
+        Creates a new user admin/admin into database if database is empty. Useful for initialization
+        :return: _id identity of the inserted data, or None
+        """
+        # users = self.db.get_one("users", fail_on_empty=False, fail_on_more=False)
+        users = self.backend.get_user_list()
+        if users:
+            return None
+        # user_desc = {"username": "admin", "password": "admin", "projects": [project_id]}
+        now = time()
+        user_desc = {"username": "admin", "password": "admin", "_admin": {"created": now, "modified": now}}
+        if project_id:
+            pid = project_id
+        else:
+            # proj = self.db.get_one("projects", {"name": "admin"}, fail_on_empty=False, fail_on_more=False)
+            proj = self.backend.get_project_list({"name": "admin"})
+            pid = proj[0]["_id"] if proj else None
+        # role = self.db.get_one("roles", {"name": "system_admin"}, fail_on_empty=False, fail_on_more=False)
+        roles = self.backend.get_role_list({"name": "system_admin"})
+        if pid and roles:
+            user_desc["project_role_mappings"] = [{"project": pid, "role": roles[0]["_id"]}]
+        uid = self.backend.create_user(user_desc)
+        self.logger.info("User '{}' created at database".format(user_desc["username"]))
+        return uid
+
     def init_db(self, target_version='1.0'):
         """
         Check if the database has been initialized, with at least one user. If not, create the required tables
@@ -170,14 +209,10 @@ class Authenticator:
         :return: None if OK, exception if error or version is different.
         """
 
-        # PCR 28/05/2019 Commented out to allow initialization for internal backend
-        # if self.config["authentication"]["backend"] == "internal":
-        #    return
-
-        records = self.db.get_list(self.roles_to_operations_table)
+        records = self.backend.get_role_list()
 
         # Loading permissions to MongoDB if there is not any permission.
-        if not records:
+        if not records or (len(records) == 1 and records[0]["name"] == "admin"):
             with open(self.roles_to_operations_file, "r") as stream:
                 roles_to_operations_yaml = yaml.load(stream)
 
@@ -216,22 +251,19 @@ class Authenticator:
                     "modified": now,
                 }
 
-                if self.config["authentication"]["backend"] == "keystone":
-                    if role_with_operations["name"] != "anonymous":
-                        backend_roles = self.backend.get_role_list(filter_q={"name": role_with_operations["name"]})
-                        if backend_roles:
-                            backend_id = backend_roles[0]["_id"]
-                        else:
-                            backend_id = self.backend.create_role(role_with_operations["name"])
-                        role_with_operations["_id"] = backend_id
-                else:
-                    role_with_operations["_id"] = str(uuid4())
-
-                self.db.create(self.roles_to_operations_table, role_with_operations)
+                # self.db.create(self.roles_to_operations_table, role_with_operations)
+                self.backend.create_role(role_with_operations)
                 self.logger.info("Role '{}' created at database".format(role_with_operations["name"]))
 
-        if self.config["authentication"]["backend"] != "internal":
-            self.backend.assign_role_to_user("admin", "admin", "system_admin")
+        # Create admin project&user if required
+        pid = self.create_admin_project()
+        self.create_admin_user(pid)
+
+        if self.config["authentication"]["backend"] == "keystone":
+            try:
+                self.backend.assign_role_to_user("admin", "admin", "system_admin")
+            except Exception:
+                pass
 
         self.load_operation_to_allowed_roles()
 
@@ -243,10 +275,13 @@ class Authenticator:
         """
 
         permissions = {oper: [] for oper in self.role_permissions}
-        records = self.db.get_list(self.roles_to_operations_table)
+        # records = self.db.get_list(self.roles_to_operations_table)
+        records = self.backend.get_role_list()
 
         ignore_fields = ["_id", "_admin", "name", "default"]
         for record in records:
+            if not record.get("permissions"):
+                continue
             record_permissions = {oper: record["permissions"].get("default", False) for oper in self.role_permissions}
             operations_joined = [(oper, value) for oper, value in record["permissions"].items()
                                  if oper not in ignore_fields]
