@@ -629,6 +629,20 @@ class Server(object):
             }
             return self._format_out(problem_details, None)
 
+    @staticmethod
+    def _format_login(token_info):
+        """
+        Changes cherrypy.request.login to include username/project_name;session so that cherrypy access log will
+        log this information
+        :param token_info: Dictionary with token content
+        :return: None
+        """
+        cherrypy.request.login = token_info.get("username", "-")
+        if token_info.get("project_name"):
+            cherrypy.request.login += "/" + token_info["project_name"]
+        if token_info.get("id"):
+            cherrypy.request.login += ";session=" + token_info["id"][0:12]
+
     @cherrypy.expose
     def token(self, method, token_id=None, kwargs=None):
         token_info = None
@@ -636,49 +650,48 @@ class Server(object):
         indata = self._format_in(kwargs)
         if not isinstance(indata, dict):
             raise NbiException("Expected application/yaml or application/json Content-Type", HTTPStatus.BAD_REQUEST)
-        try:
-            if method == "GET":
-                token_info = self.authenticator.authorize()
-                if token_id:
-                    outdata = self.authenticator.get_token(token_info, token_id)
-                else:
-                    outdata = self.authenticator.get_token_list(token_info)
-            elif method == "POST":
-                try:
-                    token_info = self.authenticator.authorize()
-                except Exception:
-                    token_info = None
-                if kwargs:
-                    indata.update(kwargs)
-                outdata = self.authenticator.new_token(token_info, indata, cherrypy.request.remote)
-                token_info = outdata
-                cherrypy.session['Authorization'] = outdata["_id"]
-                self._set_location_header("admin", "v1", "tokens", outdata["_id"])
-                # cherrypy.response.cookie["Authorization"] = outdata["id"]
-                # cherrypy.response.cookie["Authorization"]['expires'] = 3600
-            elif method == "DELETE":
-                if not token_id and "id" in kwargs:
-                    token_id = kwargs["id"]
-                elif not token_id:
-                    token_info = self.authenticator.authorize()
-                    token_id = token_info["_id"]
-                outdata = self.authenticator.del_token(token_id)
-                token_info = None
-                cherrypy.session['Authorization'] = "logout"
-                # cherrypy.response.cookie["Authorization"] = token_id
-                # cherrypy.response.cookie["Authorization"]['expires'] = 0
+
+        if method == "GET":
+            token_info = self.authenticator.authorize()
+            # for logging
+            self._format_login(token_info)
+            if token_id:
+                outdata = self.authenticator.get_token(token_info, token_id)
             else:
-                raise NbiException("Method {} not allowed for token".format(method), HTTPStatus.METHOD_NOT_ALLOWED)
-            return self._format_out(outdata, token_info)
-        except (NbiException, EngineException, DbException, AuthException) as e:
-            cherrypy.log("tokens Exception {}".format(e))
-            cherrypy.response.status = e.http_code.value
-            problem_details = {
-                "code": e.http_code.name,
-                "status": e.http_code.value,
-                "detail": str(e),
-            }
-            return self._format_out(problem_details, token_info)
+                outdata = self.authenticator.get_token_list(token_info)
+        elif method == "POST":
+            try:
+                token_info = self.authenticator.authorize()
+            except Exception:
+                token_info = None
+            if kwargs:
+                indata.update(kwargs)
+            # This is needed to log the user when authentication fails
+            cherrypy.request.login = "{}".format(indata.get("username", "-"))
+            outdata = token_info = self.authenticator.new_token(token_info, indata, cherrypy.request.remote)
+            cherrypy.session['Authorization'] = outdata["_id"]
+            self._set_location_header("admin", "v1", "tokens", outdata["_id"])
+            # for logging
+            self._format_login(token_info)
+
+            # cherrypy.response.cookie["Authorization"] = outdata["id"]
+            # cherrypy.response.cookie["Authorization"]['expires'] = 3600
+        elif method == "DELETE":
+            if not token_id and "id" in kwargs:
+                token_id = kwargs["id"]
+            elif not token_id:
+                token_info = self.authenticator.authorize()
+                # for logging
+                self._format_login(token_info)
+                token_id = token_info["_id"]
+            outdata = self.authenticator.del_token(token_id)
+            token_info = None
+            cherrypy.session['Authorization'] = "logout"
+            # cherrypy.response.cookie["Authorization"] = token_id
+            # cherrypy.response.cookie["Authorization"]['expires'] = 0
+        else:
+            raise NbiException("Method {} not allowed for token".format(method), HTTPStatus.METHOD_NOT_ALLOWED)
+        return self._format_out(outdata, token_info)
 
     @cherrypy.expose
     def test(self, *args, **kwargs):
@@ -929,8 +942,6 @@ class Server(object):
             if main_topic == "admin" and topic == "tokens":
                 return self.token(method, _id, kwargs)
 
-            # self.engine.load_dbase(cherrypy.request.app.config)
-
             token_info = self.authenticator.authorize(role_permission, query_string_operations)
             engine_session = self._manage_admin_query(token_info, kwargs, method, _id)
             indata = self._format_in(kwargs)
@@ -1133,6 +1144,13 @@ class Server(object):
             }
             return self._format_out(problem_details, token_info)
             # raise cherrypy.HTTPError(e.http_code.value, str(e))
+        finally:
+            if token_info:
+                self._format_login(token_info)
+                if method in ("PUT", "PATCH", "POST") and isinstance(outdata, dict):
+                    for logging_id in ("id", "op_id", "nsilcmop_id", "nslcmop_id"):
+                        if outdata.get(logging_id):
+                            cherrypy.request.login += ";{}={}".format(logging_id, outdata[logging_id][:36])
 
 
 def _start_service():
