@@ -198,7 +198,7 @@ class ProjectTopic(BaseTopic):
 
 class CommonVimWimSdn(BaseTopic):
     """Common class for VIM, WIM SDN just to unify methods that are equal to all of them"""
-    config_to_encrypt = ()     # what keys at config must be encrypted because contains passwords
+    config_to_encrypt = {}     # what keys at config must be encrypted because contains passwords
     password_to_encrypt = ""   # key that contains a password
 
     @staticmethod
@@ -255,8 +255,10 @@ class CommonVimWimSdn(BaseTopic):
                 final_content[self.password_to_encrypt] = self.db.encrypt(edit_content[self.password_to_encrypt],
                                                                           schema_version=schema_version,
                                                                           salt=final_content["_id"])
-            if edit_content.get("config") and self.config_to_encrypt:
-                for p in self.config_to_encrypt:
+            config_to_encrypt_keys = self.config_to_encrypt.get(schema_version) or self.config_to_encrypt.get("default")
+            if edit_content.get("config") and config_to_encrypt_keys:
+
+                for p in config_to_encrypt_keys:
                     if edit_content["config"].get(p):
                         final_content["config"][p] = self.db.encrypt(edit_content["config"][p],
                                                                      schema_version=schema_version,
@@ -275,15 +277,16 @@ class CommonVimWimSdn(BaseTopic):
         :return: op_id: operation id on asynchronous operation, None otherwise. In addition content is modified
         """
         super().format_on_new(content, project_id=project_id, make_public=make_public)
-        content["schema_version"] = schema_version = "1.1"
+        content["schema_version"] = schema_version = "1.11"
 
         # encrypt passwords
         if content.get(self.password_to_encrypt):
             content[self.password_to_encrypt] = self.db.encrypt(content[self.password_to_encrypt],
                                                                 schema_version=schema_version,
                                                                 salt=content["_id"])
-        if content.get("config") and self.config_to_encrypt:
-            for p in self.config_to_encrypt:
+        config_to_encrypt_keys = self.config_to_encrypt.get(schema_version) or self.config_to_encrypt.get("default")
+        if content.get("config") and config_to_encrypt_keys:
+            for p in config_to_encrypt_keys:
                 if content["config"].get(p):
                     content["config"][p] = self.db.encrypt(content["config"][p],
                                                            schema_version=schema_version,
@@ -360,7 +363,8 @@ class VimAccountTopic(CommonVimWimSdn):
     schema_edit = vim_account_edit_schema
     multiproject = True
     password_to_encrypt = "vim_password"
-    config_to_encrypt = ("admin_password", "nsx_password", "vcenter_password")
+    config_to_encrypt = {"1.1": ("admin_password", "nsx_password", "vcenter_password"),
+                         "default": ("admin_password", "nsx_password", "vcenter_password", "vrops_password")}
 
 
 class WimAccountTopic(CommonVimWimSdn):
@@ -370,7 +374,7 @@ class WimAccountTopic(CommonVimWimSdn):
     schema_edit = wim_account_edit_schema
     multiproject = True
     password_to_encrypt = "wim_password"
-    config_to_encrypt = ()
+    config_to_encrypt = {}
 
 
 class SdnTopic(CommonVimWimSdn):
@@ -380,7 +384,7 @@ class SdnTopic(CommonVimWimSdn):
     schema_edit = sdn_edit_schema
     multiproject = True
     password_to_encrypt = "password"
-    config_to_encrypt = ()
+    config_to_encrypt = {}
 
 
 class UserTopicAuth(UserTopic):
