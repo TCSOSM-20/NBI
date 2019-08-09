@@ -1082,14 +1082,15 @@ class NsiTopic(BaseTopic):
                 # Is the nss shared and instantiated?
                 _filter["_admin.nsrs-detailed-list.ANYINDEX.shared"] = True
                 _filter["_admin.nsrs-detailed-list.ANYINDEX.nsd-id"] = service["nsd-ref"]
+                _filter["_admin.nsrs-detailed-list.ANYINDEX.nss-id"] = service["id"]
                 nsi = self.db.get_one("nsis", _filter, fail_on_empty=False, fail_on_more=False)
-                
                 if nsi and service.get("is-shared-nss"):
                     nsrs_detailed_list = nsi["_admin"]["nsrs-detailed-list"]
                     for nsrs_detailed_item in nsrs_detailed_list:
                         if nsrs_detailed_item["nsd-id"] == service["nsd-ref"]:
-                            _id_nsr = nsrs_detailed_item["nsrId"]
-                            break
+                            if nsrs_detailed_item["nss-id"] == service["id"]:
+                                _id_nsr = nsrs_detailed_item["nsrId"]
+                                break
                     for netslice_subnet in nsi["_admin"]["netslice-subnet"]:
                         if netslice_subnet["nss-id"] == service["id"]:
                             indata_ns = netslice_subnet
@@ -1118,7 +1119,7 @@ class NsiTopic(BaseTopic):
                     # Creates Nsr objects
                     _id_nsr, _ = self.nsrTopic.new(rollback, session, indata_ns, kwargs, headers)
                 nsrs_item = {"nsrId": _id_nsr, "shared": service.get("is-shared-nss"), "nsd-id": service["nsd-ref"], 
-                             "nslcmop_instantiate": None}
+                             "nss-id": service["id"], "nslcmop_instantiate": None}
                 indata_ns["nss-id"] = service["id"]
                 nsrs_list.append(nsrs_item)
                 nsi_netslice_subnet.append(indata_ns)
