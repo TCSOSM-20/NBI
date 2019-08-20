@@ -259,6 +259,8 @@ class Authenticator:
         pid = self.create_admin_project()
         self.create_admin_user(pid)
 
+        # self.backend.update_user({"_id": "admin",
+        #                           "add_project_role_mappings": {"project": "admin", "role": "system_admin"}})
         if self.config["authentication"]["backend"] == "keystone":
             try:
                 self.backend.assign_role_to_user("admin", "admin", "system_admin")

@@ -299,23 +299,21 @@ class AuthconnKeystone(Authconn):
                 users = [user for user in users if filter_q["_id"] == user["_id"]]
 
             for user in users:
+                user["project_role_mappings"] = []
+                user["projects"] = []
                 projects = self.keystone.projects.list(user=user["_id"])
-                projects = [{
-                    "name": project.name,
-                    "_id": project.id,
-                    "id": project.id
-                } for project in projects]
-
                 for project in projects:
-                    roles = self.keystone.roles.list(user=user["_id"], project=project["_id"])
-                    roles = [{
-                        "name": role.name,
-                        "_id": role.id,
-                        "id": role.id
-                    } for role in roles]
-                    project["roles"] = roles
+                    user["projects"].append(project.name)
 
-                user["projects"] = projects
+                    roles = self.keystone.roles.list(user=user["_id"], project=project.id)
+                    for role in roles:
+                        prm = {
+                            "project": project.id,
+                            "project_name": project.name,
+                            "role_name": role.name,
+                            "role": role.id,
+                        }
+                        user["project_role_mappings"].append(prm)
 
             return users
         except ClientException as e:

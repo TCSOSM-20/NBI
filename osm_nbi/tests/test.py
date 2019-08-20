@@ -620,8 +620,11 @@ class TestProjectsDescriptors:
                     (201, 204), {"Location": "/admin/v1/projects/", "Content-Type": "application/json"}, "json")
 
         engine.test("Create user U1", "POST", "/admin/v1/users", headers_json,
-                    {"username": "U1", "projects": ["Padmin", "P2", "P3"], "password": "pw1"}, 201,
-                    {"Location": "/admin/v1/users/", "Content-Type": "application/json"}, "json")
+                    {"username": "U1", "password": "pw1",
+                     "project_role_mappings": [{"project": "Padmin", "role": "system_admin"},
+                                               {"project": "P2", "role": "project_admin"},
+                                               {"project": "P3", "role": "project_admin"}],
+                     }, 201, {"Location": "/admin/v1/users/", "Content-Type": "application/json"}, "json")
 
         engine.test("Onboard VNFD id1", "POST", "/vnfpkgm/v1/vnf_packages_content?id=id1", headers_yaml,
                     TestDescriptors.vnfd_empty, 201, r_headers_yaml_location_vnfd, "yaml")

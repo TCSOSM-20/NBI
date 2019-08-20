@@ -547,7 +547,7 @@ class UserTopicAuth(UserTopic):
         users = self.auth.get_user_list(filter_q)
 
         if len(users) == 1:
-            return self.format_on_show(users[0])
+            return users[0]
         elif len(users) > 1:
             raise EngineException("Too many users found", HTTPStatus.CONFLICT)
         else:
@@ -596,6 +596,16 @@ class UserTopicAuth(UserTopic):
                 rid = role[0]["_id"]
                 if "add_project_role_mappings" not in indata:
                     indata["add_project_role_mappings"] = []
+                if "remove_project_role_mappings" not in indata:
+                    indata["remove_project_role_mappings"] = []
+                if isinstance(indata.get("projects"), dict):
+                    # backward compatible
+                    for k, v in indata["projects"].items():
+                        if k.startswith("$") and v is None:
+                            indata["remove_project_role_mappings"].append({"project": k[1:]})
+                        elif k.startswith("$+"):
+                            indata["add_project_role_mappings"].append({"project": v, "role": rid})
+                    del indata["projects"]
                 for proj in indata.get("projects", []) + indata.get("add_projects", []):
                     indata["add_project_role_mappings"].append({"project": proj, "role": rid})
 
@@ -665,7 +675,7 @@ class UserTopicAuth(UserTopic):
         :param filter_q: filter of data to be applied
         :return: The list, it can be empty if no one match the filter.
         """
-        users = [self.format_on_show(user) for user in self.auth.get_user_list(filter_q)]
+        users = self.auth.get_user_list(filter_q)
 
         return users
 
@@ -766,9 +776,10 @@ class ProjectTopicAuth(ProjectTopic):
         # If any user is using this project, raise CONFLICT exception
         if not session["force"]:
             for user in self.auth.get_user_list():
-                if _id in [proj["_id"] for proj in user.get("projects", [])]:
-                    raise EngineException("Project '{}' ({}) is being used by user '{}'"
-                                          .format(db_content["name"], _id, user["username"]), HTTPStatus.CONFLICT)
+                for prm in user.get("project_role_mappings"):
+                    if prm["project"] == _id:
+                        raise EngineException("Project '{}' ({}) is being used by user '{}'"
+                                              .format(db_content["name"], _id, user["username"]), HTTPStatus.CONFLICT)
 
         # If any VNFD, NSD, NST, PDU, etc. is using this project, raise CONFLICT exception
         if not session["force"]:
@@ -1000,9 +1011,10 @@ class RoleTopicAuth(BaseTopic):
 
         # If any user is using this role, raise CONFLICT exception
         for user in self.auth.get_user_list():
-            if _id in [prl["_id"] for proj in user.get("projects", []) for prl in proj.get("roles", [])]:
-                raise EngineException("Role '{}' ({}) is being used by user '{}'"
-                                      .format(role["name"], _id, user["username"]), HTTPStatus.CONFLICT)
+            for prm in user.get("project_role_mappings"):
+                if prm["role"] == _id:
+                    raise EngineException("Role '{}' ({}) is being used by user '{}'"
+                                          .format(role["name"], _id, user["username"]), HTTPStatus.CONFLICT)
 
     @staticmethod
     def format_on_new(content, project_id=None, make_public=False):   # TO BE REMOVED ?
