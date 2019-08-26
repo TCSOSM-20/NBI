@@ -348,6 +348,12 @@ class Authenticator:
                 if cherrypy.session.get('Authorization'):
                     del cherrypy.session['Authorization']
                 cherrypy.response.headers["WWW-Authenticate"] = 'Bearer realm="{}"'.format(e)
+            elif self.config.get("user_not_authorized"):
+                # TODO provide user_id, roles id (not name), project_id
+                return {"id": "fake-token-id-for-test",
+                        "project_id": self.config.get("project_not_authorized", "admin"),
+                        "username": self.config["user_not_authorized"],
+                        "roles": ["system_admin"]}
             raise
 
     def new_token(self, token_info, indata, remote):

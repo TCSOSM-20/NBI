@@ -47,9 +47,6 @@ class AuthconnInternal(Authconn):
 
         self.logger = logging.getLogger("nbi.authenticator.internal")
 
-        # Get Configuration
-        # self.xxx = config.get("xxx", "default")
-
         self.db = db
         self.token_cache = token_cache
 
@@ -99,12 +96,7 @@ class AuthconnInternal(Authconn):
             else:
                 raise
         except AuthException:
-            if self.config["global"].get("test.user_not_authorized"):
-                return {"id": "fake-token-id-for-test",
-                        "project_id": self.config["global"].get("test.project_not_authorized", "admin"),
-                        "username": self.config["global"]["test.user_not_authorized"], "admin": True}
-            else:
-                raise
+            raise
         except Exception:
             self.logger.exception("Error during token validation using internal backend")
             raise AuthException("Error during token validation using internal backend",
