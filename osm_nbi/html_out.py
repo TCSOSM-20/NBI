@@ -186,7 +186,7 @@ def format(data, request, response, toke_info):
         if toke_info.get("username"):
             user_text += "user: {}".format(toke_info.get("username"))
         if toke_info.get("project_id"):
-            user_text += ", project: {}".format(toke_info.get("project_id"))
+            user_text += ", project: {}".format(toke_info.get("project_name"))
     return html_start.format(user_text) + body + html_end
     # yaml.safe_dump(data, explicit_start=True, indent=4, default_flow_style=False)
     # tags=False,
