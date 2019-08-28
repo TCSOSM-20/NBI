@@ -18,8 +18,8 @@ from uuid import uuid4
 from http import HTTPStatus
 from time import time
 from copy import copy, deepcopy
-from validation import validate_input, ValidationError, ns_instantiate, ns_action, ns_scale, nsi_instantiate
-from base_topic import BaseTopic, EngineException, get_iterable
+from osm_nbi.validation import validate_input, ValidationError, ns_instantiate, ns_action, ns_scale, nsi_instantiate
+from osm_nbi.base_topic import BaseTopic, EngineException, get_iterable
 # from descriptor_topics import DescriptorTopic
 from yaml import safe_dump
 from osm_common.dbbase import DbException

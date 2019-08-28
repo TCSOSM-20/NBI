@@ -25,10 +25,11 @@ it for OSM.
 """
 
 
-__author__ = "Eduardo Sousa <esousa@whitestack.com>"
+__author__ = "Eduardo Sousa <esousa@whitestack.com>, " \
+             "Pedro de la Cruz Ramos <pdelacruzramos@altran.com>"
 __date__ = "$27-jul-2018 23:59:59$"
 
-from authconn import Authconn, AuthException, AuthconnOperationException, AuthconnNotFoundException, \
+from osm_nbi.authconn import Authconn, AuthException, AuthconnOperationException, AuthconnNotFoundException, \
     AuthconnConflictException
 
 import logging
@@ -40,7 +41,7 @@ from keystoneauth1.exceptions.base import ClientException
 from keystoneauth1.exceptions.http import Conflict
 from keystoneclient.v3 import client
 from http import HTTPStatus
-from validation import is_valid_uuid
+from osm_nbi.validation import is_valid_uuid
 
 
 class AuthconnKeystone(Authconn):

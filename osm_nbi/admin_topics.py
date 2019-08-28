@@ -18,16 +18,13 @@ from uuid import uuid4
 from hashlib import sha256
 from http import HTTPStatus
 from time import time
-from validation import user_new_schema, user_edit_schema, project_new_schema, project_edit_schema
-from validation import vim_account_new_schema, vim_account_edit_schema, sdn_new_schema, sdn_edit_schema
-from validation import wim_account_new_schema, wim_account_edit_schema, roles_new_schema, roles_edit_schema
-from validation import validate_input
-from validation import ValidationError
-from validation import is_valid_uuid    # To check that User/Project Names don't look like UUIDs
-from base_topic import BaseTopic, EngineException
+from osm_nbi.validation import user_new_schema, user_edit_schema, project_new_schema, project_edit_schema, \
+    vim_account_new_schema, vim_account_edit_schema, sdn_new_schema, sdn_edit_schema, \
+    wim_account_new_schema, wim_account_edit_schema, roles_new_schema, roles_edit_schema, \
+    validate_input, ValidationError, is_valid_uuid    # To check that User/Project Names don't look like UUIDs
+from osm_nbi.base_topic import BaseTopic, EngineException
+from osm_nbi.authconn import AuthconnNotFoundException, AuthconnConflictException
 from osm_common.dbbase import deep_update_rfc7396
-from authconn import AuthconnNotFoundException, AuthconnConflictException
-# from authconn_keystone import AuthconnKeystone
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 

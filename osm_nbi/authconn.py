@@ -23,11 +23,12 @@ Authconn implements an Abstract class for the Auth backend connector
 plugins with the definition of the methods to be implemented.
 """
 
-__author__ = "Eduardo Sousa <esousa@whitestack.com>"
+__author__ = "Eduardo Sousa <esousa@whitestack.com>, " \
+             "Pedro de la Cruz Ramos <pdelacruzramos@altran.com>"
 __date__ = "$27-jul-2018 23:59:59$"
 
 from http import HTTPStatus
-from base_topic import BaseTopic
+from osm_nbi.base_topic import BaseTopic
 
 
 class AuthException(Exception):
@@ -190,8 +191,14 @@ class Authconn:
         :return: returns a list of users.
         """
 
-    def get_user(self, id, fail=True):
-        filt = {BaseTopic.id_field("users", id): id}
+    def get_user(self, _id, fail=True):
+        """
+        Get one user
+        :param _id:  id or name
+        :param fail: True to raise exception on not found. False to return None on not found
+        :return: dictionary with the user information
+        """
+        filt = {BaseTopic.id_field("users", _id): _id}
         users = self.get_user_list(filt)
         if not users:
             if fail:
@@ -227,8 +234,14 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def get_role(self, id, fail=True):
-        filt = {BaseTopic.id_field("roles", id): id}
+    def get_role(self, _id, fail=True):
+        """
+        Get one role
+        :param _id: id or name
+        :param fail: True to raise exception on not found. False to return None on not found
+        :return: dictionary with the role information
+        """
+        filt = {BaseTopic.id_field("roles", _id): _id}
         roles = self.get_role_list(filt)
         if not roles:
             if fail:
@@ -273,8 +286,14 @@ class Authconn:
         """
         raise AuthconnNotImplementedException("Should have implemented this")
 
-    def get_project(self, id, fail=True):
-        filt = {BaseTopic.id_field("projects", id): id}
+    def get_project(self, _id, fail=True):
+        """
+        Get one project
+        :param _id:  id or name
+        :param fail: True to raise exception on not found. False to return None on not found
+        :return: dictionary with the project information
+        """
+        filt = {BaseTopic.id_field("projects", _id): _id}
         projs = self.get_project_list(filt)
         if not projs:
             if fail:

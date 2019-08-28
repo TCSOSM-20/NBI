@@ -18,7 +18,7 @@ from uuid import uuid4
 from http import HTTPStatus
 from time import time
 from osm_common.dbbase import deep_update_rfc7396
-from validation import validate_input, ValidationError, is_valid_uuid
+from osm_nbi.validation import validate_input, ValidationError, is_valid_uuid
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
@@ -27,7 +27,7 @@ class EngineException(Exception):
 
     def __init__(self, message, http_code=HTTPStatus.BAD_REQUEST):
         self.http_code = http_code
-        Exception.__init__(self, message)
+        super(Exception, self).__init__(message)
 
 
 def get_iterable(input_var):

@@ -14,6 +14,7 @@ CherryPy==18.0.0
 jsonschema
 PyYAML==3.*
 python-keystoneclient
+requests
 git+https://osm.etsi.org/gerrit/osm/common.git#egg=osm-common
 git+https://osm.etsi.org/gerrit/osm/IM.git#egg=osm-im
 

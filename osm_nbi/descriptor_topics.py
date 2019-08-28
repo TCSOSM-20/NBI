@@ -20,8 +20,8 @@ import json
 from hashlib import md5
 from osm_common.dbbase import DbException, deep_update_rfc7396
 from http import HTTPStatus
-from validation import ValidationError, pdu_new_schema, pdu_edit_schema
-from base_topic import BaseTopic, EngineException, get_iterable
+from osm_nbi.validation import ValidationError, pdu_new_schema, pdu_edit_schema
+from osm_nbi.base_topic import BaseTopic, EngineException, get_iterable
 from osm_im.vnfd import vnfd as vnfd_im
 from osm_im.nsd import nsd as nsd_im
 from osm_im.nst import nst as nst_im

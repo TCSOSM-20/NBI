@@ -27,7 +27,7 @@ from http import HTTPStatus
 from osm_common import dbmongo, dbmemory, msglocal, msgkafka
 from osm_common.dbbase import DbException
 from osm_common.msgbase import MsgException
-from engine import EngineException
+from osm_nbi.engine import EngineException
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 

@@ -24,12 +24,13 @@ AuthconnInternal implements implements the connector for
 OSM Internal Authentication Backend and leverages the RBAC model
 """
 
-__author__ = "Pedro de la Cruz Ramos <pdelacruzramos@altran.com>"
+__author__ = "Pedro de la Cruz Ramos <pdelacruzramos@altran.com>, " \
+             "Alfonso Tierno <alfonso.tiernosepulveda@telefoncia.com"
 __date__ = "$06-jun-2019 11:16:08$"
 
-from authconn import Authconn, AuthException   # , AuthconnOperationException
+from osm_nbi.authconn import Authconn, AuthException   # , AuthconnOperationException
 from osm_common.dbbase import DbException
-from base_topic import BaseTopic
+from osm_nbi.base_topic import BaseTopic
 
 import logging
 import re

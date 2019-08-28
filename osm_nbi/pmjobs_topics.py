@@ -16,7 +16,7 @@
 
 import asyncio
 import aiohttp
-from base_topic import EngineException
+from osm_nbi.base_topic import EngineException
 
 __author__ = "Vijay R S <vijay.r@tataelxsi.co.in>"
 

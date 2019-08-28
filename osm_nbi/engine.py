@@ -21,14 +21,14 @@ from osm_common.fsbase import FsException
 from osm_common.msgbase import MsgException
 from http import HTTPStatus
 
-from authconn_keystone import AuthconnKeystone
-from authconn_internal import AuthconnInternal
-from base_topic import EngineException, versiontuple
-from admin_topics import VimAccountTopic, WimAccountTopic, SdnTopic
-from admin_topics import UserTopicAuth, ProjectTopicAuth, RoleTopicAuth
-from descriptor_topics import VnfdTopic, NsdTopic, PduTopic, NstTopic
-from instance_topics import NsrTopic, VnfrTopic, NsLcmOpTopic, NsiTopic, NsiLcmOpTopic
-from pmjobs_topics import PmJobsTopic
+from osm_nbi.authconn_keystone import AuthconnKeystone
+from osm_nbi.authconn_internal import AuthconnInternal
+from osm_nbi.base_topic import EngineException, versiontuple
+from osm_nbi.admin_topics import VimAccountTopic, WimAccountTopic, SdnTopic
+from osm_nbi.admin_topics import UserTopicAuth, ProjectTopicAuth, RoleTopicAuth
+from osm_nbi.descriptor_topics import VnfdTopic, NsdTopic, PduTopic, NstTopic
+from osm_nbi.instance_topics import NsrTopic, VnfrTopic, NsLcmOpTopic, NsiTopic, NsiLcmOpTopic
+from osm_nbi.pmjobs_topics import PmJobsTopic
 from base64 import b64encode
 from os import urandom, path
 from threading import Lock
