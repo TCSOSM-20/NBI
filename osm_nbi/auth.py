@@ -39,9 +39,9 @@ from http import HTTPStatus
 from time import time
 from os import path
 
-from authconn import AuthException, AuthExceptionUnauthorized
-from authconn_keystone import AuthconnKeystone
-from authconn_internal import AuthconnInternal   # Comment out for testing&debugging, uncomment when ready
+from osm_nbi.authconn import AuthException, AuthExceptionUnauthorized
+from osm_nbi.authconn_keystone import AuthconnKeystone
+from osm_nbi.authconn_internal import AuthconnInternal   # Comment out for testing&debugging, uncomment when ready
 from osm_common import dbmongo
 from osm_common import dbmemory
 from osm_common.dbbase import DbException

@@ -18,28 +18,30 @@ import cherrypy
 import time
 import json
 import yaml
-import html_out as html
+import osm_nbi.html_out as html
 import logging
 import logging.handlers
 import getopt
 import sys
 
-from authconn import AuthException, AuthconnException
-from auth import Authenticator
-from engine import Engine, EngineException
-from subscriptions import SubscriptionThread
-from validation import ValidationError
+from osm_nbi.authconn import AuthException, AuthconnException
+from osm_nbi.auth import Authenticator
+from osm_nbi.engine import Engine, EngineException
+from osm_nbi.subscriptions import SubscriptionThread
+from osm_nbi.validation import ValidationError
 from osm_common.dbbase import DbException
 from osm_common.fsbase import FsException
 from osm_common.msgbase import MsgException
 from http import HTTPStatus
 from codecs import getreader
 from os import environ, path
+from osm_nbi import version as nbi_version, version_date as nbi_version_date
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
-__version__ = "0.1.3"
-version_date = "Jan 2019"
+__version__ = "0.1.3"    # file version, not NBI version
+version_date = "Aug 2019"
+
 database_version = '1.2'
 auth_database_version = '1.0'
 nbi_server = None           # instance of Server class
@@ -613,13 +615,13 @@ class Server(object):
     @cherrypy.expose
     def version(self, *args, **kwargs):
         # TODO consider to remove and provide version using the static version file
-        global __version__, version_date
         try:
             if cherrypy.request.method != "GET":
                 raise NbiException("Only method GET is allowed", HTTPStatus.METHOD_NOT_ALLOWED)
             elif args or kwargs:
                 raise NbiException("Invalid URL or query string for version", HTTPStatus.METHOD_NOT_ALLOWED)
-            return __version__ + " " + version_date
+            # TODO include version of other modules, pick up from some kafka admin message
+            return "<pre>NBI:\n    version: {}\n    date: {}\n".format(nbi_version, nbi_version_date)
         except NbiException as e:
             cherrypy.response.status = e.http_code.value
             problem_details = {
@@ -1253,12 +1255,10 @@ def _start_service():
 
     # load and print version. Ignore possible errors, e.g. file not found
     try:
-        with open("{}/version".format(engine_config["/static"]['tools.staticdir.dir'])) as version_file:
-            version_data = version_file.read()
-            version = version_data.replace("\n", " ")
-            backend = engine_config["authentication"]["backend"]
-            cherrypy.log.error("Starting OSM NBI Version {} with {} authentication backend"
-                               .format(version, backend))
+        backend = engine_config["authentication"]["backend"]
+        nbi_version
+        cherrypy.log.error("Starting OSM NBI Version '{}' with '{}' authentication backend"
+                           .format(nbi_version + " " + nbi_version_date, backend))
     except Exception:
         pass
 
