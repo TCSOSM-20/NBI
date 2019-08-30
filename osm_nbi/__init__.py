@@ -13,4 +13,4 @@
 ##
 
 version = '6.0.2.post0'
-version_date = '2018-08-29'
+version_date = '2018-08-30'
