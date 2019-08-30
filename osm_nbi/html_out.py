@@ -143,6 +143,8 @@ def format(data, request, response, toke_info):
             return
         else:
             return html_auth2.format(error=data)
+    if request.path_info in ("/version", "/system"):
+        return "<pre>" + yaml.safe_dump(data, explicit_start=False, indent=4, default_flow_style=False) + "</pre>"
     body = html_body.format(item=request.path_info)
     if response.status and response.status > 202:
         body += html_body_error.format(yaml.safe_dump(data, explicit_start=True, indent=4, default_flow_style=False))

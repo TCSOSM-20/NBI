@@ -557,7 +557,7 @@ class Server(object):
         return string of dictionary data according to requested json, yaml, xml. By default json
         :param data: response to be sent. Can be a dict, text or file
         :param token_info: Contains among other username and project
-        :param _format: The format to be set as Content-Type ir data is a file
+        :param _format: The format to be set as Content-Type if data is a file
         :return: None
         """
         accept = cherrypy.request.headers.get("Accept")
@@ -621,7 +621,8 @@ class Server(object):
             elif args or kwargs:
                 raise NbiException("Invalid URL or query string for version", HTTPStatus.METHOD_NOT_ALLOWED)
             # TODO include version of other modules, pick up from some kafka admin message
-            return "<pre>NBI:\n    version: {}\n    date: {}\n".format(nbi_version, nbi_version_date)
+            osm_nbi_version = {"version": nbi_version, "date": nbi_version_date}
+            return self._format_out(osm_nbi_version)
         except NbiException as e:
             cherrypy.response.status = e.http_code.value
             problem_details = {
