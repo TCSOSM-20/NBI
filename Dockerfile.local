@@ -36,11 +36,13 @@ RUN pip3 install pyang && mkdir -p /app && cd /app \
     && git -C /app clone https://github.com/robshakir/pyangbind \
     && pip3 install -e /app/pyangbind \
     && git -C /app clone  https://osm.etsi.org/gerrit/osm/IM \
-    && cd /app/IM/models/yang \
     && mkdir /app/IM/osm_im \
-    && pyang --plugindir /app/pyangbind/pyangbind/plugin -f pybind -o /app/IM/osm_im/vnfd.py vnfd.yang \
-    && pyang --plugindir /app/pyangbind/pyangbind/plugin -f pybind -o /app/IM/osm_im/nsd.py nsd.yang \
-    && pyang --plugindir /app/pyangbind/pyangbind/plugin -f pybind -o /app/IM/osm_im/nst.py nst.yang \
+    && pyang --plugindir /app/pyangbind/pyangbind/plugin -f pybind -p /app/IM/models/yang \
+       -o /app/IM/osm_im/vnfd.py /app/IM/models/yang/vnfd.yang \
+    && pyang --plugindir /app/pyangbind/pyangbind/plugin -f pybind -p /app/IM/models/yang \
+       -o /app/IM/osm_im/nsd.py /app/IM/models/yang/nsd.yang \
+    && pyang --plugindir /app/pyangbind/pyangbind/plugin -f pybind -p /app/IM/models/yang \
+       -o /app/IM/osm_im/nst.py /app/IM/models/yang/nst.yang \
     && pip3 install -e /app/IM
 
 EXPOSE 9999

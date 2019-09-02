@@ -46,6 +46,8 @@ build
 dist
 *.egg-info
 .eggs
+.temp-tox
 
 #vscode
 .vscode
+

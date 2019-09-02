@@ -23,6 +23,8 @@ from osm_nbi.base_topic import BaseTopic, EngineException, get_iterable
 # from descriptor_topics import DescriptorTopic
 from yaml import safe_dump
 from osm_common.dbbase import DbException
+from osm_common.msgbase import MsgException
+from osm_common.fsbase import FsException
 from re import match  # For checking that additional parameter names are valid Jinja2 identifiers
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
@@ -178,7 +180,9 @@ class NsrTopic(BaseTopic):
         :param indata: params to be used for the nsr
         :param kwargs: used to override the indata descriptor
         :param headers: http request headers
-        :return: the _id of nsr descriptor created at database
+        :return: the _id of nsr descriptor created at database. Or an exception of type
+            EngineException, ValidationError, DbException, FsException, MsgException.
+            Note: Exceptions are not captured on purpose. They should be captured at called
         """
 
         try:
@@ -380,11 +384,8 @@ class NsrTopic(BaseTopic):
             self.fs.mkdir(nsr_id)
 
             return nsr_id, None
-        except ValidationError as e:   # TODO remove try Except, it is captured at nbi.py
-            raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
-        except Exception as e:
-            self.logger.exception("Exception {} at NsrTopic.new()".format(e), exc_info=True)
-            raise EngineException("Error {}: {}".format(step, e))
+        except (ValidationError, EngineException, DbException, MsgException, FsException) as e:
+            raise type(e)("{} while '{}".format(e, step), http_code=e.http_code)
 
     def edit(self, session, _id, indata=None, kwargs=None, content=None):
         raise EngineException("Method edit called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -489,7 +490,7 @@ class NsLcmOpTopic(BaseTopic):
             for in_ivld in get_iterable(in_vnfd.get("internal-vld")):
                 for ivld in get_iterable(vnfd.get("internal-vld")):
                     if in_ivld["name"] == ivld["name"] or in_ivld["name"] == ivld["id"]:
-                        for in_icp in get_iterable(in_ivld["internal-connection-point"]):
+                        for in_icp in get_iterable(in_ivld.get("internal-connection-point")):
                             for icp in ivld["internal-connection-point"]:
                                 if in_icp["id-ref"] == icp["id-ref"]:
                                     break
@@ -826,8 +827,9 @@ class NsLcmOpTopic(BaseTopic):
                 self._update_vnfrs(session, rollback, nsr, indata)
 
             nslcmop_desc = self._create_nslcmop(nsInstanceId, operation, indata)
+            _id = nslcmop_desc["_id"]
             self.format_on_new(nslcmop_desc, session["project_id"], make_public=session["public"])
-            _id = self.db.create("nslcmops", nslcmop_desc)
+            self.db.create("nslcmops", nslcmop_desc)
             rollback.append({"topic": "nslcmops", "_id": _id})
             if not slice_object:
                 self.msg.write("ns", operation, nslcmop_desc)

@@ -14,3 +14,5 @@
 # limitations under the License.
 
 tox -e flake8
+tox -e unittest
+
