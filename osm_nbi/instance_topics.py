@@ -443,6 +443,13 @@ class NsLcmOpTopic(BaseTopic):
                 raise EngineException("Invalid parameter member_vnf_index='{}' is not one of the "
                                       "nsd:constituent-vnfd".format(member_vnf_index))
 
+        def check_valid_vdu(vnfd, vdu_id):
+            for vdud in get_iterable(vnfd.get("vdu")):
+                if vdud["id"] == vdu_id:
+                    return vdud
+            else:
+                raise EngineException("Invalid parameter vdu_id='{}' not present at vnfd:vdu:id".format(vdu_id))
+
         def _check_vnf_instantiation_params(in_vnfd, vnfd):
 
             for in_vdu in get_iterable(in_vnfd.get("vdu")):
@@ -520,7 +527,11 @@ class NsLcmOpTopic(BaseTopic):
                 indata["member_vnf_index"] = indata.pop("vnf_member_index")    # for backward compatibility
             if indata.get("member_vnf_index"):
                 vnfd = check_valid_vnf_member_index(indata["member_vnf_index"])
-                descriptor_configuration = vnfd.get("vnf-configuration", {}).get("config-primitive")
+                if indata.get("vdu_id"):
+                    vdud = check_valid_vdu(vnfd, indata["vdu_id"])
+                    descriptor_configuration = vdud.get("vdu-configuration", {}).get("config-primitive")
+                else:
+                    descriptor_configuration = vnfd.get("vnf-configuration", {}).get("config-primitive")
             else:  # use a NSD
                 descriptor_configuration = nsd.get("ns-configuration", {}).get("config-primitive")
             # check primitive
