@@ -21,7 +21,7 @@ echo "POST INSTALL OSM-NBI"
 echo "Installing python dependencies via pip..."
 
 pip3 install pip==9.0.3
-pip3 install cherrypy==18.0.0
+pip3 install cherrypy==18.1.2
 pip3 install keystoneauth1
 
 #Creation of log folder

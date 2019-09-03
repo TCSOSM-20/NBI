@@ -52,7 +52,7 @@ setup(
         'git+https://osm.etsi.org/gerrit/osm/common.git#egg=osm-common'
     ],
     install_requires=[
-        'CherryPy==18.0.0',
+        'CherryPy==18.1.2',
         'osm-common',
         'jsonschema',
         'PyYAML',

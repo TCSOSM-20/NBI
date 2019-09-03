@@ -10,7 +10,7 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
-CherryPy==18.0.0
+CherryPy==18.1.2
 jsonschema
 PyYAML==3.*
 python-keystoneclient
