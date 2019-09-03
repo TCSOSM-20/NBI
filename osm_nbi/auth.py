@@ -257,13 +257,31 @@ class Authenticator:
 
         # Create admin project&user if required
         pid = self.create_admin_project()
-        self.create_admin_user(pid)
+        user_id = self.create_admin_user(pid)
 
-        # self.backend.update_user({"_id": "admin",
-        #                           "add_project_role_mappings": {"project": "admin", "role": "system_admin"}})
-        if self.config["authentication"]["backend"] == "keystone":
+        # try to assign system_admin role to user admin if not any user has this role
+        if not user_id:
             try:
-                self.backend.assign_role_to_user("admin", "admin", "system_admin")
+                users = self.backend.get_user_list()
+                roles = self.backend.get_role_list({"name": "system_admin"})
+                role_id = roles[0]["_id"]
+                user_with_system_admin = False
+                user_admin_id = None
+                for user in users:
+                    if not user_admin_id:
+                        user_admin_id = user["_id"]
+                    if user["username"] == "admin":
+                        user_admin_id = user["_id"]
+                    for prm in user.get("project_role_mappings", ()):
+                        if prm["role"] == role_id:
+                            user_with_system_admin = True
+                            break
+                    if user_with_system_admin:
+                        break
+                if not user_with_system_admin:
+                    self.backend.update_user({"_id": user_admin_id,
+                                              "add_project_role_mappings": [{"project": pid, "role": role_id}]})
+                    self.logger.info("Added role system admin to user='{}' project=admin".format(user_admin_id))
             except Exception:
                 pass
 
