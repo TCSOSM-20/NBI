@@ -426,22 +426,27 @@ class NsLcmOpTopic(BaseTopic):
         :param indata: descriptor with the parameters of the operation
         :return: None
         """
-        vnfds = {}
+        vnf_member_index_to_vnfd = {}  # map between vnf_member_index to vnf descriptor.
         vim_accounts = []
         wim_accounts = []
         nsd = nsr["nsd"]
 
         def check_valid_vnf_member_index(member_vnf_index):
-            # TODO change to vnfR
-            for vnf in nsd["constituent-vnfd"]:
-                if member_vnf_index == vnf["member-vnf-index"]:
-                    vnfd_id = vnf["vnfd-id-ref"]
-                    if vnfd_id not in vnfds:
-                        vnfds[vnfd_id] = self.db.get_one("vnfds", {"id": vnfd_id})
-                    return vnfds[vnfd_id]
-            else:
+            # Obtain vnf descriptor. The vnfr is used to get the vnfd._id used for this member_vnf_index
+            if vnf_member_index_to_vnfd.get(member_vnf_index):
+                return vnf_member_index_to_vnfd[member_vnf_index]
+            vnfr = self.db.get_one("vnfrs",
+                                   {"nsr-id-ref": nsr["_id"], "member-vnf-index-ref": member_vnf_index},
+                                   fail_on_empty=False)
+            if not vnfr:
                 raise EngineException("Invalid parameter member_vnf_index='{}' is not one of the "
                                       "nsd:constituent-vnfd".format(member_vnf_index))
+            vnfd = self.db.get_one("vnfds", {"_id": vnfr["vnfd-id"]}, fail_on_empty=False)
+            if not vnfd:
+                raise EngineException("vnfd id={} has been deleted!. Operation cannot be performed".
+                                      format(vnfr["vnfd-id"]))
+            vnf_member_index_to_vnfd[member_vnf_index] = vnfd  # add to cache, avoiding a later look for
+            return vnfd
 
         def check_valid_vdu(vnfd, vdu_id):
             for vdud in get_iterable(vnfd.get("vdu")):
