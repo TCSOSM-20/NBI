@@ -57,6 +57,8 @@ class BaseTopic:
     schema_edit = None  # to_override
     multiproject = True  # True if this Topic can be shared by several projects. Then it contains _admin.projects_read
 
+    default_quota = 500
+
     # Alternative ID Fields for some Topics
     alt_id_field = {
         "projects": "name",
@@ -64,11 +66,12 @@ class BaseTopic:
         "roles": "name"
     }
 
-    def __init__(self, db, fs, msg):
+    def __init__(self, db, fs, msg, auth):
         self.db = db
         self.fs = fs
         self.msg = msg
         self.logger = logging.getLogger("nbi.engine")
+        self.auth = auth
 
     @staticmethod
     def id_field(topic, value):
@@ -83,6 +86,29 @@ class BaseTopic:
         if not indata:
             return {}
         return indata
+
+    def check_quota(self, session):
+        """
+        Check whether topic quota is exceeded by the given project
+        Used by relevant topics' 'new' function to decide whether or not creation of the new item should be allowed
+        :param projects: projects (tuple) for which quota should be checked
+        :param override: boolean. If true, don't raise ValidationError even though quota be exceeded
+        :return: None
+        :raise:
+            DbException if project not found
+            ValidationError if quota exceeded and not overridden
+        """
+        if session["force"] or session["admin"]:
+            return
+        projects = session["project_id"]
+        for project in projects:
+            proj = self.auth.get_project(project)
+            pid = proj["_id"]
+            quota = proj.get("quotas", {}).get(self.topic, self.default_quota)
+            count = self.db.count(self.topic, {"_admin.projects_read": pid})
+            if count >= quota:
+                name = proj["name"]
+                raise ValidationError("{} quota ({}) exceeded for project {} ({})".format(self.topic, quota, name, pid))
 
     def _validate_input_new(self, input, force=False):
         """
@@ -349,6 +375,9 @@ class BaseTopic:
              op_id: operation id if this is asynchronous, None otherwise
         """
         try:
+            if self.multiproject:
+                self.check_quota(session)
+
             content = self._remove_envelop(indata)
 
             # Override descriptor with query string kwargs

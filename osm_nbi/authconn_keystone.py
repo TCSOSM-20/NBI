@@ -420,7 +420,8 @@ class AuthconnKeystone(Authconn):
             projects = [{
                 "name": project.name,
                 "_id": project.id,
-                "_admin": project.to_dict().get("_admin", {})  # TODO: REVISE
+                "_admin": project.to_dict().get("_admin", {}),  # TODO: REVISE
+                "quotas": project.to_dict().get("quotas", {}),  # TODO: REVISE
             } for project in projects]
 
             if filter_q and filter_q.get("_id"):
@@ -443,7 +444,9 @@ class AuthconnKeystone(Authconn):
         """
         try:
             result = self.keystone.projects.create(project_info["name"], self.project_domain_name,
-                                                   _admin=project_info["_admin"])
+                                                   _admin=project_info["_admin"],
+                                                   quotas=project_info.get("quotas", {})
+                                                   )
             return result.id
         except ClientException as e:
             # self.logger.exception("Error during project creation using keystone: {}".format(e))
@@ -478,7 +481,10 @@ class AuthconnKeystone(Authconn):
         :return: None
         """
         try:
-            self.keystone.projects.update(project_id, name=project_info["name"], _admin=project_info["_admin"])
+            self.keystone.projects.update(project_id, name=project_info["name"],
+                                          _admin=project_info["_admin"],
+                                          quotas=project_info.get("quotas", {})
+                                          )
         except ClientException as e:
             # self.logger.exception("Error during project update using keystone: {}".format(e))
             raise AuthconnOperationException("Error during project update using Keystone: {}".format(e))

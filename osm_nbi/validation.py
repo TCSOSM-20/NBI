@@ -631,6 +631,7 @@ user_edit_schema = {
 }
 
 # PROJECTS
+topics_with_quota = ["vnfds", "nsds", "nsts", "pdus", "nsrs", "nsis", "vim_accounts", "wim_accounts", "sdns"]
 project_new_schema = {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "title": "New project schema for administrators",
@@ -638,6 +639,11 @@ project_new_schema = {
     "properties": {
         "name": shortname_schema,
         "admin": bool_schema,
+        "quotas": {
+            "type": "object",
+            "properties": {topic: integer0_schema for topic in topics_with_quota},
+            "additionalProperties": False
+        },
     },
     "required": ["name"],
     "additionalProperties": False
@@ -649,6 +655,11 @@ project_edit_schema = {
     "properties": {
         "admin": bool_schema,
         "name": shortname_schema,     # To allow Project Name modification
+        "quotas": {
+            "type": "object",
+            "properties": {topic: {"oneOf": [integer0_schema, null_schema]} for topic in topics_with_quota},
+            "additionalProperties": False
+        },
     },
     "additionalProperties": False,
     "minProperties": 1

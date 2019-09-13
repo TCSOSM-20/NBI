@@ -36,8 +36,8 @@ class UserTopic(BaseTopic):
     schema_edit = user_edit_schema
     multiproject = False
 
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
+    def __init__(self, db, fs, msg, auth):
+        BaseTopic.__init__(self, db, fs, msg, auth)
 
     @staticmethod
     def _get_project_filter(session):
@@ -130,8 +130,8 @@ class ProjectTopic(BaseTopic):
     schema_edit = project_edit_schema
     multiproject = False
 
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
+    def __init__(self, db, fs, msg, auth):
+        BaseTopic.__init__(self, db, fs, msg, auth)
 
     @staticmethod
     def _get_project_filter(session):
@@ -394,8 +394,8 @@ class UserTopicAuth(UserTopic):
     schema_edit = user_edit_schema
 
     def __init__(self, db, fs, msg, auth):
-        UserTopic.__init__(self, db, fs, msg)
-        self.auth = auth
+        UserTopic.__init__(self, db, fs, msg, auth)
+        # self.auth = auth
 
     def check_conflict_on_new(self, session, indata):
         """
@@ -707,8 +707,8 @@ class ProjectTopicAuth(ProjectTopic):
     schema_edit = project_edit_schema
 
     def __init__(self, db, fs, msg, auth):
-        ProjectTopic.__init__(self, db, fs, msg)
-        self.auth = auth
+        ProjectTopic.__init__(self, db, fs, msg, auth)
+        # self.auth = auth
 
     def check_conflict_on_new(self, session, indata):
         """
@@ -749,7 +749,7 @@ class ProjectTopicAuth(ProjectTopic):
                 raise EngineException("You cannot rename project 'admin'", http_code=HTTPStatus.CONFLICT)
 
             # Check that project name is not used, regardless keystone already checks this
-            if self.auth.get_project_list(filter_q={"name": project_name}):
+            if project_name and self.auth.get_project_list(filter_q={"name": project_name}):
                 raise EngineException("project '{}' is already used".format(project_name), HTTPStatus.CONFLICT)
 
     def check_conflict_on_del(self, session, _id, db_content):
@@ -888,8 +888,7 @@ class ProjectTopicAuth(ProjectTopic):
             self.check_conflict_on_edit(session, content, indata, _id=_id)
             self.format_on_edit(content, indata)
 
-            if "name" in indata:
-                content["name"] = indata["name"]
+            deep_update_rfc7396(content, indata)
             self.auth.update_project(content["_id"], content)
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -903,8 +902,8 @@ class RoleTopicAuth(BaseTopic):
     multiproject = False
 
     def __init__(self, db, fs, msg, auth, ops):
-        BaseTopic.__init__(self, db, fs, msg)
-        self.auth = auth
+        BaseTopic.__init__(self, db, fs, msg, auth)
+        # self.auth = auth
         self.operations = ops
         # self.topic = "roles_operations" if isinstance(auth, AuthconnKeystone) else "roles"
 

@@ -33,8 +33,8 @@ class NsrTopic(BaseTopic):
     topic_msg = "ns"
     schema_new = ns_instantiate
 
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
+    def __init__(self, db, fs, msg, auth):
+        BaseTopic.__init__(self, db, fs, msg, auth)
 
     def _check_descriptor_dependencies(self, session, descriptor):
         """
@@ -182,6 +182,9 @@ class NsrTopic(BaseTopic):
         """
 
         try:
+            step = "checking quotas"
+            self.check_quota(session)
+
             step = "validating input parameters"
             ns_request = self._remove_envelop(indata)
             # Override descriptor with query string kwargs
@@ -391,8 +394,8 @@ class VnfrTopic(BaseTopic):
     topic = "vnfrs"
     topic_msg = None
 
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
+    def __init__(self, db, fs, msg, auth):
+        BaseTopic.__init__(self, db, fs, msg, auth)
 
     def delete(self, session, _id, dry_run=False):
         raise EngineException("Method delete called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -415,8 +418,8 @@ class NsLcmOpTopic(BaseTopic):
         "terminate": None,
     }
 
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
+    def __init__(self, db, fs, msg, auth):
+        BaseTopic.__init__(self, db, fs, msg, auth)
 
     def _check_ns_operation(self, session, nsr, operation, indata):
         """
@@ -845,9 +848,9 @@ class NsiTopic(BaseTopic):
     topic = "nsis"
     topic_msg = "nsi"
 
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
-        self.nsrTopic = NsrTopic(db, fs, msg)
+    def __init__(self, db, fs, msg, auth):
+        BaseTopic.__init__(self, db, fs, msg, auth)
+        self.nsrTopic = NsrTopic(db, fs, msg, auth)
 
     @staticmethod
     def _format_ns_request(ns_request):
@@ -1006,6 +1009,9 @@ class NsiTopic(BaseTopic):
         """
 
         try:
+            step = "checking quotas"
+            self.check_quota(session)
+
             step = ""
             slice_request = self._remove_envelop(indata)
             # Override descriptor with query string kwargs
@@ -1169,9 +1175,9 @@ class NsiLcmOpTopic(BaseTopic):
         "terminate": None
     }
     
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
-        self.nsi_NsLcmOpTopic = NsLcmOpTopic(self.db, self.fs, self.msg)
+    def __init__(self, db, fs, msg, auth):
+        BaseTopic.__init__(self, db, fs, msg, auth)
+        self.nsi_NsLcmOpTopic = NsLcmOpTopic(self.db, self.fs, self.msg, self.auth)
 
     def _check_nsi_operation(self, session, nsir, operation, indata):
         """

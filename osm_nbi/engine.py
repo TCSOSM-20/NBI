@@ -148,13 +148,13 @@ class Engine(object):
             self.write_lock = Lock()
             # create one class per topic
             for topic, topic_class in self.map_from_topic_to_class.items():
-                if self.auth and topic_class in (UserTopicAuth, ProjectTopicAuth):
-                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.auth)
-                elif self.auth and topic_class == RoleTopicAuth:
+                # if self.auth and topic_class in (UserTopicAuth, ProjectTopicAuth):
+                #     self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.auth)
+                if self.auth and topic_class == RoleTopicAuth:
                     self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.auth,
                                                         self.operations)
                 else:
-                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg)
+                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.auth)
             
             self.map_topic["pm_jobs"] = PmJobsTopic(config["prometheus"].get("host"), config["prometheus"].get("port"))
         except (DbException, FsException, MsgException) as e:

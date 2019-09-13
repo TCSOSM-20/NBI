@@ -33,8 +33,8 @@ __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
 class DescriptorTopic(BaseTopic):
 
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
+    def __init__(self, db, fs, msg, auth):
+        BaseTopic.__init__(self, db, fs, msg, auth)
 
     def check_conflict_on_edit(self, session, final_content, edit_content, _id):
         super().check_conflict_on_edit(session, final_content, edit_content, _id)
@@ -121,6 +121,9 @@ class DescriptorTopic(BaseTopic):
         """
 
         try:
+            # Check Quota
+            self.check_quota(session)
+
             # _remove_envelop
             if indata:
                 if "userDefinedData" in indata:
@@ -394,8 +397,8 @@ class VnfdTopic(DescriptorTopic):
     topic = "vnfds"
     topic_msg = "vnfd"
 
-    def __init__(self, db, fs, msg):
-        DescriptorTopic.__init__(self, db, fs, msg)
+    def __init__(self, db, fs, msg, auth):
+        DescriptorTopic.__init__(self, db, fs, msg, auth)
 
     @staticmethod
     def _remove_envelop(indata=None):
@@ -652,8 +655,8 @@ class NsdTopic(DescriptorTopic):
     topic = "nsds"
     topic_msg = "nsd"
 
-    def __init__(self, db, fs, msg):
-        DescriptorTopic.__init__(self, db, fs, msg)
+    def __init__(self, db, fs, msg, auth):
+        DescriptorTopic.__init__(self, db, fs, msg, auth)
 
     @staticmethod
     def _remove_envelop(indata=None):
@@ -791,8 +794,8 @@ class NstTopic(DescriptorTopic):
     topic = "nsts"
     topic_msg = "nst"
 
-    def __init__(self, db, fs, msg):
-        DescriptorTopic.__init__(self, db, fs, msg)
+    def __init__(self, db, fs, msg, auth):
+        DescriptorTopic.__init__(self, db, fs, msg, auth)
 
     @staticmethod
     def _remove_envelop(indata=None):
@@ -866,8 +869,8 @@ class PduTopic(BaseTopic):
     schema_new = pdu_new_schema
     schema_edit = pdu_edit_schema
 
-    def __init__(self, db, fs, msg):
-        BaseTopic.__init__(self, db, fs, msg)
+    def __init__(self, db, fs, msg, auth):
+        BaseTopic.__init__(self, db, fs, msg, auth)
 
     @staticmethod
     def format_on_new(content, project_id=None, make_public=False):
