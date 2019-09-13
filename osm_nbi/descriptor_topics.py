@@ -854,7 +854,7 @@ class NstTopic(DescriptorTopic):
             return
         # Get Network Slice Template from Database
         _filter = self._get_project_filter(session)
-        _filter["nst-id"] = _id
+        _filter["_admin.nst-id"] = _id
         if self.db.get_list("nsis", _filter):
             raise EngineException("there is at least one Netslice Instance using this descriptor",
                                   http_code=HTTPStatus.CONFLICT)
