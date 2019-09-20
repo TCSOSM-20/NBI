@@ -17,5 +17,5 @@ python-keystoneclient
 requests
 git+https://osm.etsi.org/gerrit/osm/common.git#egg=osm-common
 git+https://osm.etsi.org/gerrit/osm/IM.git#egg=osm-im
-aiohttp==0.20.2
+aiohttp==2.3.10
 

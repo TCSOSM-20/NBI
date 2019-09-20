@@ -105,6 +105,18 @@ db_vnfds_text = """
         vdu-monitoring-param:
             vdu-monitoring-param-ref: dataVM_cpu_util
             vdu-ref: dataVM
+    -   id: dataVM_users
+        aggregation-type: AVERAGE
+        name: dataVM_users
+        vdu-metric:
+            vdu-metric-name-ref: users
+            vdu-ref: dataVM
+    -   id: dataVM_load
+        aggregation-type: AVERAGE
+        name: dataVM_load
+        vdu-metric:
+            vdu-metric-name-ref: load
+            vdu-ref: dataVM
     name: hackfest3charmed-vnf
     scaling-group-descriptor:
     -   max-instance-count: 10
@@ -183,6 +195,23 @@ db_vnfds_text = """
         -   id: dataVM_cpu_util
             nfvi-metric: cpu_utilization
         name: dataVM
+        vdu-configuration:
+          initial-config-primitive:
+          -   parameter:
+              -   value: "<rw_mgmt_ip>"
+                  name: ssh-hostname
+              -   value: ubuntu
+                  name: ssh-username
+              -   value: osm2018
+                  name: ssh-password
+              name: config
+              seq: '1'
+          metrics:
+          -   name: users
+          -   name: load
+          juju:
+            proxy: true
+            charm: testmetrics
         vm-flavor:
             memory-mb: '1024'
             storage-gb: '10'
