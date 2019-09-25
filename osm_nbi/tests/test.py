@@ -27,6 +27,7 @@ from random import randint
 import os
 from sys import stderr
 from uuid import uuid4
+import re
 
 __author__ = "Alfonso Tierno, alfonso.tiernosepulveda@telefonica.com"
 __date__ = "$2018-03-01$"
@@ -82,6 +83,8 @@ headers_text = {"Accept": "text/plain,application/yaml"}
 r_header_zip = {"Content-type": "application/zip"}
 headers_zip = {"Accept": "application/zip,application/yaml"}
 headers_zip_yaml = {"Accept": "application/yaml", "Content-type": "application/zip"}
+headers_zip_json = {"Accept": "application/json", "Content-type": "application/zip"}
+headers_txt_json = {"Accept": "application/json", "Content-type": "text/plain"}
 r_headers_yaml_location_vnfd = {"Location": "/vnfpkgm/v1/vnf_packages_content/", "Content-Type": "application/yaml"}
 r_headers_yaml_location_nsd = {"Location": "/nsd/v1/ns_descriptors_content/", "Content-Type": "application/yaml"}
 r_headers_yaml_location_nst = {"Location": "/nst/v1/netslice_templates_content", "Content-Type": "application/yaml"}
@@ -2687,6 +2690,429 @@ class TestAuthentication:
         engine.remove_authorization()   # To finish
 
 
+class TestNbiQuotas():
+    description = "Test NBI Quotas"
+
+    @staticmethod
+    def run(engine, test_osm, manual_check, test_params=None):
+        engine.set_test_name("NBI-Quotas_")
+        # backend = test_params.get("backend") if test_params else None   # UNUSED
+
+        test_username = "test-nbi-quotas"
+        test_password = "test-nbi-quotas"
+        test_project = "test-nbi-quotas"
+
+        test_vim = "test-nbi-quotas"
+        test_wim = "test-nbi-quotas"
+        test_sdn = "test-nbi-quotas"
+
+        test_user_id = None
+        test_project_id = None
+
+        test_vim_ids = []
+        test_wim_ids = []
+        test_sdn_ids = []
+        test_vnfd_ids = []
+        test_nsd_ids = []
+        test_nst_ids = []
+        test_pdu_ids = []
+        test_nsr_ids = []
+        test_nsi_ids = []
+
+        # Save admin access data
+        admin_username = engine.user
+        admin_password = engine.password
+        admin_project = engine.project
+
+        # Get admin access
+        engine.get_autorization()
+        admin_token = engine.last_id
+
+        # Check that test project,user do not exist
+        res1 = engine.test("Check that test project doesn't exist", "GET", "/admin/v1/projects/"+test_project,
+                           headers_json, {}, (404), {}, True)
+        res2 = engine.test("Check that test user doesn't exist", "GET", "/admin/v1/users/"+test_username,
+                           headers_json, {}, (404), {}, True)
+        if None in [res1, res2]:
+            engine.remove_authorization()
+            logger.error("Test project and/or user already exist")
+            return
+
+        # Create test project&user
+        res = engine.test("Create test project", "POST", "/admin/v1/projects", headers_json,
+                          {"name": test_username,
+                           "quotas": {
+                               "vnfds": 2,
+                               "nsds": 2,
+                               "nsts": 1,
+                               "pdus": 1,
+                               "nsrs": 2,
+                               "nsis": 1,
+                               "vim_accounts": 1,
+                               "wim_accounts": 1,
+                               "sdns": 1,
+                           }
+                           },
+                          (201), r_header_json, "json")
+        test_project_id = engine.last_id if res else None
+        res = engine.test("Create test user", "POST", "/admin/v1/users", headers_json,
+                          {"username": test_username, "password": test_password,
+                           "project_role_mappings": [{"project": test_project, "role": "project_admin"}]},
+                          (201), r_header_json, "json")
+        test_user_id = engine.last_id if res else None
+
+        if test_project_id and test_user_id:
+
+            # Get user access
+            engine.token = None
+            engine.user = test_username
+            engine.password = test_password
+            engine.project = test_project
+            engine.get_autorization()
+            user_token = engine.last_id
+
+            # Create test VIM
+            res = engine.test("Create test VIM", "POST", "/admin/v1/vim_accounts", headers_json,
+                              {"name": test_vim,
+                               "vim_type": "openvim",
+                               "vim_user": test_username,
+                               "vim_password": test_password,
+                               "vim_tenant_name": test_project,
+                               "vim_url": "https://0.0.0.0:0/v0.0",
+                               },
+                              (202), r_header_json, "json")
+            test_vim_ids += [engine.last_id if res else None]
+
+            res = engine.test("Try to create second test VIM", "POST", "/admin/v1/vim_accounts", headers_json,
+                              {"name": test_vim + "_2",
+                               "vim_type": "openvim",
+                               "vim_user": test_username,
+                               "vim_password": test_password,
+                               "vim_tenant_name": test_project,
+                               "vim_url": "https://0.0.0.0:0/v0.0",
+                               },
+                              (422), r_header_json, "json")
+            test_vim_ids += [engine.last_id if res is None else None]
+
+            res = engine.test("Try to create second test VIM with FORCE",
+                              "POST", "/admin/v1/vim_accounts?FORCE", headers_json,
+                              {"name": test_vim + "_3",
+                               "vim_type": "openvim",
+                               "vim_user": test_username,
+                               "vim_password": test_password,
+                               "vim_tenant_name": test_project,
+                               "vim_url": "https://0.0.0.0:0/v0.0",
+                               },
+                              (202), r_header_json, "json")
+            test_vim_ids += [engine.last_id if res else None]
+
+            if test_vim_ids[0]:
+
+                # Download descriptor files (if required)
+                test_dir = "/tmp/"+test_username+"/"
+                test_url = "https://osm-download.etsi.org/ftp/osm-6.0-six/7th-hackfest/packages/"
+                vnfd_filenames = ["slice_hackfest_vnfd.tar.gz", "slice_hackfest_middle_vnfd.tar.gz"]
+                nsd_filenames = ["slice_hackfest_nsd.tar.gz", "slice_hackfest_middle_nsd.tar.gz"]
+                nst_filenames = ["slice_hackfest_nstd.yaml"]
+                pdu_filenames = ["PDU_router.yaml"]
+                desc_filenames = vnfd_filenames + nsd_filenames + nst_filenames + pdu_filenames
+                if not os.path.exists(test_dir):
+                    os.makedirs(test_dir)
+                for filename in desc_filenames:
+                    if not os.path.exists(test_dir+filename):
+                        res = requests.get(test_url+filename)
+                        if res.status_code < 300:
+                            with open(test_dir+filename, "wb") as file:
+                                file.write(res.content)
+
+                if all([os.path.exists(test_dir+p) for p in desc_filenames]):
+
+                    # Test VNFD Quotas
+                    res = engine.test("Create test VNFD #1", "POST", "/vnfpkgm/v1/vnf_packages_content",
+                                      headers_zip_json, "@b"+test_dir+vnfd_filenames[0],
+                                      (201), r_header_json, "json")
+                    test_vnfd_ids += [engine.last_id if res else None]
+                    res = engine.test("Create test VNFD #2", "POST", "/vnfpkgm/v1/vnf_packages_content",
+                                      headers_zip_json, "@b"+test_dir+vnfd_filenames[1],
+                                      (201), r_header_json, "json")
+                    test_vnfd_ids += [engine.last_id if res else None]
+                    res = engine.test("Try to create extra test VNFD", "POST",
+                                      "/vnfpkgm/v1/vnf_packages_content",
+                                      headers_zip_json, "@b"+test_dir+vnfd_filenames[0],
+                                      (422), r_header_json, "json")
+                    test_vnfd_ids += [engine.last_id if res is None else None]
+                    res = engine.test("Try to create extra test VNFD with FORCE",
+                                      "POST", "/vnfpkgm/v1/vnf_packages_content?FORCE",
+                                      headers_zip_json, "@b"+test_dir+vnfd_filenames[0],
+                                      (201), r_header_json, "json")
+                    test_vnfd_ids += [engine.last_id if res else None]
+
+                    # Remove extra VNFDs to prevent further errors
+                    for i in [2, 3]:
+                        if test_vnfd_ids[i]:
+                            res = engine.test("Delete test VNFD #" + str(i), "DELETE",
+                                              "/vnfpkgm/v1/vnf_packages_content/"+test_vnfd_ids[i]+"?FORCE",
+                                              headers_json, {}, (204), {}, 0)
+                            if res:
+                                test_vnfd_ids[i] = None
+
+                    if test_vnfd_ids[0] and test_vnfd_ids[1]:
+
+                        # Test NSD Quotas
+                        res = engine.test("Create test NSD #1", "POST", "/nsd/v1/ns_descriptors_content",
+                                          headers_zip_json, "@b"+test_dir+nsd_filenames[0],
+                                          (201), r_header_json, "json")
+                        test_nsd_ids += [engine.last_id if res else None]
+                        res = engine.test("Create test NSD #2", "POST", "/nsd/v1/ns_descriptors_content",
+                                          headers_zip_json, "@b"+test_dir+nsd_filenames[1],
+                                          (201), r_header_json, "json")
+                        test_nsd_ids += [engine.last_id if res else None]
+                        res = engine.test("Try to create extra test NSD", "POST", "/nsd/v1/ns_descriptors_content",
+                                          headers_zip_json, "@b"+test_dir+nsd_filenames[0],
+                                          (422), r_header_json, "json")
+                        test_nsd_ids += [engine.last_id if res is None else None]
+                        res = engine.test("Try to create extra test NSD with FORCE",
+                                          "POST", "/nsd/v1/ns_descriptors_content?FORCE",
+                                          headers_zip_json, "@b"+test_dir+nsd_filenames[0],
+                                          (201), r_header_json, "json")
+                        test_nsd_ids += [engine.last_id if res else None]
+
+                        # Remove extra NSDs to prevent further errors
+                        for i in [2, 3]:
+                            if test_nsd_ids[i]:
+                                res = engine.test("Delete test NSD #" + str(i), "DELETE",
+                                                  "/nsd/v1/ns_descriptors_content/"+test_nsd_ids[i]+"?FORCE",
+                                                  headers_json, {}, (204), {}, 0)
+                                if res:
+                                    test_nsd_ids[i] = None
+
+                        if test_nsd_ids[0] and test_nsd_ids[1]:
+
+                            # Test NSR Quotas
+                            res = engine.test("Create test NSR #1", "POST", "/nslcm/v1/ns_instances_content",
+                                              headers_json,
+                                              {"nsName": test_username+"_1",
+                                               "nsdId": test_nsd_ids[0],
+                                               "vimAccountId": test_vim_ids[0],
+                                               },
+                                              (201), r_header_json, "json")
+                            test_nsr_ids += [engine.last_id if res else None]
+                            res = engine.test("Create test NSR #2", "POST", "/nslcm/v1/ns_instances_content",
+                                              headers_json,
+                                              {"nsName": test_username+"_2",
+                                               "nsdId": test_nsd_ids[1],
+                                               "vimAccountId": test_vim_ids[0],
+                                               },
+                                              (201), r_header_json, "json")
+                            test_nsr_ids += [engine.last_id if res else None]
+                            res = engine.test("Try to create extra test NSR", "POST", "/nslcm/v1/ns_instances_content",
+                                              headers_json,
+                                              {"nsName": test_username+"_3",
+                                               "nsdId": test_nsd_ids[0],
+                                               "vimAccountId": test_vim_ids[0],
+                                               },
+                                              (422), r_header_json, "json")
+                            test_nsr_ids += [engine.last_id if res is None else None]
+                            res = engine.test("Try to create test NSR with FORCE", "POST",
+                                              "/nslcm/v1/ns_instances_content?FORCE", headers_json,
+                                              {"nsName": test_username+"_4",
+                                               "nsdId": test_nsd_ids[0],
+                                               "vimAccountId": test_vim_ids[0],
+                                               },
+                                              (201), r_header_json, "json")
+                            test_nsr_ids += [engine.last_id if res else None]
+
+                            # Test NST Quotas
+                            res = engine.test("Create test NST", "POST", "/nst/v1/netslice_templates_content",
+                                              headers_txt_json, "@b"+test_dir+nst_filenames[0],
+                                              (201), r_header_json, "json")
+                            test_nst_ids += [engine.last_id if res else None]
+                            res = engine.test("Try to create extra test NST", "POST",
+                                              "/nst/v1/netslice_templates_content",
+                                              headers_txt_json, "@b"+test_dir+nst_filenames[0],
+                                              (422), r_header_json, "json")
+                            test_nst_ids += [engine.last_id if res is None else None]
+                            res = engine.test("Try to create extra test NST with FORCE", "POST",
+                                              "/nst/v1/netslice_templates_content?FORCE",
+                                              headers_txt_json, "@b"+test_dir+nst_filenames[0],
+                                              (201), r_header_json, "json")
+                            test_nst_ids += [engine.last_id if res else None]
+
+                            if test_nst_ids[0]:
+                                # Remove NSR Quota
+                                engine.set_header({"Authorization": "Bearer {}".format(admin_token)})
+                                res = engine.test("Remove NSR Quota", "PUT", "/admin/v1/projects/"+test_project_id,
+                                                  headers_json,
+                                                  {"quotas": {"nsrs": None}},
+                                                  (204), {}, 0)
+                                engine.set_header({"Authorization": "Bearer {}".format(user_token)})
+                                if res:
+                                    # Test NSI Quotas
+                                    res = engine.test("Create test NSI", "POST",
+                                                      "/nsilcm/v1/netslice_instances_content", headers_json,
+                                                      {"nsiName": test_username,
+                                                       "nstId": test_nst_ids[0],
+                                                       "vimAccountId": test_vim_ids[0],
+                                                       },
+                                                      (201), r_header_json, "json")
+                                    test_nsi_ids += [engine.last_id if res else None]
+                                    res = engine.test("Try to create extra test NSI", "POST",
+                                                      "/nsilcm/v1/netslice_instances_content", headers_json,
+                                                      {"nsiName": test_username,
+                                                       "nstId": test_nst_ids[0],
+                                                       "vimAccountId": test_vim_ids[0],
+                                                       },
+                                                      (400), r_header_json, "json")
+                                    test_nsi_ids += [engine.last_id if res is None else None]
+                                    res = engine.test("Try to create extra test NSI with FORCE", "POST",
+                                                      "/nsilcm/v1/netslice_instances_content?FORCE", headers_json,
+                                                      {"nsiName": test_username,
+                                                       "nstId": test_nst_ids[0],
+                                                       "vimAccountId": test_vim_ids[0],
+                                                       },
+                                                      (201), r_header_json, "json")
+                                    test_nsi_ids += [engine.last_id if res else None]
+
+                    # Test PDU Quotas
+                    with open(test_dir+pdu_filenames[0], "rb") as file:
+                        pdu_text = re.sub(r"ip-address: *\[[^\]]*\]", "ip-address: '0.0.0.0'",
+                                          file.read().decode("utf-8"))
+                    with open(test_dir+pdu_filenames[0], "wb") as file:
+                        file.write(pdu_text.encode("utf-8"))
+                    res = engine.test("Create test PDU", "POST", "/pdu/v1/pdu_descriptors",
+                                      headers_yaml, "@b"+test_dir+pdu_filenames[0],
+                                      (201), r_header_yaml, "yaml")
+                    test_pdu_ids += [engine.last_id if res else None]
+                    res = engine.test("Try to create extra test PDU", "POST", "/pdu/v1/pdu_descriptors",
+                                      headers_yaml, "@b"+test_dir+pdu_filenames[0],
+                                      (422), r_header_yaml, "yaml")
+                    test_pdu_ids += [engine.last_id if res is None else None]
+                    res = engine.test("Try to create extra test PDU with FORCE", "POST",
+                                      "/pdu/v1/pdu_descriptors?FORCE",
+                                      headers_yaml, "@b"+test_dir+pdu_filenames[0],
+                                      (201), r_header_yaml, "yaml")
+                    test_pdu_ids += [engine.last_id if res else None]
+
+                    # Cleanup
+                    for i, id in enumerate(test_nsi_ids):
+                        if id:
+                            engine.test("Delete test NSI #"+str(i), "DELETE",
+                                        "/nsilcm/v1/netslice_instances_content/"+id+"?FORCE",
+                                        headers_json, {}, (204), {}, 0)
+                    for i, id in enumerate(test_nsr_ids):
+                        if id:
+                            engine.test("Delete test NSR #"+str(i), "DELETE",
+                                        "/nslcm/v1/ns_instances_content/"+id+"?FORCE",
+                                        headers_json, {}, (204), {}, 0)
+                    for i, id in enumerate(test_nst_ids):
+                        if id:
+                            engine.test("Delete test NST #"+str(i), "DELETE",
+                                        "/nst/v1/netslice_templates_content/"+id+"?FORCE",
+                                        headers_json, {}, (204), {}, 0)
+                    for i, id in enumerate(test_nsd_ids):
+                        if id:
+                            engine.test("Delete test NSD #"+str(i), "DELETE",
+                                        "/nsd/v1/ns_descriptors_content/"+id+"?FORCE",
+                                        headers_json, {}, (204), {}, 0)
+                    for i, id in enumerate(test_vnfd_ids):
+                        if id:
+                            engine.test("Delete test VNFD #"+str(i), "DELETE",
+                                        "/vnfpkgm/v1/vnf_packages_content/"+id+"?FORCE",
+                                        headers_json, {}, (204), {}, 0)
+                    for i, id in enumerate(test_pdu_ids):
+                        if id:
+                            engine.test("Delete test PDU #"+str(i), "DELETE",
+                                        "/pdu/v1/pdu_descriptors/"+id+"?FORCE",
+                                        headers_json, {}, (204), {}, 0)
+
+                    # END Test NBI Quotas
+
+            # Test WIM Quotas
+            res = engine.test("Create test WIM", "POST", "/admin/v1/wim_accounts", headers_json,
+                              {"name": test_wim,
+                               "wim_type": "onos",
+                               "wim_url": "https://0.0.0.0:0/v0.0",
+                               },
+                              (202), r_header_json, "json")
+            test_wim_ids += [engine.last_id if res else None]
+            res = engine.test("Try to create second test WIM", "POST", "/admin/v1/wim_accounts", headers_json,
+                              {"name": test_wim + "_2",
+                               "wim_type": "onos",
+                               "wim_url": "https://0.0.0.0:0/v0.0",
+                               },
+                              (422), r_header_json, "json")
+            test_wim_ids += [engine.last_id if res is None else None]
+            res = engine.test("Try to create second test WIM with FORCE", "POST", "/admin/v1/wim_accounts?FORCE",
+                              headers_json,
+                              {"name": test_wim + "_3",
+                               "wim_type": "onos",
+                               "wim_url": "https://0.0.0.0:0/v0.0",
+                               },
+                              (202), r_header_json, "json")
+            test_wim_ids += [engine.last_id if res else None]
+
+            # Test SDN Quotas
+            res = engine.test("Create test SDN", "POST", "/admin/v1/sdns", headers_json,
+                              {"name": test_sdn,
+                               "type": "onos",
+                               "ip": "0.0.0.0",
+                               "port": 9999,
+                               "dpid": "00:00:00:00:00:00:00:00",
+                               },
+                              (202), r_header_json, "json")
+            test_sdn_ids += [engine.last_id if res else None]
+            res = engine.test("Try to create second test SDN", "POST", "/admin/v1/sdns", headers_json,
+                              {"name": test_sdn + "_2",
+                               "type": "onos",
+                               "ip": "0.0.0.0",
+                               "port": 9999,
+                               "dpid": "00:00:00:00:00:00:00:00",
+                               },
+                              (422), r_header_json, "json")
+            test_sdn_ids += [engine.last_id if res is None else None]
+            res = engine.test("Try to create second test SDN with FORCE", "POST", "/admin/v1/sdns?FORCE", headers_json,
+                              {"name": test_sdn + "_3",
+                               "type": "onos",
+                               "ip": "0.0.0.0",
+                               "port": 9999,
+                               "dpid": "00:00:00:00:00:00:00:00",
+                               },
+                              (202), r_header_json, "json")
+            test_sdn_ids += [engine.last_id if res else None]
+
+            # Cleanup
+            for i, id in enumerate(test_vim_ids):
+                if id:
+                    engine.test("Delete test VIM #"+str(i), "DELETE", "/admin/v1/vim_accounts/"+id+"?FORCE",
+                                headers_json, {}, (202), {}, 0)
+            for i, id in enumerate(test_wim_ids):
+                if id:
+                    engine.test("Delete test WIM #"+str(i), "DELETE", "/admin/v1/wim_accounts/"+id+"?FORCE",
+                                headers_json, {}, (202), {}, 0)
+            for i, id in enumerate(test_sdn_ids):
+                if id:
+                    engine.test("Delete test SDN #"+str(i), "DELETE", "/admin/v1/sdns/"+id+"?FORCE",
+                                headers_json, {}, (202), {}, 0)
+
+            # Release user access
+            engine.remove_authorization()
+
+        # Cleanup
+        engine.user = admin_username
+        engine.password = admin_password
+        engine.project = admin_project
+        engine.get_autorization()
+        if test_user_id:
+            engine.test("Delete test user", "DELETE", "/admin/v1/users/"+test_user_id+"?FORCE",
+                        headers_json, {}, (204), {}, 0)
+        if test_project_id:
+            engine.test("Delete test project", "DELETE", "/admin/v1/projects/"+test_project_id+"?FORCE",
+                        headers_json, {}, (204), {}, 0)
+        engine.remove_authorization()
+
+    # END class TestNbiQuotas
+
+
 if __name__ == "__main__":
     global logger
     test = ""
@@ -2732,6 +3158,7 @@ if __name__ == "__main__":
             "Deploy-SimpleCharm": TestDeploySimpleCharm,
             "Deploy-SimpleCharm2": TestDeploySimpleCharm2,
             "Authentication": TestAuthentication,
+            "NBI-Quotas": TestNbiQuotas,
         }
         test_to_do = []
         test_params = {}
