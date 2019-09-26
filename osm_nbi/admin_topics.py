@@ -545,8 +545,8 @@ class UserTopicAuth(UserTopic):
         """
         # Allow _id to be a name or uuid
         filter_q = {self.id_field(self.topic, _id): _id}
-        users = self.auth.get_user_list(filter_q)
-
+        # users = self.auth.get_user_list(filter_q)
+        users = self.list(session, filter_q)   # To allow default filtering (Bug 853)
         if len(users) == 1:
             return users[0]
         elif len(users) > 1:
@@ -676,9 +676,11 @@ class UserTopicAuth(UserTopic):
         :param filter_q: filter of data to be applied
         :return: The list, it can be empty if no one match the filter.
         """
-        users = self.auth.get_user_list(filter_q)
-
-        return users
+        user_list = self.auth.get_user_list(filter_q)
+        if not session["allow_show_user_project_role"]:
+            # Bug 853 - Default filtering
+            user_list = [usr for usr in user_list if usr["username"] == session["username"]]
+        return user_list
 
     def delete(self, session, _id, dry_run=False):
         """
@@ -827,8 +829,8 @@ class ProjectTopicAuth(ProjectTopic):
         """
         # Allow _id to be a name or uuid
         filter_q = {self.id_field(self.topic, _id): _id}
-        projects = self.auth.get_project_list(filter_q=filter_q)
-
+        # projects = self.auth.get_project_list(filter_q=filter_q)
+        projects = self.list(session, filter_q)   # To allow default filtering (Bug 853)
         if len(projects) == 1:
             return projects[0]
         elif len(projects) > 1:
@@ -844,7 +846,13 @@ class ProjectTopicAuth(ProjectTopic):
         :param filter_q: filter of data to be applied
         :return: The list, it can be empty if no one match the filter.
         """
-        return self.auth.get_project_list(filter_q)
+        project_list = self.auth.get_project_list(filter_q)
+        if not session["allow_show_user_project_role"]:
+            # Bug 853 - Default filtering
+            user = self.auth.get_user(session["username"])
+            projects = [prm["project"] for prm in user["project_role_mappings"]]
+            project_list = [proj for proj in project_list if proj["_id"] in projects]
+        return project_list
 
     def delete(self, session, _id, dry_run=False):
         """
@@ -1071,7 +1079,8 @@ class RoleTopicAuth(BaseTopic):
         :return: dictionary, raise exception if not found.
         """
         filter_q = {BaseTopic.id_field(self.topic, _id): _id}
-        roles = self.auth.get_role_list(filter_q)
+        # roles = self.auth.get_role_list(filter_q)
+        roles = self.list(session, filter_q)   # To allow default filtering (Bug 853)
         if not roles:
             raise AuthconnNotFoundException("Not found any role with filter {}".format(filter_q))
         elif len(roles) > 1:
@@ -1086,7 +1095,13 @@ class RoleTopicAuth(BaseTopic):
         :param filter_q: filter of data to be applied
         :return: The list, it can be empty if no one match the filter.
         """
-        return self.auth.get_role_list(filter_q)
+        role_list = self.auth.get_role_list(filter_q)
+        if not session["allow_show_user_project_role"]:
+            # Bug 853 - Default filtering
+            user = self.auth.get_user(session["username"])
+            roles = [prm["role"] for prm in user["project_role_mappings"]]
+            role_list = [role for role in role_list if role["_id"] in roles]
+        return role_list
 
     def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """

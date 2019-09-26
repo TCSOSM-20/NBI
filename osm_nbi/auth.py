@@ -45,8 +45,8 @@ from osm_nbi.authconn_internal import AuthconnInternal   # Comment out for testi
 from osm_common import dbmongo
 from osm_common import dbmemory
 from osm_common.dbbase import DbException
+from osm_nbi.validation import is_valid_uuid
 from itertools import chain
-
 from uuid import uuid4
 
 
@@ -320,7 +320,7 @@ class Authenticator:
 
         self.operation_to_allowed_roles = permissions
 
-    def authorize(self, role_permission=None, query_string_operations=None):
+    def authorize(self, role_permission=None, query_string_operations=None, item_id=None):
         token = None
         user_passwd64 = None
         try:
@@ -358,8 +358,10 @@ class Authenticator:
             # TODO add to token info remote host, port
 
             if role_permission:
-                self.check_permissions(token_info, cherrypy.request.method, role_permission,
-                                       query_string_operations)
+                RBAC_auth = self.check_permissions(token_info, cherrypy.request.method, role_permission,
+                                                   query_string_operations, item_id)
+                token_info["allow_show_user_project_role"] = RBAC_auth
+
             return token_info
         except AuthException as e:
             if not isinstance(e, AuthExceptionUnauthorized):
@@ -427,7 +429,7 @@ class Authenticator:
         except KeyError:
             raise AuthException("Token '{}' not found".format(token), http_code=HTTPStatus.NOT_FOUND)
 
-    def check_permissions(self, token_info, method, role_permission=None, query_string_operations=None):
+    def check_permissions(self, token_info, method, role_permission=None, query_string_operations=None, item_id=None):
         """
         Checks that operation has permissions to be done, base on the assigned roles to this user project
         :param token_info: Dictionary that contains "roles" with a list of assigned roles.
@@ -437,7 +439,9 @@ class Authenticator:
         :param role_permission: role permission name of the operation required
         :param query_string_operations: list of possible admin query strings provided by user. It is checked that the
             assigned role allows this query string for this method
-        :return: None if granted, exception if not allowed
+        :param item_id: item identifier if included in the URL, None otherwise
+        :return: True if access granted by permission rules, False if access granted by default rules (Bug 853)
+        :raises: AuthExceptionUnauthorized if access denied
         """
 
         roles_required = self.operation_to_allowed_roles[role_permission]
@@ -451,19 +455,29 @@ class Authenticator:
                 break
 
         if "anonymous" in roles_required:
-            return
+            return True
         operation_allowed = False
         for role in roles_allowed:
             if role in roles_required:
                 operation_allowed = True
                 # if query_string operations, check if this role allows it
                 if not query_string_operations:
-                    return
+                    return True
                 for query_string_operation in query_string_operations:
                     if role not in self.operation_to_allowed_roles[query_string_operation]:
                         break
                 else:
-                    return
+                    return True
+
+        # Bug 853 - Final Solution
+        # User/Project/Role whole listings are filtered elsewhere
+        # uid, pid, rid = ("user_id", "project_id", "id") if is_valid_uuid(id) else ("username", "project_name", "name")
+        uid = "user_id" if is_valid_uuid(item_id) else "username"
+        if (role_permission in ["projects:get", "projects:id:get", "roles:get", "roles:id:get", "users:get"]) \
+                or (role_permission == "users:id:get" and item_id == token_info[uid]):
+            # or (role_permission == "projects:id:get" and item_id == token_info[pid]) \
+            # or (role_permission == "roles:id:get" and item_id in [role[rid] for role in token_info["roles"]]):
+            return False
 
         if not operation_allowed:
             raise AuthExceptionUnauthorized("Access denied: lack of permissions.")

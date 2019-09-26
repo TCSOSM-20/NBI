@@ -861,7 +861,8 @@ class Server(object):
             method: show, list, delete, write
         """
         admin_query = {"force": False, "project_id": (token_info["project_id"], ), "username": token_info["username"],
-                       "admin": token_info["admin"], "public": None}
+                       "admin": token_info["admin"], "public": None,
+                       "allow_show_user_project_role": token_info["allow_show_user_project_role"]}
         if kwargs:
             # FORCE
             if "FORCE" in kwargs:
@@ -944,8 +945,7 @@ class Server(object):
             query_string_operations = self._extract_query_string_operations(kwargs, method)
             if main_topic == "admin" and topic == "tokens":
                 return self.token(method, _id, kwargs)
-
-            token_info = self.authenticator.authorize(role_permission, query_string_operations)
+            token_info = self.authenticator.authorize(role_permission, query_string_operations, _id)
             engine_session = self._manage_admin_query(token_info, kwargs, method, _id)
             indata = self._format_in(kwargs)
             engine_topic = topic
