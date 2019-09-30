@@ -341,7 +341,7 @@ resources_to_operations:
   "GET /nsilcm/v1/netslice_instances_content": "slice_instances:get"
   "GET /nsilcm/v1/netslice_instances": "slice_instances:get"
 
-  "POST /nsilcm/v1/netslice_instances_content": "slice_instances:content:get"
+  "POST /nsilcm/v1/netslice_instances_content": "slice_instances:content:post"
 
   "GET /nsilcm/v1/netslice_instances_content/<SliceInstanceId>": "slice_instances:id:get"
   "GET /nsilcm/v1/netslice_instances/<SliceInstanceId>": "slice_instances:id:get"

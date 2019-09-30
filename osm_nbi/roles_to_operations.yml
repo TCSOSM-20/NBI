@@ -53,6 +53,10 @@ roles:
 # NOTE 2: The default <OPERATION> tag can be overridden by using more specific tags
 #         with a different value.
 #
+# The 'force', 'public' and 'set_project' operation tags (respectively allowing/denying
+# the use of the query-strings FORCE, PUBLIC and SET_PROJECT), take by default the
+# value specified by the tag 'default' (false if not specified).
+#
 # The node <OPERATION> tag is defined by using an internal node of the tree, i.e.
 # "nsds", "users:id". A node <OPERATION> tag will affect all the nodes and leafs
 # beneath it. It can be used to override a default <OPERATION> tag.
@@ -82,6 +86,7 @@ roles:
     permissions:
         default:  false
         admin:    false
+        force:    true
         tokens:   true
         users:    true
         projects: true
@@ -89,52 +94,52 @@ roles:
 
   - name: "project_admin"
     permissions:
-        default: true
-        # Users
-        users:post:      false
-        users:id:patch:  false
-        users:id:delete: false
-        users:id:put:    false
-        # Projects
+        default:  true
+        admin:    false
+        users:    false
         projects: false
-        # Roles
         roles:    false
 
   - name: "project_user"
     permissions:
-        default: true
-        # NS Instances
-        ns_instances: false
-        ns_instances:get: true
-        # VNF Instances
-        vnf_instances: false
-        # Users
-        users: false
-        users:id:get: true
-        users:id:put: true
-        users:id:patch: true
-        # Projects
+        default:     false
+        admin:       false
+        force:       false
+        public:      true
+        set_project: true
+        vnf_packages:    true
+        ns_descriptors:  true
+        slice_templates: true
+        ns_instances:    true
+        vnf_instances:   true
+        slice_instances: true
+        users:    false
         projects: false
+        roles:    false
         # VIMs
-        vims: false
-        vims:get: true
+        vims:        false
+        vims:get:    true
         vims:id:get: true
         # VIM Accounts
-        vim_accounts: false
-        vim_accounts:get: true
+        vim_accounts:        false
+        vim_accounts:get:    true
         vim_accounts:id:get: true
         # SDN Controllers
-        sdn_controllers: false
-        sdn_controllers:get: true
+        sdn_controllers:        false
+        sdn_controllers:get:    true
         sdn_controllers:id:get: true
         # WIMs
-        wims: false
-        wims:get: true
+        wims:        false
+        wims:get:    true
         wims:id:get: true
         # WIM Accounts
-        wim_accounts: false
-        wim_accounts:get: true
+        wim_accounts:        false
+        wim_accounts:get:    true
         wim_accounts:id:get: true
+        # PDUs
+        pduds:        false
+        pduds:get:    true
+        pduds:id:get: true
 
   - name: "anonymous"
     permissions:
