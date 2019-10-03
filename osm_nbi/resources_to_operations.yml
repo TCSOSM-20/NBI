@@ -166,10 +166,6 @@ resources_to_operations:
 
   "GET /admin/v1/users/<id>": "users:id:get"
 
-  "POST /admin/v1/users/<id>": "users:id:post"
-
-  "PUT /admin/v1/users/<id>": "users:id:put"
-
   "DELETE /admin/v1/users/<id>": "users:id:delete"
 
   "PATCH /admin/v1/users/<id>": "users:id:patch"
@@ -184,7 +180,7 @@ resources_to_operations:
 
   "GET /admin/v1/projects/<id>": "projects:id:get"
 
-  "PUT /admin/v1/projects/<id>": "projects:id:put"
+  "PATCH /admin/v1/projects/<id>": "projects:id:patch"
 
   "DELETE /admin/v1/projects/<id>": "projects:id:delete"
 
@@ -197,8 +193,6 @@ resources_to_operations:
   "POST /admin/v1/vims": "vims:post"
 
   "GET /admin/v1/vims/<id>": "vims:id:get"
-
-  "PUT /admin/v1/vims/<id>": "vims:id:put"
 
   "DELETE /admin/v1/vims/<id>": "vims:id:delete"
 
@@ -214,8 +208,6 @@ resources_to_operations:
 
   "GET /admin/v1/vim_accounts/<id>": "vim_accounts:id:get"
 
-  "PUT /admin/v1/vim_accounts/<id>": "vim_accounts:id:put"
-
   "DELETE /admin/v1/vim_accounts/<id>": "vim_accounts:id:delete"
 
   "PATCH /admin/v1/vim_accounts/<id>": "vim_accounts:id:patch"
@@ -229,8 +221,6 @@ resources_to_operations:
   "POST /admin/v1/sdns": "sdn_controllers:post"
 
   "GET /admin/v1/sdns/<id>": "sdn_controllers:id:get"
-
-  "PUT /admin/v1/sdns/<id>": "sdn_controllers:id:put"
 
   "DELETE /admin/v1/sdns/<id>": "sdn_controllers:id:delete"
 
@@ -246,8 +236,6 @@ resources_to_operations:
 
   "GET /admin/v1/wims/<id>": "wims:id:get"
 
-  "PUT /admin/v1/wims/<id>": "wims:id:put"
-
   "DELETE /admin/v1/wims/<id>": "wims:id:delete"
 
   "PATCH /admin/v1/wims/<id>": "wims:id:patch"
@@ -261,8 +249,6 @@ resources_to_operations:
   "POST /admin/v1/wim_accounts": "wim_accounts:post"
 
   "GET /admin/v1/wim_accounts/<id>": "wim_accounts:id:get"
-
-  "PUT /admin/v1/wim_accounts/<id>": "wim_accounts:id:put"
 
   "DELETE /admin/v1/wim_accounts/<id>": "wim_accounts:id:delete"
 
@@ -280,7 +266,7 @@ resources_to_operations:
 
   "DELETE /admin/v1/roles/<id>": "roles:id:delete"
 
-  "PUT /admin/v1/roles/<id>": "roles:id:put"
+  "PATCH /admin/v1/roles/<id>": "roles:id:patch"
 
 ################################################################################
 ##################################### PDUDs ####################################

@@ -216,42 +216,42 @@ valid_url_methods = {
                        },
             "users": {"METHODS": ("GET", "POST"),
                       "ROLE_PERMISSION": "users:",
-                      "<ID>": {"METHODS": ("GET", "POST", "DELETE", "PATCH", "PUT"),
+                      "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),
                                "ROLE_PERMISSION": "users:id:"
                                }
                       },
             "projects": {"METHODS": ("GET", "POST"),
                          "ROLE_PERMISSION": "projects:",
-                         "<ID>": {"METHODS": ("GET", "DELETE", "PUT"),
+                         "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),
                                   "ROLE_PERMISSION": "projects:id:"}
                          },
             "roles": {"METHODS": ("GET", "POST"),
                       "ROLE_PERMISSION": "roles:",
-                      "<ID>": {"METHODS": ("GET", "POST", "DELETE", "PUT"),
+                      "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),
                                "ROLE_PERMISSION": "roles:id:"
                                }
                       },
             "vims": {"METHODS": ("GET", "POST"),
                      "ROLE_PERMISSION": "vims:",
-                     "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT"),
+                     "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),
                               "ROLE_PERMISSION": "vims:id:"
                               }
                      },
             "vim_accounts": {"METHODS": ("GET", "POST"),
                              "ROLE_PERMISSION": "vim_accounts:",
-                             "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT"),
+                             "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),
                                       "ROLE_PERMISSION": "vim_accounts:id:"
                                       }
                              },
             "wim_accounts": {"METHODS": ("GET", "POST"),
                              "ROLE_PERMISSION": "wim_accounts:",
-                             "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT"),
+                             "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),
                                       "ROLE_PERMISSION": "wim_accounts:id:"
                                       }
                              },
             "sdns": {"METHODS": ("GET", "POST"),
                      "ROLE_PERMISSION": "sdn_controllers:",
-                     "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT"),
+                     "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),
                               "ROLE_PERMISSION": "sdn_controllers:id:"
                               }
                      },
