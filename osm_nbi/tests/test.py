@@ -1342,7 +1342,7 @@ class TestDeploy:
             ns_data.update(self.ns_params)
         if test_params and test_params.get("ns-config"):
             if isinstance(test_params["ns-config"], str):
-                ns_data.update(yaml.load(test_params["ns-config"]))
+                ns_data.update(yaml.load(test_params["ns-config"]), Loader=yaml.Loader)
             else:
                 ns_data.update(test_params["ns-config"])
         self.instantiate(engine, ns_data)
@@ -1833,7 +1833,8 @@ class TestDeployHackfest3Charmed3(TestDeployHackfest3Charmed):
                             parameter:
                                 "$[0]":
                                     default-value: "<touch_filename2>"
-                """)
+                """,
+                Loader=yaml.Loader)
         }
         self.ns_params = {
             "additionalParamsForVnf": [
@@ -2135,7 +2136,7 @@ class TestDeployHnfd(TestDeployHackfest3Charmed):
                    "vimAccountId": self.vim_id}
         if test_params and test_params.get("ns-config"):
             if isinstance(test_params["ns-config"], str):
-                ns_data.update(yaml.load(test_params["ns-config"]))
+                ns_data.update(yaml.load(test_params["ns-config"]), Loader=yaml.Loader)
             else:
                 ns_data.update(test_params["ns-config"])
 

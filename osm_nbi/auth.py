@@ -214,7 +214,7 @@ class Authenticator:
         # Loading permissions to MongoDB if there is not any permission.
         if not records or (len(records) == 1 and records[0]["name"] == "admin"):
             with open(self.roles_to_operations_file, "r") as stream:
-                roles_to_operations_yaml = yaml.load(stream)
+                roles_to_operations_yaml = yaml.load(stream, Loader=yaml.Loader)
 
             role_names = []
             for role_with_operations in roles_to_operations_yaml["roles"]:

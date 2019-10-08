@@ -264,7 +264,7 @@ class DescriptorTopic(BaseTopic):
                 indata = json.load(content)
             else:
                 error_text = "Invalid yaml format "
-                indata = yaml.load(content)
+                indata = yaml.load(content, Loader=yaml.SafeLoader)
 
             current_desc["_admin"]["storage"] = storage
             current_desc["_admin"]["onboardingState"] = "ONBOARDED"

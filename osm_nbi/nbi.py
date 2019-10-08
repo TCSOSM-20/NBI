@@ -481,7 +481,7 @@ class Server(object):
                         cherrypy.request.headers.pop("Content-File-MD5", None)
                     elif "application/yaml" in cherrypy.request.headers["Content-Type"]:
                         error_text = "Invalid yaml format "
-                        indata = yaml.load(cherrypy.request.body)
+                        indata = yaml.load(cherrypy.request.body, Loader=yaml.SafeLoader)
                         cherrypy.request.headers.pop("Content-File-MD5", None)
                     elif "application/binary" in cherrypy.request.headers["Content-Type"] or \
                          "application/gzip" in cherrypy.request.headers["Content-Type"] or \
@@ -501,11 +501,11 @@ class Server(object):
                         #                          "Only 'Content-Type' of type 'application/json' or
                         # 'application/yaml' for input format are available")
                         error_text = "Invalid yaml format "
-                        indata = yaml.load(cherrypy.request.body)
+                        indata = yaml.load(cherrypy.request.body, Loader=yaml.SafeLoader)
                         cherrypy.request.headers.pop("Content-File-MD5", None)
                 else:
                     error_text = "Invalid yaml format "
-                    indata = yaml.load(cherrypy.request.body)
+                    indata = yaml.load(cherrypy.request.body, Loader=yaml.SafeLoader)
                     cherrypy.request.headers.pop("Content-File-MD5", None)
             if not indata:
                 indata = {}
@@ -520,7 +520,7 @@ class Server(object):
                         kwargs[k] = None
                     elif format_yaml:
                         try:
-                            kwargs[k] = yaml.load(v)
+                            kwargs[k] = yaml.load(v, Loader=yaml.SafeLoader)
                         except Exception:
                             pass
                     elif k.endswith(".gt") or k.endswith(".lt") or k.endswith(".gte") or k.endswith(".lte"):
@@ -539,7 +539,7 @@ class Server(object):
                             v[index] = None
                         elif format_yaml:
                             try:
-                                v[index] = yaml.load(v[index])
+                                v[index] = yaml.load(v[index], Loader=yaml.SafeLoader)
                             except Exception:
                                 pass
 
@@ -755,14 +755,14 @@ class Server(object):
             return_text = "<html><pre>{} ->\n".format(main_topic)
             try:
                 if cherrypy.request.method == 'POST':
-                    to_send = yaml.load(cherrypy.request.body)
+                    to_send = yaml.load(cherrypy.request.body, Loader=yaml.SafeLoader)
                     for k, v in to_send.items():
                         self.engine.msg.write(main_topic, k, v)
                         return_text += "  {}: {}\n".format(k, v)
                 elif cherrypy.request.method == 'GET':
                     for k, v in kwargs.items():
-                        self.engine.msg.write(main_topic, k, yaml.load(v))
-                        return_text += "  {}: {}\n".format(k, yaml.load(v))
+                        self.engine.msg.write(main_topic, k, yaml.load(v), Loader=yaml.SafeLoader)
+                        return_text += "  {}: {}\n".format(k, yaml.load(v), Loader=yaml.SafeLoader)
             except Exception as e:
                 return_text += "Error: " + str(e)
             return_text += "</pre></html>\n"

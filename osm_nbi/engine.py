@@ -137,7 +137,7 @@ class Engine(object):
                         raise EngineException("Invalid permission configuration: resources_to_operations file missing")
 
                 with open(resources_to_operations_file, 'r') as f:
-                    resources_to_operations = yaml.load(f)
+                    resources_to_operations = yaml.load(f, Loader=yaml.Loader)
 
                 self.operations = []
 
