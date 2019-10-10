@@ -780,7 +780,7 @@ class ProjectTopicAuth(ProjectTopic):
         project_name = edit_content.get("name")
         if project_name != final_content["name"]:  # It is a true renaming
             if is_valid_uuid(project_name):
-                raise EngineException("project name  '{}' cannot have an uuid format".format(project_name),
+                raise EngineException("project name '{}' cannot have an uuid format".format(project_name),
                                       HTTPStatus.UNPROCESSABLE_ENTITY)
 
             if final_content["name"] == "admin":
@@ -1011,6 +1011,11 @@ class RoleTopicAuth(BaseTopic):
         :param indata: data to be inserted
         :return: None or raises EngineException
         """
+        # check name is not uuid
+        role_name = indata.get("name")
+        if is_valid_uuid(role_name):
+            raise EngineException("role name '{}' cannot have an uuid format".format(role_name),
+                                  HTTPStatus.UNPROCESSABLE_ENTITY)
         # check name not exists
         name = indata["name"]
         # if self.db.get_one(self.topic, {"name": indata.get("name")}, fail_on_empty=False, fail_on_more=False):
@@ -1031,6 +1036,17 @@ class RoleTopicAuth(BaseTopic):
             final_content["permissions"]["default"] = False
         if "admin" not in final_content["permissions"]:
             final_content["permissions"]["admin"] = False
+
+        # check name is not uuid
+        role_name = edit_content.get("name")
+        if is_valid_uuid(role_name):
+            raise EngineException("role name '{}' cannot have an uuid format".format(role_name),
+                                  HTTPStatus.UNPROCESSABLE_ENTITY)
+
+        # Check renaming of admin roles
+        role = self.auth.get_role(_id)
+        if role["name"] in ["system_admin", "project_admin"]:
+            raise EngineException("You cannot rename role '{}'".format(role["name"]), http_code=HTTPStatus.FORBIDDEN)
 
         # check name not exists
         if "name" in edit_content:
