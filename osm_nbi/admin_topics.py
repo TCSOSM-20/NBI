@@ -530,7 +530,7 @@ class UserTopicAuth(UserTopic):
 
             rollback.append({"topic": self.topic, "_id": _id})
             # del content["password"]
-            # self._send_msg("create", content)
+            # self._send_msg("created", content)
             return _id, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -814,7 +814,7 @@ class ProjectTopicAuth(ProjectTopic):
             self.format_on_new(content, project_id=session["project_id"], make_public=session["public"])
             _id = self.auth.create_project(content)
             rollback.append({"topic": self.topic, "_id": _id})
-            # self._send_msg("create", content)
+            # self._send_msg("created", content)
             return _id, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -1127,7 +1127,7 @@ class RoleTopicAuth(BaseTopic):
             content["_id"] = rid
             # _id = self.db.create(self.topic, content)
             rollback.append({"topic": self.topic, "_id": rid})
-            # self._send_msg("create", content)
+            # self._send_msg("created", content)
             return rid, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)

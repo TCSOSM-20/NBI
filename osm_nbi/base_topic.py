@@ -389,7 +389,7 @@ class BaseTopic:
             rollback.append({"topic": self.topic, "_id": _id})
             if op_id:
                 content["op_id"] = op_id
-            self._send_msg("create", content)
+            self._send_msg("created", content)
             return _id, op_id
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -510,7 +510,7 @@ class BaseTopic:
             if op_id:
                 indata["op_id"] = op_id
             indata["_id"] = _id
-            self._send_msg("edit", indata)
+            self._send_msg("edited", indata)
             return op_id
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
