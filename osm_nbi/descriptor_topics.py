@@ -139,6 +139,7 @@ class DescriptorTopic(BaseTopic):
             self.format_on_new(content, session["project_id"], make_public=session["public"])
             _id = self.db.create(self.topic, content)
             rollback.append({"topic": self.topic, "_id": _id})
+            self._send_msg("created", {"_id": _id})
             return _id, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -284,7 +285,7 @@ class DescriptorTopic(BaseTopic):
             self.fs.dir_rename(temp_folder, _id)
 
             indata["_id"] = _id
-            self._send_msg("created", indata)
+            self._send_msg("edited", indata)
 
             # TODO if descriptor has changed because kwargs update content and remove cached zip
             # TODO if zip is not present creates one
