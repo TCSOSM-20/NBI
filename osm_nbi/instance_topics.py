@@ -812,7 +812,7 @@ class NsLcmOpTopic(BaseTopic):
             if not nsr["_admin"].get("nsState") or nsr["_admin"]["nsState"] == "NOT_INSTANTIATED":
                 if operation == "terminate" and indata.get("autoremove"):
                     # NSR must be deleted
-                    return None    # a none in this case is used to indicate not instantiated. It can be removed
+                    return None, None    # a none in this case is used to indicate not instantiated. It can be removed
                 if operation != "instantiate":
                     raise EngineException("ns_instance '{}' cannot be '{}' because it is not instantiated".format(
                         nsInstanceId, operation), HTTPStatus.CONFLICT)
@@ -1270,7 +1270,7 @@ class NsiLcmOpTopic(BaseTopic):
             if not nsir["_admin"].get("nsiState") or nsir["_admin"]["nsiState"] == "NOT_INSTANTIATED":
                 if operation == "terminate" and indata.get("autoremove"):
                     # NSIR must be deleted
-                    return None    # a none in this case is used to indicate not instantiated. It can be removed
+                    return None, None    # a none in this case is used to indicate not instantiated. It can be removed
                 if operation != "instantiate":
                     raise EngineException("netslice_instance '{}' cannot be '{}' because it is not instantiated".format(
                         netsliceInstanceId, operation), HTTPStatus.CONFLICT)
