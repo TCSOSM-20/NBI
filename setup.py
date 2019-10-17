@@ -58,7 +58,8 @@ setup(
         'PyYAML',
         'osm-im',
         'python-keystoneclient',
-        'requests'
+        'requests',
+        'aiohttp',
     ],
     setup_requires=['setuptools-version-command'],
 )
