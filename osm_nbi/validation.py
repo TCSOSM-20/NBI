@@ -172,6 +172,17 @@ ip_profile_update_schema = {
     "additionalProperties": False
 }
 
+provider_network_schema = {
+    "title": "provider network validation schame",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": {
+        "physical-network": name_schema,
+        "segmentation-id": name_schema,
+    },
+    "additionalProperties": False
+}
+
 ns_instantiate_internal_vld = {
     "title": "ns action instantiate input schema for vdu",
     "$schema": "http://json-schema.org/draft-04/schema#",
@@ -181,6 +192,7 @@ ns_instantiate_internal_vld = {
         "vim-network-name": name_schema,
         "vim-network-id": name_schema,
         "ip-profile": ip_profile_update_schema,
+        "provider-network": provider_network_schema,
         "internal-connection-point": {
             "type": "array",
             "minItems": 1,
@@ -270,6 +282,7 @@ ns_instantiate = {
                     "ns-net": object_schema,
                     "wimAccountId": {"OneOf": [id_schema, bool_schema, null_schema]},
                     "ip-profile": object_schema,
+                    "provider-network": provider_network_schema,
                     "vnfd-connection-point-ref": {
                         "type": "array",
                         "minItems": 1,
