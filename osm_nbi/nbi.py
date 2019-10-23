@@ -112,6 +112,10 @@ URL: /osm                                                       GET     POST    
                 /<id>                                           O                       O       O
             /sdns                                               O       O
                 /<id>                                           O                       O       O
+            /k8sclusters                                        O       O
+                /<id>                                           O                       O       O
+            /k8srepos                                           O       O
+                /<id>                                           O                               O
 
         /nst/v1                                                 O       O
             /netslice_templates_content                         O       O
@@ -251,6 +255,19 @@ valid_url_methods = {
                               "ROLE_PERMISSION": "sdn_controllers:id:"
                               }
                      },
+            "k8sclusters": {"METHODS": ("GET", "POST"),
+                            "ROLE_PERMISSION": "k8sclusters:",
+                            "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT"),
+                                     "ROLE_PERMISSION": "k8sclusters:id:"
+                                     }
+                            },
+            "k8srepos": {"METHODS": ("GET", "POST"),
+                         "ROLE_PERMISSION": "k8srepos:",
+                         "<ID>": {"METHODS": ("GET", "DELETE"),
+                                  "ROLE_PERMISSION": "k8srepos:id:"
+                                  }
+                         },
+
         }
     },
     "pdu": {
@@ -1082,7 +1099,7 @@ class Server(object):
                     if not delete_in_process:
                         self.engine.del_item(engine_session, engine_topic, _id)
                         cherrypy.response.status = HTTPStatus.NO_CONTENT.value
-                if engine_topic in ("vim_accounts", "wim_accounts", "sdns"):
+                if engine_topic in ("vim_accounts", "wim_accounts", "sdns", "k8sclusters", "k8srepos"):
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
 
             elif method in ("PUT", "PATCH"):

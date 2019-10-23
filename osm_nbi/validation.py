@@ -503,6 +503,75 @@ sdn_external_port_schema = {
     "required": ["port"]
 }
 
+# K8s Clusters
+k8scluster_nets_schema = {
+    "title": "k8scluster nets input schema",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "patternProperties": {".": string_schema},
+    "minProperties": 1,
+    "additionalProperties": False
+}
+k8scluster_new_schema = {
+    "title": "k8scluster creation input schema",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": {
+        "schema_version": schema_version,
+        "schema_type": schema_type,
+        "name": name_schema,
+        "description": description_schema,
+        "credentials": object_schema,
+        "vim_account": id_schema,
+        "k8s_version": string_schema,
+        "nets": k8scluster_nets_schema,
+        "namespace": name_schema,
+        "cni": nameshort_list_schema,
+    },
+    "required": ["name", "credentials", "vim_account", "k8s_version", "nets"],
+    "additionalProperties": False
+}
+k8scluster_edit_schema = {
+    "title": "vim_account edit input schema",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": {
+        "name": name_schema,
+        "description": description_schema,
+        "credentials": object_schema,
+        "vim_account": id_schema,
+        "k8s_version": string_schema,
+        "nets": k8scluster_nets_schema,
+        "namespace": name_schema,
+        "cni": nameshort_list_schema,
+    },
+    "additionalProperties": False
+}
+
+# K8s Repos
+k8srepo_types = {"enum": ["chart", "bundle"]}
+k8srepo_properties = {
+    "name": name_schema,
+    "description": description_schema,
+    "type": k8srepo_types,
+    "url": description_schema,
+}
+k8srepo_new_schema = {
+    "title": "k8scluster creation input schema",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": k8srepo_properties,
+    "required": ["name", "type", "url"],
+    "additionalProperties": False
+}
+k8srepo_edit_schema = {
+    "title": "vim_account edit input schema",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": k8srepo_properties,
+    "additionalProperties": False
+}
+
 # PDUs
 pdu_interface = {
     "type": "object",
@@ -635,7 +704,8 @@ user_edit_schema = {
 }
 
 # PROJECTS
-topics_with_quota = ["vnfds", "nsds", "nsts", "pdus", "nsrs", "nsis", "vim_accounts", "wim_accounts", "sdns"]
+topics_with_quota = ["vnfds", "nsds", "nsts", "pdus", "nsrs", "nsis", "vim_accounts", "wim_accounts", "sdns",
+                     "k8sclusters", "k8srepos"]
 project_new_schema = {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "title": "New project schema for administrators",

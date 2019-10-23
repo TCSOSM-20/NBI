@@ -21,6 +21,7 @@ from time import time
 from osm_nbi.validation import user_new_schema, user_edit_schema, project_new_schema, project_edit_schema, \
     vim_account_new_schema, vim_account_edit_schema, sdn_new_schema, sdn_edit_schema, \
     wim_account_new_schema, wim_account_edit_schema, roles_new_schema, roles_edit_schema, \
+    k8scluster_new_schema, k8scluster_edit_schema, k8srepo_new_schema, k8srepo_edit_schema, \
     validate_input, ValidationError, is_valid_uuid    # To check that User/Project Names don't look like UUIDs
 from osm_nbi.base_topic import BaseTopic, EngineException
 from osm_nbi.authconn import AuthconnNotFoundException, AuthconnConflictException
@@ -247,6 +248,7 @@ class CommonVimWimSdn(BaseTopic):
         :param edit_content: user requested update content
         :return: operation id
         """
+        super().format_on_edit(final_content, edit_content)
 
         # encrypt passwords
         schema_version = final_content.get("schema_version")
@@ -384,6 +386,40 @@ class SdnTopic(CommonVimWimSdn):
     schema_edit = sdn_edit_schema
     multiproject = True
     password_to_encrypt = "password"
+    config_to_encrypt = {}
+
+
+class K8sClusterTopic(CommonVimWimSdn):
+    topic = "k8sclusters"
+    topic_msg = "k8scluster"
+    schema_new = k8scluster_new_schema
+    schema_edit = k8scluster_edit_schema
+    multiproject = True
+    password_to_encrypt = None
+    config_to_encrypt = {}
+
+    def format_on_new(self, content, project_id=None, make_public=False):
+        oid = super().format_on_new(content, project_id, make_public)
+        self.db.encrypt_decrypt_fields(content["credentials"], 'encrypt', ['password', 'secret'],
+                                       schema_version=content["schema_version"], salt=content["_id"])
+        return oid
+
+    def format_on_edit(self, final_content, edit_content):
+        if final_content.get("schema_version") and edit_content.get("credentials"):
+            self.db.encrypt_decrypt_fields(edit_content["credentials"], 'encrypt', ['password', 'secret'],
+                                           schema_version=final_content["schema_version"], salt=final_content["_id"])
+            deep_update_rfc7396(final_content["credentials"], edit_content["credentials"])
+        oid = super().format_on_edit(final_content, edit_content)
+        return oid
+
+
+class K8sRepoTopic(CommonVimWimSdn):
+    topic = "k8srepos"
+    topic_msg = "k8srepo"
+    schema_new = k8srepo_new_schema
+    schema_edit = k8srepo_edit_schema
+    multiproject = True
+    password_to_encrypt = None
     config_to_encrypt = {}
 
 
