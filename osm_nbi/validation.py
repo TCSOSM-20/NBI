@@ -349,6 +349,8 @@ ns_scale = {   # TODO for the moment it is only VDU-scaling
 
 schema_version = {"type": "string", "enum": ["1.0"]}
 schema_type = {"type": "string"}
+vim_type = {"enum": ["openstack", "openvim", "vmware", "opennebula", "aws", "azure", "fos"]}
+
 vim_account_edit_schema = {
     "title": "vim_account edit input schema",
     "$schema": "http://json-schema.org/draft-04/schema#",
@@ -356,14 +358,14 @@ vim_account_edit_schema = {
     "properties": {
         "name": name_schema,
         "description": description_schema,
-        "type": shortname_schema,
         "vim": name_schema,
         "datacenter": name_schema,
+        "vim_type": vim_type,
         "vim_url": description_schema,
-        "vim_url_admin": description_schema,
-        "vim_tenant": name_schema,
+        # "vim_url_admin": description_schema,
+        # "vim_tenant": name_schema,
         "vim_tenant_name": name_schema,
-        "vim_username": shortname_schema,
+        "vim_user": shortname_schema,
         "vim_password": passwd_schema,
         "config": {"type": "object"}
     },
@@ -381,7 +383,7 @@ vim_account_new_schema = {
         "description": description_schema,
         "vim": name_schema,
         "datacenter": name_schema,
-        "vim_type": {"enum": ["openstack", "openvim", "vmware", "opennebula", "aws", "azure", "fos"]},
+        "vim_type": vim_type,
         "vim_url": description_schema,
         # "vim_url_admin": description_schema,
         # "vim_tenant": name_schema,
@@ -394,6 +396,8 @@ vim_account_new_schema = {
     "additionalProperties": False
 }
 
+wim_type = {"enum": ["tapi", "onos", "odl", "dynpac", "fake"]}
+
 wim_account_edit_schema = {
     "title": "wim_account edit input schema",
     "$schema": "http://json-schema.org/draft-04/schema#",
@@ -401,8 +405,8 @@ wim_account_edit_schema = {
     "properties": {
         "name": name_schema,
         "description": description_schema,
-        "type": shortname_schema,
         "wim": name_schema,
+        "wim_type": wim_type,
         "wim_url": description_schema,
         "user": shortname_schema,
         "password": passwd_schema,
@@ -421,7 +425,7 @@ wim_account_new_schema = {
         "name": name_schema,
         "description": description_schema,
         "wim": name_schema,
-        "wim_type": {"enum": ["tapi", "onos", "odl", "dynpac", "fake"]},
+        "wim_type": wim_type,
         "wim_url": description_schema,
         "user": shortname_schema,
         "password": passwd_schema,
