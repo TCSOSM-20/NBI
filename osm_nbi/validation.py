@@ -307,6 +307,7 @@ ns_action = {   # TODO for the moment it is only contemplated the vnfd primitive
         "vnf_member_index": name_schema,  # TODO for backward compatibility. To remove in future
         "vdu_id": name_schema,
         "vdu_count_index": integer0_schema,
+        "kdu_name": name_schema,
         "primitive": name_schema,
         "primitive_params": {"type": "object"},
     },

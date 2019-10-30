@@ -300,6 +300,19 @@ class NsrTopic(BaseTopic):
                         # vim-id  # TODO it would be nice having a vim port id
                     }
                     vnfr_descriptor["connection-point"].append(vnf_cp)
+
+                # update kdus
+                for kdu in get_iterable(vnfd.get("kdu")):
+                    kdur = {
+                        "kdu-name": kdu["name"],
+                        # TODO      "name": ""     Name of the VDU in the VIM
+                        "ip-address": None,  # mgmt-interface filled by LCM
+                        "k8s-cluster": kdu.get("k8s-cluster") or {}
+                    }
+                    if not vnfr_descriptor.get("kdur"):
+                        vnfr_descriptor["kdur"] = []
+                    vnfr_descriptor["kdur"].append(kdur)
+
                 for vdu in vnfd.get("vdu", ()):
                     vdur = {
                         "vdu-id-ref": vdu["id"],
@@ -459,6 +472,13 @@ class NsLcmOpTopic(BaseTopic):
             else:
                 raise EngineException("Invalid parameter vdu_id='{}' not present at vnfd:vdu:id".format(vdu_id))
 
+        def check_valid_kdu(vnfd, kdu_name):
+            for kdud in get_iterable(vnfd.get("kdu")):
+                if kdud["name"] == kdu_name:
+                    return kdud
+            else:
+                raise EngineException("Invalid parameter kdu_name='{}' not present at vnfd:kdu:name".format(kdu_name))
+
         def _check_vnf_instantiation_params(in_vnfd, vnfd):
 
             for in_vdu in get_iterable(in_vnfd.get("vdu")):
@@ -539,11 +559,19 @@ class NsLcmOpTopic(BaseTopic):
                 if indata.get("vdu_id"):
                     vdud = check_valid_vdu(vnfd, indata["vdu_id"])
                     descriptor_configuration = vdud.get("vdu-configuration", {}).get("config-primitive")
+                elif indata.get("kdu_name"):
+                    kdud = check_valid_kdu(vnfd, indata["vdu_name"])
+                    descriptor_configuration = kdud.get("kdu-configuration", {}).get("config-primitive")
                 else:
                     descriptor_configuration = vnfd.get("vnf-configuration", {}).get("config-primitive")
             else:  # use a NSD
                 descriptor_configuration = nsd.get("ns-configuration", {}).get("config-primitive")
-            # check primitive
+
+            # For k8s allows default primitives without validating the parameters
+            if indata.get("kdu_name") and indata["primitive"] in ("upgrade", "rollback", "status"):
+                # TODO should be checked that rollback only can contains revsision_numbe????
+                return
+            # if not, check primitive
             for config_primitive in get_iterable(descriptor_configuration):
                 if indata["primitive"] == config_primitive["name"]:
                     # check needed primitive_params are provided
@@ -694,8 +722,61 @@ class NsLcmOpTopic(BaseTopic):
 
         return ifaces_forcing_vim_network
 
+    def _look_for_k8scluster(self, session, rollback, vnfr, vim_account, vnfr_update, vnfr_update_rollback):
+        """
+        Look for an available k8scluster for all the kuds in the vnfd matching version and cni requirements.
+        Fills vnfr.kdur with the selected k8scluster
+
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param rollback: list with the database modifications to rollback if needed
+        :param vnfr: vnfr to be updated. It is modified with pdu interface info if pdu is found
+        :param vim_account: vim_account where this vnfr should be deployed
+        :param vnfr_update: dictionary filled by this method with changes to be done at database vnfr
+        :param vnfr_update_rollback: dictionary filled by this method with original content of vnfr in case a rollback
+                                     of the changed vnfr is needed
+
+        :return: List of KDU interfaces that are connected to an existing VIM network. Each item contains:
+                 "vim-network-name": used at VIM
+                  "name": interface name
+                  "vnf-vld-id": internal VNFD vld where this interface is connected, or
+                  "ns-vld-id": NSD vld where this interface is connected.
+                  NOTE: One, and only one between 'vnf-vld-id' and 'ns-vld-id' contains a value. The other will be None
+        """
+
+        ifaces_forcing_vim_network = []
+        for kdur_index, kdur in enumerate(get_iterable(vnfr.get("kdur"))):
+            kdu_filter = self._get_project_filter(session)
+            kdu_filter["vim_account"] = vim_account
+            # TODO kdu_filter["_admin.operationalState"] = "ENABLED"
+
+            available_k8sclusters = self.db.get_list("k8sclusters", kdu_filter)
+            k8s_requirements = {}  # just for logging
+            for k8scluster in available_k8sclusters:
+                # restrict by cni
+                if kdur["k8s-cluster"].get("cni"):
+                    k8s_requirements["cni"] = kdur["k8s-cluster"]["cni"]
+                    if not set(kdur["k8s-cluster"]["cni"]).intersection(k8scluster.get("cni", ())):
+                        continue
+                # restrict by version
+                if kdur["k8s-cluster"].get("version"):
+                    k8s_requirements["version"] = kdur["k8s-cluster"]["version"]
+                    if k8scluster.get("k8s_version") not in kdur["k8s-cluster"]["version"]:
+                        continue
+                break
+            else:
+                raise EngineException(
+                    "No k8scluster with requirements='{}' at vim_account={} found for member_vnf_index={}, kdu={}"
+                    .format(k8s_requirements, vim_account, vnfr["member-vnf-index-ref"], kdur["kdu-name"]))
+
+            # step 3. Fill vnfr info by filling kdur
+            kdu_text = "kdur.{}.".format(kdur_index)
+            vnfr_update_rollback[kdu_text + "k8s-cluster.id"] = None
+            vnfr_update[kdu_text + "k8s-cluster.id"] = k8scluster["_id"]
+
+            # TODO proccess interfaces  ifaces_forcing_vim_network
+        return ifaces_forcing_vim_network
+
     def _update_vnfrs(self, session, rollback, nsr, indata):
-        vnfrs = None
         # get vnfr
         nsr_id = nsr["_id"]
         vnfrs = self.db.get_list("vnfrs", {"nsr-id-ref": nsr_id})
@@ -721,7 +802,10 @@ class NsLcmOpTopic(BaseTopic):
             ifaces_forcing_vim_network = self._look_for_pdu(session, rollback, vnfr, vim_account, vnfr_update,
                                                             vnfr_update_rollback)
 
-            # updata database vnfr
+            # get kdus
+            ifaces_forcing_vim_network += self._look_for_k8scluster(session, rollback, vnfr, vim_account, vnfr_update,
+                                                                    vnfr_update_rollback)
+            # update database vnfr
             self.db.set_one("vnfrs", {"_id": vnfr["_id"]}, vnfr_update)
             rollback.append({"topic": "vnfrs", "_id": vnfr["_id"], "operation": "set", "content": vnfr_update_rollback})
 

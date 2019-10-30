@@ -16,6 +16,7 @@
 
 *.pyc
 *.pyo
+.tox
 
 #auto-ignore
 .gitignore
