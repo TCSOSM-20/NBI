@@ -18,7 +18,7 @@ FROM ubuntu:16.04
 ARG REPOSITORY_BASE=http://osm-download.etsi.org/repository/osm/debian
 ARG RELEASE=ReleaseFIVE
 ARG REPOSITORY_KEY=OSM%20ETSI%20Release%20Key.gpg
-ARG REPOSITORY=testing
+ARG REPOSITORY=stable
 
 RUN apt-get update && apt-get install -y curl software-properties-common
 RUN curl ${REPOSITORY_BASE}/${RELEASE}/${REPOSITORY_KEY} | apt-key add -
