@@ -522,7 +522,7 @@ k8scluster_nets_schema = {
     "title": "k8scluster nets input schema",
     "$schema": "http://json-schema.org/draft-04/schema#",
     "type": "object",
-    "patternProperties": {".": string_schema},
+    "patternProperties": {".": {"oneOf": [description_schema, null_schema]}},
     "minProperties": 1,
     "additionalProperties": False
 }

@@ -46,6 +46,8 @@ html_start = """
       <a href="/osm/admin/v1/vim_accounts">VIMs </a>
       <a href="/osm/admin/v1/wim_accounts">WIMs </a>
       <a href="/osm/admin/v1/sdns">SDNs </a>
+      <a href="/osm/admin/v1/k8sclusters">K8s_cluseters </a>
+      <a href="/osm/admin/v1/k8srepos">K8s_repos </a>
       <a href="/osm/admin/v1/tokens?METHOD=DELETE">logout </a>
     </div>
   </div>
@@ -150,7 +152,7 @@ def format(data, request, response, toke_info):
         body += html_body_error.format(yaml.safe_dump(data, explicit_start=True, indent=4, default_flow_style=False))
     elif isinstance(data, (list, tuple)):
         if request.path_info == "/vnfpkgm/v1/vnf_packages":
-            body += html_upload_body.format(request.path_info, "VNFD")
+            body += html_upload_body.format(request.path_info + "_content", "VNFD")
         elif request.path_info == "/nsd/v1/ns_descriptors":
             body += html_upload_body.format(request.path_info + "_content", "NSD")
         elif request.path_info == "/nst/v1/nst_templates":

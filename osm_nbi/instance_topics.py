@@ -301,13 +301,37 @@ class NsrTopic(BaseTopic):
                     }
                     vnfr_descriptor["connection-point"].append(vnf_cp)
 
+                # Create k8s-cluster information
+                if vnfd.get("k8s-cluster"):
+                    vnfr_descriptor["k8s-cluster"] = vnfd["k8s-cluster"]
+                    for net in get_iterable(vnfr_descriptor["k8s-cluster"].get("nets")):
+                        if net.get("external-connection-point-ref"):
+                            for nsd_vld in get_iterable(nsd.get("vld")):
+                                for nsd_vld_cp in get_iterable(nsd_vld.get("vnfd-connection-point-ref")):
+                                    if nsd_vld_cp.get("vnfd-connection-point-ref") == \
+                                            net["external-connection-point-ref"] and \
+                                            nsd_vld_cp.get("member-vnf-index-ref") == member_vnf["member-vnf-index"]:
+                                        net["ns-vld-id"] = nsd_vld["id"]
+                                        break
+                                else:
+                                    continue
+                                break
+                        elif net.get("internal-connection-point-ref"):
+                            for vnfd_ivld in get_iterable(vnfd.get("internal-vld")):
+                                for vnfd_ivld_icp in get_iterable(vnfd_ivld.get("internal-connection-point")):
+                                    if vnfd_ivld_icp.get("id-ref") == net["internal-connection-point-ref"]:
+                                        net["vnf-vld-id"] = vnfd_ivld["id"]
+                                        break
+                                else:
+                                    continue
+                                break
                 # update kdus
                 for kdu in get_iterable(vnfd.get("kdu")):
                     kdur = {
                         "kdu-name": kdu["name"],
                         # TODO      "name": ""     Name of the VDU in the VIM
                         "ip-address": None,  # mgmt-interface filled by LCM
-                        "k8s-cluster": kdu.get("k8s-cluster") or {}
+                        "k8s-cluster": {}
                     }
                     if not vnfr_descriptor.get("kdur"):
                         vnfr_descriptor["kdur"] = []
@@ -560,7 +584,7 @@ class NsLcmOpTopic(BaseTopic):
                     vdud = check_valid_vdu(vnfd, indata["vdu_id"])
                     descriptor_configuration = vdud.get("vdu-configuration", {}).get("config-primitive")
                 elif indata.get("kdu_name"):
-                    kdud = check_valid_kdu(vnfd, indata["vdu_name"])
+                    kdud = check_valid_kdu(vnfd, indata["kdu_name"])
                     descriptor_configuration = kdud.get("kdu-configuration", {}).get("config-primitive")
                 else:
                     descriptor_configuration = vnfd.get("vnf-configuration", {}).get("config-primitive")
@@ -713,11 +737,9 @@ class NsLcmOpTopic(BaseTopic):
                                 "vnf-vld-id": vdur_interface.get("vnf-vld-id"),
                                 "ns-vld-id": vdur_interface.get("ns-vld-id")})
                             if pdu_interface.get("vim-network-id"):
-                                ifaces_forcing_vim_network.append({
-                                    "vim-network-id": pdu_interface.get("vim-network-id")})
+                                ifaces_forcing_vim_network[-1]["vim-network-id"] = pdu_interface["vim-network-id"]
                             if pdu_interface.get("vim-network-name"):
-                                ifaces_forcing_vim_network.append({
-                                    "vim-network-name": pdu_interface.get("vim-network-name")})
+                                ifaces_forcing_vim_network[-1]["vim-network-name"] = pdu_interface["vim-network-name"]
                         break
 
         return ifaces_forcing_vim_network
@@ -744,36 +766,65 @@ class NsLcmOpTopic(BaseTopic):
         """
 
         ifaces_forcing_vim_network = []
-        for kdur_index, kdur in enumerate(get_iterable(vnfr.get("kdur"))):
-            kdu_filter = self._get_project_filter(session)
-            kdu_filter["vim_account"] = vim_account
-            # TODO kdu_filter["_admin.operationalState"] = "ENABLED"
+        if not vnfr.get("kdur"):
+            return ifaces_forcing_vim_network
 
-            available_k8sclusters = self.db.get_list("k8sclusters", kdu_filter)
-            k8s_requirements = {}  # just for logging
-            for k8scluster in available_k8sclusters:
-                # restrict by cni
-                if kdur["k8s-cluster"].get("cni"):
-                    k8s_requirements["cni"] = kdur["k8s-cluster"]["cni"]
-                    if not set(kdur["k8s-cluster"]["cni"]).intersection(k8scluster.get("cni", ())):
-                        continue
-                # restrict by version
-                if kdur["k8s-cluster"].get("version"):
-                    k8s_requirements["version"] = kdur["k8s-cluster"]["version"]
-                    if k8scluster.get("k8s_version") not in kdur["k8s-cluster"]["version"]:
-                        continue
+        kdu_filter = self._get_project_filter(session)
+        kdu_filter["vim_account"] = vim_account
+        # TODO kdu_filter["_admin.operationalState"] = "ENABLED"
+        available_k8sclusters = self.db.get_list("k8sclusters", kdu_filter)
+
+        k8s_requirements = {}  # just for logging
+        for k8scluster in available_k8sclusters:
+            if not vnfr.get("k8s-cluster"):
                 break
-            else:
-                raise EngineException(
-                    "No k8scluster with requirements='{}' at vim_account={} found for member_vnf_index={}, kdu={}"
-                    .format(k8s_requirements, vim_account, vnfr["member-vnf-index-ref"], kdur["kdu-name"]))
+            # restrict by cni
+            if vnfr["k8s-cluster"].get("cni"):
+                k8s_requirements["cni"] = vnfr["k8s-cluster"]["cni"]
+                if not set(vnfr["k8s-cluster"]["cni"]).intersection(k8scluster.get("cni", ())):
+                    continue
+            # restrict by version
+            if vnfr["k8s-cluster"].get("version"):
+                k8s_requirements["version"] = vnfr["k8s-cluster"]["version"]
+                if k8scluster.get("k8s_version") not in vnfr["k8s-cluster"]["version"]:
+                    continue
+            # restrict by number of networks
+            if vnfr["k8s-cluster"].get("nets"):
+                k8s_requirements["networks"] = len(vnfr["k8s-cluster"]["nets"])
+                if not k8scluster.get("nets") or len(k8scluster["nets"]) < len(vnfr["k8s-cluster"]["nets"]):
+                    continue
+            break
+        else:
+            raise EngineException("No k8scluster with requirements='{}' at vim_account={} found for member_vnf_index={}"
+                                  .format(k8s_requirements, vim_account, vnfr["member-vnf-index-ref"]))
 
+        for kdur_index, kdur in enumerate(get_iterable(vnfr.get("kdur"))):
             # step 3. Fill vnfr info by filling kdur
             kdu_text = "kdur.{}.".format(kdur_index)
             vnfr_update_rollback[kdu_text + "k8s-cluster.id"] = None
             vnfr_update[kdu_text + "k8s-cluster.id"] = k8scluster["_id"]
 
-            # TODO proccess interfaces  ifaces_forcing_vim_network
+        # step 4. Check VIM networks that forces the selected k8s_cluster
+        if vnfr.get("k8s-cluster") and vnfr["k8s-cluster"].get("nets"):
+            k8scluster_net_list = list(k8scluster.get("nets").keys())
+            for net_index, kdur_net in enumerate(vnfr["k8s-cluster"]["nets"]):
+                # get a network from k8s_cluster nets. If name matches use this, if not use other
+                if kdur_net["id"] in k8scluster_net_list:  # name matches
+                    vim_net = k8scluster["nets"][kdur_net["id"]]
+                    k8scluster_net_list.remove(kdur_net["id"])
+                else:
+                    vim_net = k8scluster["nets"][k8scluster_net_list[0]]
+                    k8scluster_net_list.pop(0)
+                vnfr_update_rollback["k8s-cluster.nets.{}.vim_net".format(net_index)] = None
+                vnfr_update["k8s-cluster.nets.{}.vim_net".format(net_index)] = vim_net
+                if vim_net and (kdur_net.get("vnf-vld-id") or kdur_net.get("ns-vld-id")):
+                    ifaces_forcing_vim_network.append({
+                        "name": kdur_net.get("vnf-vld-id") or kdur_net.get("ns-vld-id"),
+                        "vnf-vld-id": kdur_net.get("vnf-vld-id"),
+                        "ns-vld-id": kdur_net.get("ns-vld-id"),
+                        "vim-network-name": vim_net,   # TODO can it be vim-network-id ???
+                    })
+            # TODO check that this forcing is not incompatible with other forcing
         return ifaces_forcing_vim_network
 
     def _update_vnfrs(self, session, rollback, nsr, indata):
