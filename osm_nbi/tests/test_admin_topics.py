@@ -631,16 +631,17 @@ class Test_CommonVimWimSdn(TestCase):
                                "Wrong operation status enter time")
             self.assertEqual(operation["detailed-status"], "", "Wrong operation detailed status info")
             self.assertIsNone(operation["operationParams"], "Wrong operation parameters")
-        with self.subTest(i=2):
-            rollback = []
-            test_type = "bad_type"
-            with self.assertRaises(EngineException, msg="Accepted wrong CIM type") as e:
-                self.topic.new(rollback, self.fake_session,
-                               {"name": self.test_name, "wim_url": test_url, "wim_type": test_type})
-            self.assertEqual(len(rollback), 0, "Wrong rollback length")
-            self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")
-            self.assertIn("format error at '{}' '{}".format("wim_type", "'{}' is not one of {}").format(test_type, ""),
-                          norm(str(e.exception)), "Wrong exception text")
+        # This test is disabled. From Feature 8030 we admit all WIM/SDN types
+        # with self.subTest(i=2):
+        #     rollback = []
+        #     test_type = "bad_type"
+        #     with self.assertRaises(EngineException, msg="Accepted wrong CIM type") as e:
+        #         self.topic.new(rollback, self.fake_session,
+        #                        {"name": self.test_name, "wim_url": test_url, "wim_type": test_type})
+        #     self.assertEqual(len(rollback), 0, "Wrong rollback length")
+        #     self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")
+        #     self.assertIn("format error at '{}' '{}".format("wim_type", "'{}' is not one of {}").format(test_type,""),
+        #                   norm(str(e.exception)), "Wrong exception text")
 
     def test_conflict_on_new(self):
         with self.subTest(i=1):
