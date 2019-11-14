@@ -257,7 +257,7 @@ valid_url_methods = {
                      },
             "k8sclusters": {"METHODS": ("GET", "POST"),
                             "ROLE_PERMISSION": "k8sclusters:",
-                            "<ID>": {"METHODS": ("GET", "DELETE", "PATCH", "PUT"),
+                            "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),
                                      "ROLE_PERMISSION": "k8sclusters:id:"
                                      }
                             },
