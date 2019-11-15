@@ -27,7 +27,7 @@ from time import time
 from osm_common import dbbase, fsbase, msgbase
 from osm_nbi import authconn
 from osm_nbi.tests.test_pkg_descriptors import db_vnfds_text, db_nsds_text
-from osm_nbi.descriptor_topics import VnfdTopic
+from osm_nbi.descriptor_topics import VnfdTopic, NsdTopic
 from osm_nbi.engine import EngineException
 from osm_common.dbbase import DbException
 import yaml
@@ -492,6 +492,320 @@ class Test_VnfdTopic(TestCase):
             excp_msg = "Not found any {} with filter='{}'".format("VNFD", {"_id": did})
             self.db.get_one.side_effect = DbException(excp_msg, HTTPStatus.NOT_FOUND)
             with self.assertRaises(DbException, msg="Accepted non-existent VNFD ID") as e:
+                self.topic.delete(fake_session, did)
+            self.assertEqual(e.exception.http_code, HTTPStatus.NOT_FOUND, "Wrong HTTP status code")
+            self.assertIn(norm(excp_msg), norm(str(e.exception)), "Wrong exception text")
+        return
+
+
+class Test_NsdTopic(TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.test_name = "test-nsd-topic"
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def setUp(self):
+        self.db = Mock(dbbase.DbBase())
+        self.fs = Mock(fsbase.FsBase())
+        self.msg = Mock(msgbase.MsgBase())
+        self.auth = Mock(authconn.Authconn(None, None, None))
+        self.topic = NsdTopic(self.db, self.fs, self.msg, self.auth)
+
+    def test_new_nsd(self):
+        did = db_nsd_content["_id"]
+        self.fs.get_params.return_value = {}
+        self.fs.file_exists.return_value = False
+        self.fs.file_open.side_effect = lambda path, mode: open("/tmp/" + str(uuid4()), "a+b")
+        test_nsd = deepcopy(db_nsd_content)
+        del test_nsd["_id"]
+        del test_nsd["_admin"]
+        with self.subTest(i=1, t='Normal Creation'):
+            self.db.create.return_value = did
+            rollback = []
+            did2, oid = self.topic.new(rollback, fake_session, {})
+            db_args = self.db.create.call_args[0]
+            msg_args = self.msg.write.call_args[0]
+            self.assertEqual(len(rollback), 1, "Wrong rollback length")
+            self.assertEqual(msg_args[0], self.topic.topic_msg, "Wrong message topic")
+            self.assertEqual(msg_args[1], "created", "Wrong message action")
+            self.assertEqual(msg_args[2], {"_id": did}, "Wrong message content")
+            self.assertEqual(db_args[0], self.topic.topic, "Wrong DB topic")
+            self.assertEqual(did2, did, "Wrong DB NSD id")
+            self.assertIsNotNone(db_args[1]["_admin"]["created"], "Wrong creation time")
+            self.assertEqual(db_args[1]["_admin"]["modified"], db_args[1]["_admin"]["created"],
+                             "Wrong modification time")
+            self.assertEqual(db_args[1]["_admin"]["projects_read"], [test_pid], "Wrong read-only project list")
+            self.assertEqual(db_args[1]["_admin"]["projects_write"], [test_pid], "Wrong read-write project list")
+            try:
+                self.db.get_one.side_effect = [{"_id": did, "_admin": db_nsd_content["_admin"]}, None]
+                self.db.get_list.return_value = [db_vnfd_content]
+                self.topic.upload_content(fake_session, did, test_nsd, {}, {"Content-Type": []})
+                msg_args = self.msg.write.call_args[0]
+                test_nsd["_id"] = did
+                self.assertEqual(msg_args[0], self.topic.topic_msg, "Wrong message topic")
+                self.assertEqual(msg_args[1], "edited", "Wrong message action")
+                self.assertEqual(msg_args[2], test_nsd, "Wrong message content")
+                db_args = self.db.get_one.mock_calls[0][1]
+                self.assertEqual(db_args[0], self.topic.topic, "Wrong DB topic")
+                self.assertEqual(db_args[1]["_id"], did, "Wrong DB NSD id")
+                db_args = self.db.replace.call_args[0]
+                self.assertEqual(db_args[0], self.topic.topic, "Wrong DB topic")
+                self.assertEqual(db_args[1], did, "Wrong DB NSD id")
+                admin = db_args[2]["_admin"]
+                db_admin = db_nsd_content["_admin"]
+                self.assertEqual(admin["created"], db_admin["created"], "Wrong creation time")
+                self.assertGreater(admin["modified"], db_admin["created"], "Wrong modification time")
+                self.assertEqual(admin["projects_read"], db_admin["projects_read"], "Wrong read-only project list")
+                self.assertEqual(admin["projects_write"], db_admin["projects_write"], "Wrong read-write project list")
+                self.assertEqual(admin["onboardingState"], "ONBOARDED", "Wrong onboarding state")
+                self.assertEqual(admin["operationalState"], "ENABLED", "Wrong operational state")
+                self.assertEqual(admin["usageState"], "NOT_IN_USE", "Wrong usage state")
+                storage = admin["storage"]
+                self.assertEqual(storage["folder"], did, "Wrong storage folder")
+                self.assertEqual(storage["descriptor"], "package", "Wrong storage descriptor")
+                compare_desc(self, test_nsd, db_args[2], "NSD")
+            finally:
+                pass
+        self.db.get_one.side_effect = lambda table, filter, fail_on_empty=None, fail_on_more=None:\
+            {"_id": did, "_admin": db_nsd_content["_admin"]}
+        with self.subTest(i=2, t='Check Pyangbind Validation: required properties'):
+            tmp = test_nsd["id"]
+            del test_nsd["id"]
+            try:
+                with self.assertRaises(EngineException, msg="Accepted NSD with a missing required property") as e:
+                    self.topic.upload_content(fake_session, did, test_nsd, {}, {"Content-Type": []})
+                self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")
+                self.assertIn(norm("Error in pyangbind validation: '{}'".format("id")),
+                              norm(str(e.exception)), "Wrong exception text")
+            finally:
+                test_nsd["id"] = tmp
+        with self.subTest(i=3, t='Check Pyangbind Validation: additional properties'):
+            test_nsd["extra-property"] = 0
+            try:
+                with self.assertRaises(EngineException, msg="Accepted NSD with an additional property") as e:
+                    self.topic.upload_content(fake_session, did, test_nsd, {}, {"Content-Type": []})
+                self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")
+                self.assertIn(norm("Error in pyangbind validation: {} ({})"
+                                   .format("json object contained a key that did not exist", "extra-property")),
+                              norm(str(e.exception)), "Wrong exception text")
+            finally:
+                del test_nsd["extra-property"]
+        with self.subTest(i=4, t='Check Pyangbind Validation: property types'):
+            tmp = test_nsd["short-name"]
+            test_nsd["short-name"] = {"key": 0}
+            try:
+                with self.assertRaises(EngineException, msg="Accepted NSD with a wrongly typed property") as e:
+                    self.topic.upload_content(fake_session, did, test_nsd, {}, {"Content-Type": []})
+                self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")
+                self.assertIn(norm("Error in pyangbind validation: {} ({})"
+                                   .format("json object contained a key that did not exist", "key")),
+                              norm(str(e.exception)), "Wrong exception text")
+            finally:
+                test_nsd["short-name"] = tmp
+        with self.subTest(i=5, t='Check Input Validation: vld[mgmt-network+ip-profile]'):
+            tmp = test_nsd["vld"][0]["vim-network-name"]
+            del test_nsd["vld"][0]["vim-network-name"]
+            test_nsd["vld"][0]["ip-profile-ref"] = "fake-ip-profile"
+            try:
+                with self.assertRaises(EngineException, msg="Accepted VLD with mgmt-network+ip-profile") as e:
+                    self.topic.upload_content(fake_session, did, test_nsd, {}, {"Content-Type": []})
+                self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")
+                self.assertIn(norm("Error at vld[id='{}']:ip-profile-ref"
+                                   " You cannot set an ip-profile when mgmt-network is True"
+                                   .format(test_nsd["vld"][0]["id"])),
+                              norm(str(e.exception)), "Wrong exception text")
+            finally:
+                test_nsd["vld"][0]["vim-network-name"] = tmp
+                del test_nsd["vld"][0]["ip-profile-ref"]
+        with self.subTest(i=6, t='Check Input Validation: vld[vnfd-connection-point-ref][vnfd-id-ref]'):
+            tmp = test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["vnfd-id-ref"]
+            test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["vnfd-id-ref"] = "wrong-vnfd-id-ref"
+            try:
+                with self.assertRaises(EngineException, msg="Accepted VLD with wrong vnfd-connection-point-ref") as e:
+                    self.topic.upload_content(fake_session, did, test_nsd, {}, {"Content-Type": []})
+                self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")
+                self.assertIn(norm("Error at vld[id='{}']:vnfd-connection-point-ref[vnfd-id-ref='{}']"
+                                   " does not match constituent-vnfd[member-vnf-index='{}']:vnfd-id-ref '{}'"
+                                   .format(test_nsd["vld"][0]["id"],
+                                           test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["vnfd-id-ref"],
+                                           test_nsd["constituent-vnfd"][0]["member-vnf-index"],
+                                           test_nsd["constituent-vnfd"][0]["vnfd-id-ref"])),
+                              norm(str(e.exception)), "Wrong exception text")
+            finally:
+                test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["vnfd-id-ref"] = tmp
+        with self.subTest(i=7, t='Check Input Validation: vld[vnfd-connection-point-ref][member-vnf-index-ref]'):
+            tmp = test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["member-vnf-index-ref"]
+            test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["member-vnf-index-ref"] = "wrong-member-vnf-index-ref"
+            try:
+                with self.assertRaises(EngineException, msg="Accepted VLD with wrong vnfd-connection-point-ref") as e:
+                    self.topic.upload_content(fake_session, did, test_nsd, {}, {"Content-Type": []})
+                self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")
+                self.assertIn(norm("Error at vld[id='{}']:vnfd-connection-point-ref[member-vnf-index-ref='{}']"
+                                   " does not match any constituent-vnfd:member-vnf-index"
+                                   .format(test_nsd["vld"][0]["id"],
+                                           test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["member-vnf-index-ref"])),
+                              norm(str(e.exception)), "Wrong exception text")
+            finally:
+                test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["member-vnf-index-ref"] = tmp
+        with self.subTest(i=8, t='Check Input Validation: vnffgd[classifier][rsp-id-ref]'):
+            test_nsd["vnffgd"] = [{"id": "fake-vnffgd-id",
+                                   "rsp": [{"id": "fake-rsp-id"}],
+                                   "classifier": [{"id": "fake-vnffgd-classifier-id", "rsp-id-ref": "wrong-rsp-id"}]}]
+            try:
+                with self.assertRaises(EngineException, msg="Accepted VNF FGD with wrong classifier rsp-id-ref") as e:
+                    self.topic.upload_content(fake_session, did, test_nsd, {}, {"Content-Type": []})
+                self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")
+                self.assertIn(norm("Error at vnffgd[id='{}']:classifier[id='{}']:rsp-id-ref '{}'"
+                                   " does not match any rsp:id"
+                                   .format(test_nsd["vnffgd"][0]["id"],
+                                           test_nsd["vnffgd"][0]["classifier"][0]["id"],
+                                           test_nsd["vnffgd"][0]["classifier"][0]["rsp-id-ref"])),
+                              norm(str(e.exception)), "Wrong exception text")
+            finally:
+                test_nsd["vnffgd"][0]["classifier"][0]["rsp-id-ref"] = "fake-rsp-id"
+        with self.subTest(i=9, t='Check Descriptor Dependencies: constituent-vnfd[vnfd-id-ref]'):
+            self.db.get_one.side_effect = [{"_id": did, "_admin": db_nsd_content["_admin"]}, None]
+            self.db.get_list.return_value = []
+            try:
+                with self.assertRaises(EngineException, msg="Accepted wrong constituent VNFD ID reference") as e:
+                    self.topic.upload_content(fake_session, did, test_nsd, {}, {"Content-Type": []})
+                self.assertEqual(e.exception.http_code, HTTPStatus.CONFLICT, "Wrong HTTP status code")
+                self.assertIn(norm("Descriptor error at 'constituent-vnfd':'vnfd-id-ref'='{}'"
+                                   " references a non existing vnfd"
+                                   .format(test_nsd["constituent-vnfd"][0]["vnfd-id-ref"])),
+                              norm(str(e.exception)), "Wrong exception text")
+            finally:
+                pass
+        with self.subTest(i=10, t='Check Descriptor Dependencies: '
+                                  'vld[vnfd-connection-point-ref][vnfd-connection-point-ref]'):
+            tmp = test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["vnfd-connection-point-ref"]
+            test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["vnfd-connection-point-ref"] = "wrong-vnfd-cp-ref"
+            self.db.get_one.side_effect = [{"_id": did, "_admin": db_nsd_content["_admin"]}, None]
+            self.db.get_list.return_value = [db_vnfd_content]
+            try:
+                with self.assertRaises(EngineException, msg="Accepted wrong VLD CP reference") as e:
+                    self.topic.upload_content(fake_session, did, test_nsd, {}, {"Content-Type": []})
+                self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")
+                self.assertIn(norm("Error at vld[id='{}']:vnfd-connection-point-ref[member-vnf-index-ref='{}']:"
+                                   "vnfd-connection-point-ref='{}' references a non existing conection-point:name"
+                                   " inside vnfd '{}'"
+                                   .format(test_nsd["vld"][0]["id"],
+                                           test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["member-vnf-index-ref"],
+                                           test_nsd["vld"][0]["vnfd-connection-point-ref"][0]
+                                                   ["vnfd-connection-point-ref"],
+                                           db_vnfd_content["id"])),
+                              norm(str(e.exception)), "Wrong exception text")
+            finally:
+                test_nsd["vld"][0]["vnfd-connection-point-ref"][0]["vnfd-connection-point-ref"] = tmp
+        return
+        with self.subTest(i=11, t='Check Input Validation: everything right'):
+            test_nsd["id"] = "fake-nsd-id"
+            self.db.get_one.side_effect = [{"_id": did, "_admin": db_nsd_content["_admin"]}, None]
+            self.db.get_list.return_value = [db_vnfd_content]
+            rc = self.topic.upload_content(fake_session, did, test_nsd, {}, {"Content-Type": []})
+            self.assertTrue(rc, "Input Validation: Unexpected failure")
+        return
+
+    def test_edit_nsd(self):
+        did = db_nsd_content["_id"]
+        self.fs.file_exists.return_value = True
+        self.fs.dir_ls.return_value = True
+        with self.subTest(i=1, t='Normal Edition'):
+            now = time()
+            self.db.get_one.side_effect = [db_nsd_content, None]
+            self.db.get_list.return_value = [db_vnfd_content]
+            data = {"id": "new-nsd-id", "name": "new-nsd-name"}
+            self.topic.edit(fake_session, did, data)
+            db_args = self.db.replace.call_args[0]
+            msg_args = self.msg.write.call_args[0]
+            data["_id"] = did
+            self.assertEqual(msg_args[0], self.topic.topic_msg, "Wrong message topic")
+            self.assertEqual(msg_args[1], "edited", "Wrong message action")
+            self.assertEqual(msg_args[2], data, "Wrong message content")
+            self.assertEqual(db_args[0], self.topic.topic, "Wrong DB topic")
+            self.assertEqual(db_args[1], did, "Wrong DB ID")
+            self.assertEqual(db_args[2]["_admin"]["created"], db_nsd_content["_admin"]["created"],
+                             "Wrong creation time")
+            self.assertGreater(db_args[2]["_admin"]["modified"], now, "Wrong modification time")
+            self.assertEqual(db_args[2]["_admin"]["projects_read"], db_nsd_content["_admin"]["projects_read"],
+                             "Wrong read-only project list")
+            self.assertEqual(db_args[2]["_admin"]["projects_write"], db_nsd_content["_admin"]["projects_write"],
+                             "Wrong read-write project list")
+            self.assertEqual(db_args[2]["id"], data["id"], "Wrong NSD ID")
+            self.assertEqual(db_args[2]["name"], data["name"], "Wrong NSD Name")
+        with self.subTest(i=2, t='Conflict on Edit'):
+            data = {"id": "fake-nsd-id", "name": "new-nsd-name"}
+            self.db.get_one.side_effect = [db_nsd_content, {"_id": str(uuid4()), "id": data["id"]}]
+            with self.assertRaises(EngineException, msg="Accepted existing NSD ID") as e:
+                self.topic.edit(fake_session, did, data)
+            self.assertEqual(e.exception.http_code, HTTPStatus.CONFLICT, "Wrong HTTP status code")
+            self.assertIn(norm("{} with id '{}' already exists for this project".format("nsd", data["id"])),
+                          norm(str(e.exception)), "Wrong exception text")
+        with self.subTest(i=3, t='Check Envelope'):
+            data = {"nsd": {"id": "new-nsd-id", "name": "new-nsd-name"}}
+            with self.assertRaises(EngineException, msg="Accepted NSD with wrong envelope") as e:
+                self.topic.edit(fake_session, did, data)
+            self.assertEqual(e.exception.http_code, HTTPStatus.BAD_REQUEST, "Wrong HTTP status code")
+            self.assertIn("'nsd' must be a list of only one element", norm(str(e.exception)), "Wrong exception text")
+        return
+
+    def test_delete_nsd(self):
+        did = db_nsd_content["_id"]
+        self.db.get_one.return_value = db_nsd_content
+        with self.subTest(i=1, t='Normal Deletion'):
+            self.db.get_list.return_value = []
+            self.db.del_one.return_value = {"deleted": 1}
+            self.topic.delete(fake_session, did)
+            db_args = self.db.del_one.call_args[0]
+            msg_args = self.msg.write.call_args[0]
+            self.assertEqual(msg_args[0], self.topic.topic_msg, "Wrong message topic")
+            self.assertEqual(msg_args[1], "deleted", "Wrong message action")
+            self.assertEqual(msg_args[2], {"_id": did}, "Wrong message content")
+            self.assertEqual(db_args[0], self.topic.topic, "Wrong DB topic")
+            self.assertEqual(db_args[1]["_id"], did, "Wrong DB ID")
+            self.assertEqual(db_args[1]["_admin.projects_read"], [[], ['ANY']], "Wrong DB filter")
+            db_g1_args = self.db.get_one.call_args[0]
+            self.assertEqual(db_g1_args[0], self.topic.topic, "Wrong DB topic")
+            self.assertEqual(db_g1_args[1]["_id"], did, "Wrong DB NSD ID")
+            db_gl_calls = self.db.get_list.call_args_list
+            self.assertEqual(db_gl_calls[0][0][0], "nsrs", "Wrong DB topic")
+            # self.assertEqual(db_gl_calls[0][0][1]["nsd-id"], did, "Wrong DB NSD ID")   # Filter changed after call
+            self.assertEqual(db_gl_calls[1][0][0], "nsts", "Wrong DB topic")
+            self.assertEqual(db_gl_calls[1][0][1]["netslice-subnet.ANYINDEX.nsd-ref"], db_nsd_content["id"],
+                             "Wrong DB NSD netslice-subnet nsd-ref")
+            db_s1_args = self.db.set_one.call_args
+            self.assertEqual(db_s1_args[0][0], self.topic.topic, "Wrong DB topic")
+            self.assertEqual(db_s1_args[0][1]["_id"], did, "Wrong DB ID")
+            self.assertIn(test_pid, db_s1_args[0][1]["_admin.projects_write.cont"], "Wrong DB filter")
+            self.assertIsNone(db_s1_args[1]["update_dict"], "Wrong DB update dictionary")
+            self.assertEqual(db_s1_args[1]["pull"]["_admin.projects_read"]["$in"], fake_session["project_id"],
+                             "Wrong DB pull dictionary")
+            fs_del_calls = self.fs.file_delete.call_args_list
+            self.assertEqual(fs_del_calls[0][0][0], did, "Wrong FS file id")
+            self.assertEqual(fs_del_calls[1][0][0], did+'_', "Wrong FS folder id")
+        return   # TO REMOVE
+        with self.subTest(i=2, t='Conflict on Delete - NSD in use by nsr'):
+            self.db.get_list.return_value = [{"_id": str(uuid4()), "name": "fake-nsr"}]
+            with self.assertRaises(EngineException, msg="Accepted NSD in use by NSR") as e:
+                self.topic.delete(fake_session, did)
+            self.assertEqual(e.exception.http_code, HTTPStatus.CONFLICT, "Wrong HTTP status code")
+            self.assertIn("there is at least one ns using this descriptor", norm(str(e.exception)),
+                          "Wrong exception text")
+        with self.subTest(i=3, t='Conflict on Delete - NSD in use by NST'):
+            self.db.get_list.side_effect = [[], [{"_id": str(uuid4()), "name": "fake-nst"}]]
+            with self.assertRaises(EngineException, msg="Accepted NSD in use by NST") as e:
+                self.topic.delete(fake_session, did)
+            self.assertEqual(e.exception.http_code, HTTPStatus.CONFLICT, "Wrong HTTP status code")
+            self.assertIn("there is at least one netslice template referencing this descriptor", norm(str(e.exception)),
+                          "Wrong exception text")
+        with self.subTest(i=4, t='Non-existent NSD'):
+            excp_msg = "Not found any {} with filter='{}'".format("NSD", {"_id": did})
+            self.db.get_one.side_effect = DbException(excp_msg, HTTPStatus.NOT_FOUND)
+            with self.assertRaises(DbException, msg="Accepted non-existent NSD ID") as e:
                 self.topic.delete(fake_session, did)
             self.assertEqual(e.exception.http_code, HTTPStatus.NOT_FOUND, "Wrong HTTP status code")
             self.assertIn(norm(excp_msg), norm(str(e.exception)), "Wrong exception text")

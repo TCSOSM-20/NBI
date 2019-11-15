@@ -24,7 +24,7 @@ db_vnfds_text = """
 ---
 -   _admin:
         created: 1566823352.7154346
-        modified: 1566823353.9295402
+        modified: 1566823352.7154346
         onboardingState: ONBOARDED
         operationalState: ENABLED
         projects_read:

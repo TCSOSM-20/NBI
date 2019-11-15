@@ -20,6 +20,7 @@ import json
 from hashlib import md5
 from osm_common.dbbase import DbException, deep_update_rfc7396
 from http import HTTPStatus
+from time import time
 from osm_nbi.validation import ValidationError, pdu_new_schema, pdu_edit_schema
 from osm_nbi.base_topic import BaseTopic, EngineException, get_iterable
 from osm_im.vnfd import vnfd as vnfd_im
@@ -281,6 +282,7 @@ class DescriptorTopic(BaseTopic):
 
             deep_update_rfc7396(current_desc, indata)
             self.check_conflict_on_edit(session, current_desc, indata, _id=_id)
+            current_desc["_admin"]["modified"] = time()
             self.db.replace(self.topic, _id, current_desc)
             self.fs.dir_rename(temp_folder, _id)
 
@@ -753,11 +755,6 @@ class NsdTopic(DescriptorTopic):
             for referenced_vnfd_cp in get_iterable(vld.get("vnfd-connection-point-ref")):
                 # look if this vnfd contains this connection point
                 vnfd = member_vnfd_index.get(referenced_vnfd_cp["member-vnf-index-ref"])
-                if not vnfd:
-                    raise EngineException("Error at vld[id='{}']:vnfd-connection-point-ref[member-vnf-index-ref='{}'] "
-                                          "does not match any constituent-vnfd:member-vnf-index"
-                                          .format(vld["id"], referenced_vnfd_cp["member-vnf-index-ref"]),
-                                          http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
                 for vnfd_cp in get_iterable(vnfd.get("connection-point")):
                     if referenced_vnfd_cp.get("vnfd-connection-point-ref") == vnfd_cp["name"]:
                         break
