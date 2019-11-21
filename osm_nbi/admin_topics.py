@@ -368,6 +368,21 @@ class VimAccountTopic(CommonVimWimSdn):
     config_to_encrypt = {"1.1": ("admin_password", "nsx_password", "vcenter_password"),
                          "default": ("admin_password", "nsx_password", "vcenter_password", "vrops_password")}
 
+    def check_conflict_on_del(self, session, _id, db_content):
+        """
+        Check if deletion can be done because of dependencies if it is not force. To override
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id: internal _id
+        :param db_content: The database content of this item _id
+        :return: None if ok or raises EngineException with the conflict
+        """
+        if session["force"]:
+            return
+        # check if used by VNF
+        if self.db.get_list("vnfrs", {"vim-account-id": _id}):
+            raise EngineException("There is at least one VNF using this VIM account", http_code=HTTPStatus.CONFLICT)
+        super().check_conflict_on_del(session, _id, db_content)
+
 
 class WimAccountTopic(CommonVimWimSdn):
     topic = "wim_accounts"

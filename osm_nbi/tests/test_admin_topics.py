@@ -716,6 +716,7 @@ class Test_CommonVimWimSdn(TestCase):
         ro_pid = str(uuid4())
         rw_pid = str(uuid4())
         cvws = {"_id": cid, "name": self.test_name}
+        self.db.get_list.return_value = []
         with self.subTest(i=1):
             cvws["_admin"] = {"projects_read": [test_pid, ro_pid, rw_pid], "projects_write": [test_pid, rw_pid]}
             self.db.get_one.return_value = cvws
@@ -729,7 +730,7 @@ class Test_CommonVimWimSdn(TestCase):
                              "Wrong read-only projects update")
             self.assertEqual(self.db.set_one.call_args[1]["update_dict"]["_admin.projects_write"], [rw_pid],
                              "Wrong read/write projects update")
-        with self.subTest(i=3):
+        with self.subTest(i=2):
             now = time()
             cvws["_admin"] = {"projects_read": [test_pid], "projects_write": [test_pid], "operations": []}
             self.db.get_one.return_value = cvws
