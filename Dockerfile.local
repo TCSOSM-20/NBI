@@ -36,7 +36,7 @@ RUN pip3 install pyang && mkdir -p /app && cd /app \
     && git -C /app clone https://github.com/robshakir/pyangbind \
     && pip3 install -e /app/pyangbind \
     && git -C /app clone  https://osm.etsi.org/gerrit/osm/IM \
-    && mkdir /app/IM/osm_im \
+    && mkdir -p /app/IM/osm_im \
     && pyang --plugindir /app/pyangbind/pyangbind/plugin -f pybind -p /app/IM/models/yang \
        -o /app/IM/osm_im/vnfd.py /app/IM/models/yang/vnfd.yang \
     && pyang --plugindir /app/pyangbind/pyangbind/plugin -f pybind -p /app/IM/models/yang \
