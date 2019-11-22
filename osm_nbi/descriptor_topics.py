@@ -704,6 +704,19 @@ class NsdTopic(DescriptorTopic):
                                           "does not match any constituent-vnfd:member-vnf-index"
                                           .format(vld["id"], vnfd_cp["member-vnf-index-ref"]),
                                           http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
+        # Check VNFFGD
+        for fgd in get_iterable(indata.get("vnffgd")):
+            for cls in get_iterable(fgd.get("classifier")):
+                rspref = cls.get("rsp-id-ref")
+                for rsp in get_iterable(fgd.get("rsp")):
+                    rspid = rsp.get("id")
+                    if rspid and rspref and rspid == rspref:
+                        break
+                else:
+                    raise EngineException(
+                        "Error at vnffgd[id='{}']:classifier[id='{}']:rsp-id-ref '{}' does not match any rsp:id"
+                        .format(fgd["id"], cls["id"], rspref),
+                        http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
         return indata
 
     def _validate_input_edit(self, indata, force=False):
