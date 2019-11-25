@@ -39,6 +39,27 @@ class DescriptorTopic(BaseTopic):
 
     def check_conflict_on_edit(self, session, final_content, edit_content, _id):
         super().check_conflict_on_edit(session, final_content, edit_content, _id)
+
+        def _check_unique_id_name(descriptor, position=""):
+            for desc_key, desc_item in descriptor.items():
+                if isinstance(desc_item, list) and desc_item:
+                    used_ids = []
+                    desc_item_id = None
+                    for index, list_item in enumerate(desc_item):
+                        if isinstance(list_item, dict):
+                            _check_unique_id_name(list_item, "{}.{}[{}]"
+                                                  .format(position, desc_key, index))
+                            # Base case
+                            if index == 0 and (list_item.get("id") or list_item.get("name")):
+                                desc_item_id = "id" if list_item.get("id") else "name"
+                            if desc_item_id and list_item.get(desc_item_id):
+                                if list_item[desc_item_id] in used_ids:
+                                    position = "{}.{}[{}]".format(position, desc_key, index)
+                                    raise EngineException("Error: identifier {} '{}' is not unique and repeats at '{}'"
+                                                          .format(desc_item_id, list_item[desc_item_id],
+                                                                  position), HTTPStatus.UNPROCESSABLE_ENTITY)
+                                used_ids.append(list_item[desc_item_id])
+        _check_unique_id_name(final_content)
         # 1. validate again with pyangbind
         # 1.1. remove internal keys
         internal_keys = {}
