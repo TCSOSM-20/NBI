@@ -592,8 +592,11 @@ class NsLcmOpTopic(BaseTopic):
                 descriptor_configuration = nsd.get("ns-configuration", {}).get("config-primitive")
 
             # For k8s allows default primitives without validating the parameters
-            if indata.get("kdu_name") and indata["primitive"] in ("upgrade", "rollback", "status"):
+            if indata.get("kdu_name") and indata["primitive"] in ("upgrade", "rollback", "status", "inspect", "readme"):
                 # TODO should be checked that rollback only can contains revsision_numbe????
+                if not indata.get("member_vnf_index"):
+                    raise EngineException("Missing action parameter 'member_vnf_index' for default KDU primitive '{}'"
+                                          .format(indata["primitive"]))
                 return
             # if not, check primitive
             for config_primitive in get_iterable(descriptor_configuration):
