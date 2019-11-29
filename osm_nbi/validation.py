@@ -221,11 +221,35 @@ additional_params_for_vnf = {
         "properties": {
             "member-vnf-index": name_schema,
             "additionalParams": object_schema,
+            "additionalParamsForVdu": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "vdu_id": name_schema,
+                        "additionalParams": object_schema,
+                    },
+                    "required": ["vdu_id", "additionalParams"],
+                    "additionalProperties": False,
+                },
+            },
+            "additionalParamsForKdu": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kdu_name": name_schema,
+                        "additionalParams": object_schema,
+                    },
+                    "required": ["kdu_name", "additionalParams"],
+                    "additionalProperties": False,
+                },
+            },
         },
-        "required": ["member-vnf-index", "additionalParams"],
+        "required": ["member-vnf-index"],
+        "minProperties": 2,
         "additionalProperties": False
     }
-
 }
 
 ns_instantiate = {

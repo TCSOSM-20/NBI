@@ -19,7 +19,7 @@ from http import HTTPStatus
 from time import time
 from copy import copy, deepcopy
 from osm_nbi.validation import validate_input, ValidationError, ns_instantiate, ns_action, ns_scale, nsi_instantiate
-from osm_nbi.base_topic import BaseTopic, EngineException, get_iterable
+from osm_nbi.base_topic import BaseTopic, EngineException, get_iterable, deep_get
 # from descriptor_topics import DescriptorTopic
 from yaml import safe_dump
 from osm_common.dbbase import DbException
@@ -119,29 +119,39 @@ class NsrTopic(BaseTopic):
         return formated_request
 
     @staticmethod
-    def _format_addional_params(ns_request, member_vnf_index=None, descriptor=None):
+    def _format_addional_params(ns_request, member_vnf_index=None, vdu_id=None, kdu_name=None, descriptor=None):
         """
         Get and format user additional params for NS or VNF
         :param ns_request: User instantiation additional parameters
         :param member_vnf_index: None for extract NS params, or member_vnf_index to extract VNF params
         :param descriptor: If not None it check that needed parameters of descriptor are supplied
-        :return: a formated copy of additional params or None if not supplied
+        :return: a formatted copy of additional params or None if not supplied
         """
         additional_params = None
         if not member_vnf_index:
             additional_params = copy(ns_request.get("additionalParamsForNs"))
             where_ = "additionalParamsForNs"
         elif ns_request.get("additionalParamsForVnf"):
-            for additionalParamsForVnf in get_iterable(ns_request.get("additionalParamsForVnf")):
-                if additionalParamsForVnf["member-vnf-index"] == member_vnf_index:
-                    additional_params = copy(additionalParamsForVnf.get("additionalParams"))
-                    where_ = "additionalParamsForVnf[member-vnf-index={}]".format(
-                        additionalParamsForVnf["member-vnf-index"])
-                    break
+            where_ = "additionalParamsForVnf[member-vnf-index={}]".format(member_vnf_index)
+            item = next((x for x in ns_request["additionalParamsForVnf"] if x["member-vnf-index"] == member_vnf_index),
+                        None)
+            if item:
+                additional_params = copy(item.get("additionalParams")) or {}
+                if vdu_id and item.get("additionalParamsForVdu"):
+                    item_vdu = next((x for x in item["additionalParamsForVdu"] if x["vdu_id"] == vdu_id), None)
+                    if item_vdu and item_vdu.get("additionalParams"):
+                        where_ += ".additionalParamsForVdu[vdu_id={}]".format(vdu_id)
+                        additional_params.update(item_vdu["additionalParams"])
+                if kdu_name and item.get("additionalParamsForKdu"):
+                    item_kdu = next((x for x in item["additionalParamsForKdu"] if x["kdu_name"] == kdu_name), None)
+                    if item_kdu and item_kdu.get("additionalParams"):
+                        where_ += ".additionalParamsForKdu[kdu_name={}]".format(kdu_name)
+                        additional_params.update(item_kdu["additionalParams"])
+
         if additional_params:
             for k, v in additional_params.items():
-                # BEGIN Check that additional parameter names are valid Jinja2 identifiers
-                if not match('^[a-zA-Z_][a-zA-Z0-9_]*$', k):
+                # BEGIN Check that additional parameter names are valid Jinja2 identifiers if target is not Kdu
+                if not kdu_name and not match('^[a-zA-Z_][a-zA-Z0-9_]*$', k):
                     raise EngineException("Invalid param name at {}:{}. Must contain only alphanumeric characters "
                                           "and underscores, and cannot start with a digit"
                                           .format(where_, k))
@@ -157,20 +167,28 @@ class NsrTopic(BaseTopic):
             # check that enough parameters are supplied for the initial-config-primitive
             # TODO: check for cloud-init
             if member_vnf_index:
-                if descriptor.get("vnf-configuration"):
-                    for initial_primitive in get_iterable(
-                            descriptor["vnf-configuration"].get("initial-config-primitive")):
-                        for param in get_iterable(initial_primitive.get("parameter")):
-                            if param["value"].startswith("<") and param["value"].endswith(">"):
-                                if param["value"] in ("<rw_mgmt_ip>", "<VDU_SCALE_INFO>"):
-                                    continue
-                                if not additional_params or param["value"][1:-1] not in additional_params:
-                                    raise EngineException("Parameter '{}' needed for vnfd[id={}]:vnf-configuration:"
-                                                          "initial-config-primitive[name={}] not supplied".
-                                                          format(param["value"], descriptor["id"],
-                                                                 initial_primitive["name"]))
+                if kdu_name:
+                    initial_primitives = None
+                elif vdu_id:
+                    vdud = next(x for x in descriptor["vdu"] if x["id"] == vdu_id)
+                    initial_primitives = deep_get(vdud, ("vdu-configuration", "initial-config-primitive"))
+                else:
+                    initial_primitives = deep_get(descriptor, ("vnf-configuration", "initial-config-primitive"))
+            else:
+                initial_primitives = deep_get(descriptor, ("ns-configuration", "initial-config-primitive"))
 
-        return additional_params
+            for initial_primitive in get_iterable(initial_primitives):
+                for param in get_iterable(initial_primitive.get("parameter")):
+                    if param["value"].startswith("<") and param["value"].endswith(">"):
+                        if param["value"] in ("<rw_mgmt_ip>", "<VDU_SCALE_INFO>", "<ns_config_info>"):
+                            continue
+                        if not additional_params or param["value"][1:-1] not in additional_params:
+                            raise EngineException("Parameter '{}' needed for vnfd[id={}]:vnf-configuration:"
+                                                  "initial-config-primitive[name={}] not supplied".
+                                                  format(param["value"], descriptor["id"],
+                                                         initial_primitive["name"]))
+
+        return additional_params or None
 
     def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
@@ -231,7 +249,7 @@ class NsrTopic(BaseTopic):
                 "nsd-id": nsd["_id"],
                 "vnfd-id": [],
                 "instantiate_params": self._format_ns_request(ns_request),
-                "additionalParamsForNs": self._format_addional_params(ns_request),
+                "additionalParamsForNs": self._format_addional_params(ns_request, descriptor=nsd),
                 "ns-instance-config-ref": nsr_id,
                 "id": nsr_id,
                 "_id": nsr_id,
@@ -271,7 +289,7 @@ class NsrTopic(BaseTopic):
                     "nsr-id-ref": nsr_id,
                     "member-vnf-index-ref": member_vnf["member-vnf-index"],
                     "additionalParamsForVnf": self._format_addional_params(ns_request, member_vnf["member-vnf-index"],
-                                                                           vnfd),
+                                                                           descriptor=vnfd),
                     "created-time": now,
                     # "vnfd": vnfd,        # at OSM model.but removed to avoid data duplication TODO: revise
                     "vnfd-ref": vnfd_id,
@@ -327,12 +345,13 @@ class NsrTopic(BaseTopic):
                                 break
                 # update kdus
                 for kdu in get_iterable(vnfd.get("kdu")):
-                    kdur = {
-                        "kdu-name": kdu["name"],
-                        # TODO      "name": ""     Name of the VDU in the VIM
-                        "ip-address": None,  # mgmt-interface filled by LCM
-                        "k8s-cluster": {}
-                    }
+                    kdur = {x: kdu[x] for x in kdu if x in ("helm-chart", "juju-bundle")}
+                    kdur["kdu-name"] = kdu["name"]
+                    # TODO      "name": ""     Name of the VDU in the VIM
+                    kdur["ip-address"] = None,  # mgmt-interface filled by LCM
+                    kdur["k8s-cluster"] = {},
+                    kdur["additionalParams"] = self._format_addional_params(ns_request, member_vnf["member-vnf-index"],
+                                                                            kdu_name=kdu["name"], descriptor=vnfd),
                     if not vnfr_descriptor.get("kdur"):
                         vnfr_descriptor["kdur"] = []
                     vnfr_descriptor["kdur"].append(kdur)
@@ -345,6 +364,8 @@ class NsrTopic(BaseTopic):
                         # "vim-id", "flavor-id", "image-id", "management-ip" # filled by LCM
                         "internal-connection-point": [],
                         "interfaces": [],
+                        "additionalParams": self._format_addional_params(ns_request, member_vnf["member-vnf-index"],
+                                                                         vdu_id=vdu["id"], descriptor=vnfd),
                     }
                     if vdu.get("pdu-type"):
                         vdur["pdu-type"] = vdu["pdu-type"]
