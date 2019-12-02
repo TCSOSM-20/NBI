@@ -27,7 +27,7 @@ from osm_nbi.base_topic import EngineException, versiontuple
 from osm_nbi.admin_topics import VimAccountTopic, WimAccountTopic, SdnTopic
 from osm_nbi.admin_topics import K8sClusterTopic, K8sRepoTopic
 from osm_nbi.admin_topics import UserTopicAuth, ProjectTopicAuth, RoleTopicAuth
-from osm_nbi.descriptor_topics import VnfdTopic, NsdTopic, PduTopic, NstTopic
+from osm_nbi.descriptor_topics import VnfdTopic, NsdTopic, PduTopic, NstTopic, VnfPkgOpTopic
 from osm_nbi.instance_topics import NsrTopic, VnfrTopic, NsLcmOpTopic, NsiTopic, NsiLcmOpTopic
 from osm_nbi.pmjobs_topics import PmJobsTopic
 from base64 import b64encode
@@ -56,7 +56,8 @@ class Engine(object):
         "projects": ProjectTopicAuth,   # Valid for both internal and keystone authentication backends
         "roles": RoleTopicAuth,   # Valid for both internal and keystone authentication backends
         "nsis": NsiTopic,
-        "nsilcmops": NsiLcmOpTopic
+        "nsilcmops": NsiLcmOpTopic,
+        "vnfpkgops": VnfPkgOpTopic,
         # [NEW_TOPIC]: add an entry here
         # "pm_jobs": PmJobsTopic will be added manually because it needs other parameters
     }

@@ -21,7 +21,10 @@ from hashlib import md5
 from osm_common.dbbase import DbException, deep_update_rfc7396
 from http import HTTPStatus
 from time import time
-from osm_nbi.validation import ValidationError, pdu_new_schema, pdu_edit_schema
+from uuid import uuid4
+from re import fullmatch
+from osm_nbi.validation import ValidationError, pdu_new_schema, pdu_edit_schema, \
+    validate_input, vnfpkgop_new_schema
 from osm_nbi.base_topic import BaseTopic, EngineException, get_iterable
 from osm_im.vnfd import vnfd as vnfd_im
 from osm_im.nsd import nsd as nsd_im
@@ -690,6 +693,19 @@ class VnfdTopic(DescriptorTopic):
                         return True
             return False
 
+    def delete_extra(self, session, _id, db_content, not_send_msg=None):
+        """
+        Deletes associate file system storage (via super)
+        Deletes associated vnfpkgops from database.
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id: server internal id
+        :param db_content: The database content of the descriptor
+        :return: None
+        :raises: FsException in case of error while deleting associated storage
+        """
+        super().delete_extra(session, _id, db_content, not_send_msg)
+        self.db.del_list("vnfpkgops", {"vnfPkgId": _id})
+
 
 class NsdTopic(DescriptorTopic):
     topic = "nsds"
@@ -942,3 +958,97 @@ class PduTopic(BaseTopic):
         _filter["vdur.pdu-id"] = _id
         if self.db.get_list("vnfrs", _filter):
             raise EngineException("There is at least one VNF using this PDU", http_code=HTTPStatus.CONFLICT)
+
+
+class VnfPkgOpTopic(BaseTopic):
+    topic = "vnfpkgops"
+    topic_msg = "vnfd"
+    schema_new = vnfpkgop_new_schema
+    schema_edit = None
+
+    def __init__(self, db, fs, msg, auth):
+        BaseTopic.__init__(self, db, fs, msg, auth)
+
+    def edit(self, session, _id, indata=None, kwargs=None, content=None):
+        raise EngineException("Method 'edit' not allowed for topic '{}'".format(self.topic),
+                              HTTPStatus.METHOD_NOT_ALLOWED)
+
+    def delete(self, session, _id, dry_run=False):
+        raise EngineException("Method 'delete' not allowed for topic '{}'".format(self.topic),
+                              HTTPStatus.METHOD_NOT_ALLOWED)
+
+    def delete_list(self, session, filter_q=None):
+        raise EngineException("Method 'delete_list' not allowed for topic '{}'".format(self.topic),
+                              HTTPStatus.METHOD_NOT_ALLOWED)
+
+    def new(self, rollback, session, indata=None, kwargs=None, headers=None):
+        """
+        Creates a new entry into database.
+        :param rollback: list to append created items at database in case a rollback may to be done
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param indata: data to be inserted
+        :param kwargs: used to override the indata descriptor
+        :param headers: http request headers
+        :return: _id, op_id:
+            _id: identity of the inserted data.
+             op_id: None
+        """
+        self._update_input_with_kwargs(indata, kwargs)
+        validate_input(indata, self.schema_new)
+        vnfpkg_id = indata["vnfPkgId"]
+        filter_q = BaseTopic._get_project_filter(session)
+        filter_q["_id"] = vnfpkg_id
+        vnfd = self.db.get_one("vnfds", filter_q)
+        operation = indata["lcmOperationType"]
+        kdu_name = indata["kdu_name"]
+        for kdu in vnfd.get("kdu", []):
+            if kdu["name"] == kdu_name:
+                helm_chart = kdu.get("helm-chart")
+                juju_bundle = kdu.get("juju-bundle")
+                break
+        else:
+            raise EngineException("Not found vnfd[id='{}']:kdu[name='{}']".format(vnfpkg_id, kdu_name))
+        if helm_chart:
+            indata["helm-chart"] = helm_chart
+            match = fullmatch(r"([^/]*)/([^/]*)", helm_chart)
+            repo_name = match.group(1) if match else None
+        elif juju_bundle:
+            indata["juju-bundle"] = juju_bundle
+            match = fullmatch(r"([^/]*)/([^/]*)", juju_bundle)
+            repo_name = match.group(1) if match else None
+        else:
+            raise EngineException("Found neither 'helm-chart' nor 'juju-bundle' in vnfd[id='{}']:kdu[name='{}']"
+                                  .format(vnfpkg_id, kdu_name))
+        if repo_name:
+            del filter_q["_id"]
+            filter_q["name"] = repo_name
+            repo = self.db.get_one("k8srepos", filter_q)
+            k8srepo_id = repo.get("_id")
+            k8srepo_url = repo.get("url")
+        else:
+            k8srepo_id = None
+            k8srepo_url = None
+        indata["k8srepoId"] = k8srepo_id
+        indata["k8srepo_url"] = k8srepo_url
+        vnfpkgop_id = str(uuid4())
+        vnfpkgop_desc = {
+            "_id": vnfpkgop_id,
+            "operationState": "PROCESSING",
+            "vnfPkgId": vnfpkg_id,
+            "lcmOperationType": operation,
+            "isAutomaticInvocation": False,
+            "isCancelPending": False,
+            "operationParams": indata,
+            "links": {
+                "self": "/osm/vnfpkgm/v1/vnfpkg_op_occs/" + vnfpkgop_id,
+                "vnfpkg": "/osm/vnfpkgm/v1/vnf_packages/" + vnfpkg_id,
+            }
+        }
+        self.format_on_new(vnfpkgop_desc, session["project_id"], make_public=session["public"])
+        ctime = vnfpkgop_desc["_admin"]["created"]
+        vnfpkgop_desc["statusEnteredTime"] = ctime
+        vnfpkgop_desc["startTime"] = ctime
+        self.db.create(self.topic, vnfpkgop_desc)
+        rollback.append({"topic": self.topic, "_id": vnfpkgop_id})
+        self.msg.write(self.topic_msg, operation, vnfpkgop_desc)
+        return vnfpkgop_id, None

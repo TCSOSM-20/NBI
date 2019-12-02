@@ -103,6 +103,11 @@ resources_to_operations:
   "GET /vnfpkgm/v1/vnf_packages/<vnfPkgId>/artifacts": "vnfds:id:vnfd_artifact:get"
   "GET /vnfpkgm/v1/vnf_packages/<vnfPkgId>/artifacts/<artifactPath>": "vnfds:id:vnfd_artifact:get"
 
+  "POST /vnfpkgm/v1/vnf_packages/<vnfPkgId>/action": "vnfds:id:action:post"
+
+  "GET /vnfpkgm/v1/vnfpkg_op_occs": "vnfds:vnfpkgops:get"
+  "GET /vnfpkgm/v1/vnfpkg_op_occs/<vnfPkgOpId>": "vnfds:vnfpkgops:id:get"
+
 ################################################################################
 ################################## NS Instances ################################
 ################################################################################

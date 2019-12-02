@@ -657,7 +657,6 @@ pdu_new_schema = {
     "required": ["name", "type", "interfaces"],
     "additionalProperties": False
 }
-
 pdu_edit_schema = {
     "title": "pdu edit input schema",
     "$schema": "http://json-schema.org/draft-04/schema#",
@@ -680,6 +679,22 @@ pdu_edit_schema = {
     },
     "additionalProperties": False,
     "minProperties": 1
+}
+
+# VNF PKG OPERATIONS
+vnfpkgop_new_schema = {
+    "title": "VNF PKG operation creation input schema",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": {
+        "lcmOperationType": string_schema,
+        "vnfPkgId": id_schema,
+        "kdu_name": name_schema,
+        "primitive": name_schema,
+        "primitive_params": {"type": "object"},
+    },
+    "required": ["lcmOperationType", "vnfPkgId", "kdu_name", "primitive", "primitive_params"],
+    "additionalProperties": False
 }
 
 # USERS

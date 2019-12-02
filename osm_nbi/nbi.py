@@ -337,12 +337,21 @@ valid_url_methods = {
                                       "artifacts": {"*": {"METHODS": ("GET", ),
                                                           "ROLE_PERMISSION": "vnfds:id:vnfd_artifact:"
                                                           }
-                                                    }
+                                                    },
+                                      "action": {"METHODS": ("POST", ),
+                                                 "ROLE_PERMISSION": "vnfds:id:action:"
+                                                 },
                                       }
                              },
             "subscriptions": {"TODO": ("GET", "POST"),
                               "<ID>": {"TODO": ("GET", "DELETE")}
                               },
+            "vnfpkg_op_occs": {"METHODS": ("GET", ),
+                               "ROLE_PERMISSION": "vnfds:vnfpkgops:",
+                               "<ID>": {"METHODS": ("GET", ),
+                                        "ROLE_PERMISSION": "vnfds:vnfpkgops:id:"
+                                        }
+                               },
         }
     },
     "nslcm": {
@@ -978,6 +987,10 @@ class Server(object):
                 engine_topic = "nsds"
             elif main_topic == "vnfpkgm":
                 engine_topic = "vnfds"
+                if topic == "vnfpkg_op_occs":
+                    engine_topic = "vnfpkgops"
+                if topic == "vnf_packages" and item == "action":
+                    engine_topic = "vnfpkgops"
             elif main_topic == "nslcm":
                 engine_topic = "nsrs"
                 if topic == "ns_lcm_op_occs":
@@ -1015,6 +1028,7 @@ class Server(object):
                         # TODO check that project_id (_id in this context) has permissions
                         _id = args[0]
                     outdata = self.engine.get_item(engine_session, engine_topic, _id)
+
             elif method == "POST":
                 cherrypy.response.status = HTTPStatus.CREATED.value
                 if topic in ("ns_descriptors_content", "vnf_packages_content", "netslice_templates_content"):
@@ -1053,12 +1067,18 @@ class Server(object):
                     indata["netsliceInstanceId"] = _id
                     nsilcmop_id, _ = self.engine.new_item(rollback, engine_session, "nsilcmops", indata, kwargs)
                     outdata = {"id": _id, "nsilcmop_id": nsilcmop_id}
-
                 elif topic == "netslice_instances" and item:
                     indata["lcmOperationType"] = item
                     indata["netsliceInstanceId"] = _id
                     _id, _ = self.engine.new_item(rollback, engine_session, "nsilcmops", indata, kwargs)
                     self._set_location_header(main_topic, version, "nsi_lcm_op_occs", _id)
+                    outdata = {"id": _id}
+                    cherrypy.response.status = HTTPStatus.ACCEPTED.value
+                elif topic == "vnf_packages" and item == "action":
+                    indata["lcmOperationType"] = item
+                    indata["vnfPkgId"] = _id
+                    _id, _ = self.engine.new_item(rollback, engine_session, "vnfpkgops", indata, kwargs)
+                    self._set_location_header(main_topic, version, "vnfpkg_op_occs", _id)
                     outdata = {"id": _id}
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
                 else:
