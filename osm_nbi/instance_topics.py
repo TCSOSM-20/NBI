@@ -141,12 +141,14 @@ class NsrTopic(BaseTopic):
                     item_vdu = next((x for x in item["additionalParamsForVdu"] if x["vdu_id"] == vdu_id), None)
                     if item_vdu and item_vdu.get("additionalParams"):
                         where_ += ".additionalParamsForVdu[vdu_id={}]".format(vdu_id)
-                        additional_params.update(item_vdu["additionalParams"])
-                if kdu_name and item.get("additionalParamsForKdu"):
-                    item_kdu = next((x for x in item["additionalParamsForKdu"] if x["kdu_name"] == kdu_name), None)
-                    if item_kdu and item_kdu.get("additionalParams"):
-                        where_ += ".additionalParamsForKdu[kdu_name={}]".format(kdu_name)
-                        additional_params.update(item_kdu["additionalParams"])
+                        additional_params = item_vdu["additionalParams"]
+                if kdu_name:
+                    additional_params = {}
+                    if item.get("additionalParamsForKdu"):
+                        item_kdu = next((x for x in item["additionalParamsForKdu"] if x["kdu_name"] == kdu_name), None)
+                        if item_kdu and item_kdu.get("additionalParams"):
+                            where_ += ".additionalParamsForKdu[kdu_name={}]".format(kdu_name)
+                            additional_params = item_kdu["additionalParams"]
 
         if additional_params:
             for k, v in additional_params.items():
