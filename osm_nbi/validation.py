@@ -587,7 +587,7 @@ k8scluster_edit_schema = {
 }
 
 # K8s Repos
-k8srepo_types = {"enum": ["chart", "bundle"]}
+k8srepo_types = {"enum": ["helm-chart", "juju-bundle"]}
 k8srepo_properties = {
     "name": name_schema,
     "description": description_schema,
