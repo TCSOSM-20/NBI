@@ -350,10 +350,10 @@ class NsrTopic(BaseTopic):
                     kdur = {x: kdu[x] for x in kdu if x in ("helm-chart", "juju-bundle")}
                     kdur["kdu-name"] = kdu["name"]
                     # TODO      "name": ""     Name of the VDU in the VIM
-                    kdur["ip-address"] = None,  # mgmt-interface filled by LCM
-                    kdur["k8s-cluster"] = {},
+                    kdur["ip-address"] = None  # mgmt-interface filled by LCM
+                    kdur["k8s-cluster"] = {}
                     kdur["additionalParams"] = self._format_addional_params(ns_request, member_vnf["member-vnf-index"],
-                                                                            kdu_name=kdu["name"], descriptor=vnfd),
+                                                                            kdu_name=kdu["name"], descriptor=vnfd)
                     if not vnfr_descriptor.get("kdur"):
                         vnfr_descriptor["kdur"] = []
                     vnfr_descriptor["kdur"].append(kdur)
@@ -367,7 +367,7 @@ class NsrTopic(BaseTopic):
                         "internal-connection-point": [],
                         "interfaces": [],
                         "additionalParams": self._format_addional_params(ns_request, member_vnf["member-vnf-index"],
-                                                                         vdu_id=vdu["id"], descriptor=vnfd),
+                                                                         vdu_id=vdu["id"], descriptor=vnfd)
                     }
                     if vdu.get("pdu-type"):
                         vdur["pdu-type"] = vdu["pdu-type"]
@@ -675,7 +675,6 @@ class NsLcmOpTopic(BaseTopic):
         Look for a free PDU in the catalog matching vdur type and interfaces. Fills vnfr.vdur with the interface
         (ip_address, ...) information.
         Modifies PDU _admin.usageState to 'IN_USE'
-        
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param rollback: list with the database modifications to rollback if needed
         :param vnfr: vnfr to be updated. It is modified with pdu interface info if pdu is found
@@ -1231,7 +1230,7 @@ class NsiTopic(BaseTopic):
                 nsi_vlds.append(nsi_vld)
 
             nsi_descriptor["_admin"]["netslice-vld"] = nsi_vlds
-            # Creating netslice-subnet_record. 
+            # Creating netslice-subnet_record.
             needed_nsds = {}
             services = []
 
