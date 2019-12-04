@@ -482,8 +482,8 @@ class Server(object):
 
     def __init__(self):
         self.instance += 1
-        self.engine = Engine()
         self.authenticator = Authenticator(valid_url_methods, valid_query_string)
+        self.engine = Engine(self.authenticator.tokens_cache)
 
     def _format_in(self, kwargs):
         try:

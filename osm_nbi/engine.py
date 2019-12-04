@@ -68,7 +68,7 @@ class Engine(object):
         # Add new versions here
     }
 
-    def __init__(self):
+    def __init__(self, token_cache):
         self.db = None
         self.fs = None
         self.msg = None
@@ -78,6 +78,7 @@ class Engine(object):
         self.logger = logging.getLogger("nbi.engine")
         self.map_topic = {}
         self.write_lock = None
+        self.token_cache = token_cache
 
     def start(self, config):
         """
@@ -126,7 +127,7 @@ class Engine(object):
                 if config["authentication"]["backend"] == "keystone":
                     self.auth = AuthconnKeystone(config["authentication"], self.db, None)
                 else:
-                    self.auth = AuthconnInternal(config["authentication"], self.db, dict())
+                    self.auth = AuthconnInternal(config["authentication"], self.db, self.token_cache)
             if not self.operations:
                 if "resources_to_operations" in config["rbac"]:
                     resources_to_operations_file = config["rbac"]["resources_to_operations"]

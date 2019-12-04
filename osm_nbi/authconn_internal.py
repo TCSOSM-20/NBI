@@ -317,7 +317,11 @@ class AuthconnInternal(Authconn):
                         pass
                     except ValueError:
                         pass
-        self.db.set_one("users", {BaseTopic.id_field("users", uid): uid}, user_data)   # CONFIRM
+        idf = BaseTopic.id_field("users", uid)
+        self.db.set_one("users", {idf: uid}, user_data)
+        if user_info.get("remove_project_role_mappings"):
+            self.db.del_list("tokens", {"user_id" if idf == "_id" else idf: uid})
+            self.token_cache.clear()
 
     def delete_user(self, user_id):
         """
@@ -327,6 +331,8 @@ class AuthconnInternal(Authconn):
         :raises AuthconnOperationException: if user deletion failed.
         """
         self.db.del_one("users", {"_id": user_id})
+        self.db.del_list("tokens", {"user_id": user_id})
+        self.token_cache.clear()
         return True
 
     def get_user_list(self, filter_q=None):
