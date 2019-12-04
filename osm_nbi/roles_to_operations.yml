@@ -107,8 +107,8 @@ roles:
         force:       false
         public:      true
         set_project: true
-        vnf_packages:    true
-        ns_descriptors:  true
+        vnfds:    true
+        nsds:  true
         slice_templates: true
         ns_instances:    true
         vnf_instances:   true
