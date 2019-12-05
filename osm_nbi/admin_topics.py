@@ -302,12 +302,13 @@ class CommonVimWimSdn(BaseTopic):
 
         return "{}:0".format(content["_id"])
 
-    def delete(self, session, _id, dry_run=False):
+    def delete(self, session, _id, dry_run=False, not_send_msg=None):
         """
         Delete item by its internal _id
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :param dry_run: make checking but do not delete
+        :param not_send_msg: To not send message (False) or store content (list) instead
         :return: operation id if it is ordered to delete. None otherwise
         """
 
@@ -344,7 +345,7 @@ class CommonVimWimSdn(BaseTopic):
         if session["force"]:
             self.db.del_one(self.topic, {"_id": _id})
             op_id = None
-            self._send_msg("deleted", {"_id": _id, "op_id": op_id})
+            self._send_msg("deleted", {"_id": _id, "op_id": op_id}, not_send_msg=not_send_msg)
         else:
             update_dict["_admin.to_delete"] = True
             self.db.set_one(self.topic, {"_id": _id},
@@ -354,7 +355,7 @@ class CommonVimWimSdn(BaseTopic):
             # the number of operations is the operation_id. db_content does not contains the new operation inserted,
             # so the -1 is not needed
             op_id = "{}:{}".format(db_content["_id"], len(db_content["_admin"]["operations"]))
-            self._send_msg("delete", {"_id": _id, "op_id": op_id})
+            self._send_msg("delete", {"_id": _id, "op_id": op_id}, not_send_msg=not_send_msg)
         return op_id
 
 
@@ -581,7 +582,7 @@ class UserTopicAuth(UserTopic):
 
             rollback.append({"topic": self.topic, "_id": _id})
             # del content["password"]
-            # self._send_msg("created", content)
+            # self._send_msg("created", content, not_send_msg=not_send_msg)
             return _id, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -733,7 +734,7 @@ class UserTopicAuth(UserTopic):
             user_list = [usr for usr in user_list if usr["username"] == session["username"]]
         return user_list
 
-    def delete(self, session, _id, dry_run=False):
+    def delete(self, session, _id, dry_run=False, not_send_msg=None):
         """
         Delete item by its internal _id
 
@@ -741,6 +742,7 @@ class UserTopicAuth(UserTopic):
         :param _id: server internal id
         :param force: indicates if deletion must be forced in case of conflict
         :param dry_run: make checking but do not delete
+        :param not_send_msg: To not send message (False) or store content (list) instead
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
         # Allow _id to be a name or uuid
@@ -865,7 +867,7 @@ class ProjectTopicAuth(ProjectTopic):
             self.format_on_new(content, project_id=session["project_id"], make_public=session["public"])
             _id = self.auth.create_project(content)
             rollback.append({"topic": self.topic, "_id": _id})
-            # self._send_msg("created", content)
+            # self._send_msg("created", content, not_send_msg=not_send_msg)
             return _id, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
@@ -905,13 +907,14 @@ class ProjectTopicAuth(ProjectTopic):
             project_list = [proj for proj in project_list if proj["_id"] in projects]
         return project_list
 
-    def delete(self, session, _id, dry_run=False):
+    def delete(self, session, _id, dry_run=False, not_send_msg=None):
         """
         Delete item by its internal _id
 
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :param dry_run: make checking but do not delete
+        :param not_send_msg: To not send message (False) or store content (list) instead
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
         # Allow _id to be a name or uuid
@@ -1194,18 +1197,19 @@ class RoleTopicAuth(BaseTopic):
             content["_id"] = rid
             # _id = self.db.create(self.topic, content)
             rollback.append({"topic": self.topic, "_id": rid})
-            # self._send_msg("created", content)
+            # self._send_msg("created", content, not_send_msg=not_send_msg)
             return rid, None
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
-    def delete(self, session, _id, dry_run=False):
+    def delete(self, session, _id, dry_run=False, not_send_msg=None):
         """
         Delete item by its internal _id
 
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :param dry_run: make checking but do not delete
+        :param not_send_msg: To not send message (False) or store content (list) instead
         :return: dictionary with deleted item _id. It raises EngineException on error: not found, conflict, ...
         """
         filter_q = {BaseTopic.id_field(self.topic, _id): _id}

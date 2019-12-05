@@ -264,18 +264,21 @@ class Engine(object):
         with self.write_lock:
             return self.map_topic[topic].delete_list(session, _filter)
 
-    def del_item(self, session, topic, _id):
+    def del_item(self, session, topic, _id, not_send_msg=None):
         """
         Delete item by its internal id
         :param session: contains the used login username and working project
         :param topic: it can be: users, projects, vnfds, nsds, ...
         :param _id: server id of the item
+        :param not_send_msg: If False, message will not be sent to kafka.
+            If a list, message is not sent, but content is stored in this variable so that the caller can send this
+            message using its own loop. If None, message is sent
         :return: dictionary with deleted item _id. It raises exception if not found.
         """
         if topic not in self.map_topic:
             raise EngineException("Unknown topic {}!!!".format(topic), HTTPStatus.INTERNAL_SERVER_ERROR)
         with self.write_lock:
-            return self.map_topic[topic].delete(session, _id)
+            return self.map_topic[topic].delete(session, _id, not_send_msg=not_send_msg)
 
     def edit_item(self, session, topic, _id, indata=None, kwargs=None):
         """

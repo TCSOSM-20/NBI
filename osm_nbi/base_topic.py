@@ -282,10 +282,13 @@ class BaseTopic:
             final_content["_admin"]["modified"] = now
         return None
 
-    def _send_msg(self, action, content):
-        if self.topic_msg:
+    def _send_msg(self, action, content, not_send_msg=None):
+        if self.topic_msg and not_send_msg is not False:
             content.pop("_admin", None)
-            self.msg.write(self.topic_msg, action, content)
+            if isinstance(not_send_msg, list):
+                not_send_msg.append((self.topic_msg, action, content))
+            else:
+                self.msg.write(self.topic_msg, action, content)
 
     def check_conflict_on_del(self, session, _id, db_content):
         """
@@ -437,7 +440,7 @@ class BaseTopic:
             filter_q.update(self._get_project_filter(session))
         return self.db.del_list(self.topic, filter_q)
 
-    def delete_extra(self, session, _id, db_content):
+    def delete_extra(self, session, _id, db_content, not_send_msg=None):
         """
         Delete other things apart from database entry of a item _id.
         e.g.: other associated elements at database and other file system storage
@@ -445,16 +448,18 @@ class BaseTopic:
         :param _id: server internal id
         :param db_content: The database content of the _id. It is already deleted when reached this method, but the
             content is needed in same cases
+        :param not_send_msg: To not send message (False) or store content (list) instead
         :return: None if ok or raises EngineException with the problem
         """
         pass
 
-    def delete(self, session, _id, dry_run=False):
+    def delete(self, session, _id, dry_run=False, not_send_msg=None):
         """
         Delete item by its internal _id
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :param dry_run: make checking but do not delete
+        :param not_send_msg: To not send message (False) or store content (list) instead
         :return: operation id (None if there is not operation), raise exception if error or not found, conflict, ...
         """
 
@@ -483,8 +488,8 @@ class BaseTopic:
                 return None
         else:
             self.db.del_one(self.topic, filter_q)
-        self.delete_extra(session, _id, item_content)
-        self._send_msg("deleted", {"_id": _id})
+        self.delete_extra(session, _id, item_content, not_send_msg=not_send_msg)
+        self._send_msg("deleted", {"_id": _id}, not_send_msg=not_send_msg)
         return None
 
     def edit(self, session, _id, indata=None, kwargs=None, content=None):

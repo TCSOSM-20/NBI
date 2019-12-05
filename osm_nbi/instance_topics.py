@@ -74,13 +74,14 @@ class NsrTopic(BaseTopic):
                                   "Launch 'terminate' operation first; or force deletion".format(_id),
                                   http_code=HTTPStatus.CONFLICT)
 
-    def delete_extra(self, session, _id, db_content):
+    def delete_extra(self, session, _id, db_content, not_send_msg=None):
         """
         Deletes associated nslcmops and vnfrs from database. Deletes associated filesystem.
          Set usageState of pdu, vnfd, nsd
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :param db_content: The database content of the descriptor
+        :param not_send_msg: To not send message (False) or store content (list) instead
         :return: None if ok or raises EngineException with the problem
         """
         self.fs.file_delete(_id, ignore_non_exist=True)
@@ -458,7 +459,7 @@ class VnfrTopic(BaseTopic):
     def __init__(self, db, fs, msg, auth):
         BaseTopic.__init__(self, db, fs, msg, auth)
 
-    def delete(self, session, _id, dry_run=False):
+    def delete(self, session, _id, dry_run=False, not_send_msg=None):
         raise EngineException("Method delete called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def edit(self, session, _id, indata=None, kwargs=None, content=None):
@@ -999,7 +1000,7 @@ class NsLcmOpTopic(BaseTopic):
         # except DbException as e:
         #     raise EngineException("Cannot get ns_instance '{}': {}".format(e), HTTPStatus.NOT_FOUND)
 
-    def delete(self, session, _id, dry_run=False):
+    def delete(self, session, _id, dry_run=False, not_send_msg=None):
         raise EngineException("Method delete called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def edit(self, session, _id, indata=None, kwargs=None, content=None):
@@ -1070,13 +1071,14 @@ class NsiTopic(BaseTopic):
                                   "Launch 'terminate' operation first; or force deletion".format(_id),
                                   http_code=HTTPStatus.CONFLICT)
 
-    def delete_extra(self, session, _id, db_content):
+    def delete_extra(self, session, _id, db_content, not_send_msg=None):
         """
         Deletes associated nsilcmops from database. Deletes associated filesystem.
          Set usageState of nst
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :param db_content: The database content of the descriptor
+        :param not_send_msg: To not send message (False) or store content (list) instead
         :return: None if ok or raises EngineException with the problem
         """
 
@@ -1092,7 +1094,7 @@ class NsiTopic(BaseTopic):
                 if nsi:  # last one using nsr
                     continue
             try:
-                self.nsrTopic.delete(session, nsr_id, dry_run=False)
+                self.nsrTopic.delete(session, nsr_id, dry_run=False, not_send_msg=not_send_msg)
             except (DbException, EngineException) as e:
                 if e.http_code == HTTPStatus.NOT_FOUND:
                     pass
@@ -1510,7 +1512,7 @@ class NsiLcmOpTopic(BaseTopic):
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
-    def delete(self, session, _id, dry_run=False):
+    def delete(self, session, _id, dry_run=False, not_send_msg=None):
         raise EngineException("Method delete called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def edit(self, session, _id, indata=None, kwargs=None, content=None):

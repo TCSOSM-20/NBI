@@ -94,12 +94,13 @@ class DescriptorTopic(BaseTopic):
         content["_admin"]["operationalState"] = "DISABLED"
         content["_admin"]["usageState"] = "NOT_IN_USE"
 
-    def delete_extra(self, session, _id, db_content):
+    def delete_extra(self, session, _id, db_content, not_send_msg=None):
         """
         Deletes file system storage associated with the descriptor
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
         :param db_content: The database content of the descriptor
+        :param not_send_msg: To not send message (False) or store content (list) instead
         :return: None if ok or raises EngineException with the problem
         """
         self.fs.file_delete(_id, ignore_non_exist=True)
