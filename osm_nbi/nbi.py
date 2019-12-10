@@ -35,7 +35,7 @@ from osm_common.msgbase import MsgException
 from http import HTTPStatus
 from codecs import getreader
 from os import environ, path
-from osm_nbi import version as nbi_version, version_date as nbi_version_date
+from osm_nbi import version as _nbi_version, version_date as nbi_version_date
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
@@ -46,6 +46,7 @@ database_version = '1.2'
 auth_database_version = '1.0'
 nbi_server = None           # instance of Server class
 subscription_thread = None  # instance of SubscriptionThread class
+nbi_version = _nbi_version  # by default this is fixed in the code
 
 
 """
@@ -1173,6 +1174,18 @@ class Server(object):
                             cherrypy.request.login += ";{}={}".format(logging_id, outdata[logging_id][:36])
 
 
+def _get_version():
+    """
+    Try to get version from package using pkg_resources (available with setuptools)
+    """
+    global nbi_version
+    try:
+        from pkg_resources import get_distribution
+        nbi_version = get_distribution("osm_nbi").version
+    except Exception:
+        pass
+
+
 def _start_service():
     """
     Callback function called when cherrypy.engine starts
@@ -1273,8 +1286,8 @@ def _start_service():
 
     # load and print version. Ignore possible errors, e.g. file not found
     try:
+        _get_version()
         backend = engine_config["authentication"]["backend"]
-        nbi_version
         cherrypy.log.error("Starting OSM NBI Version '{}' with '{}' authentication backend"
                            .format(nbi_version + " " + nbi_version_date, backend))
     except Exception:

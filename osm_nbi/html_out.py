@@ -46,7 +46,7 @@ html_start = """
       <a href="/osm/admin/v1/vim_accounts">VIMs </a>
       <a href="/osm/admin/v1/wim_accounts">WIMs </a>
       <a href="/osm/admin/v1/sdns">SDNs </a>
-      <a href="/osm/admin/v1/k8sclusters">K8s_cluseters </a>
+      <a href="/osm/admin/v1/k8sclusters">K8s_clusters </a>
       <a href="/osm/admin/v1/k8srepos">K8s_repos </a>
       <a href="/osm/admin/v1/tokens?METHOD=DELETE">logout </a>
     </div>

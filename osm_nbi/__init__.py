@@ -12,5 +12,5 @@
 # under the License.
 ##
 
-version = '6.0.3.post22'
-version_date = '2018-11-05'
+version = '7.0.0.post1'
+version_date = '2018-12-10'
