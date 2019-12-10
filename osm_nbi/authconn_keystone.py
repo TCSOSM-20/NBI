@@ -45,8 +45,8 @@ from osm_nbi.validation import is_valid_uuid
 
 
 class AuthconnKeystone(Authconn):
-    def __init__(self, config, db, token_cache):
-        Authconn.__init__(self, config, db, token_cache)
+    def __init__(self, config, db):
+        Authconn.__init__(self, config, db)
 
         self.logger = logging.getLogger("nbi.authenticator.keystone")
 

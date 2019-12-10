@@ -34,7 +34,7 @@ from osm_nbi.base_topic import BaseTopic
 
 import logging
 import re
-from time import time
+from time import time, sleep
 from http import HTTPStatus
 from uuid import uuid4
 from hashlib import sha256
@@ -43,16 +43,18 @@ from random import choice as random_choice
 
 
 class AuthconnInternal(Authconn):
-    def __init__(self, config, db, token_cache):
-        Authconn.__init__(self, config, db, token_cache)
+    token_time_window = 2   # seconds
+    token_delay = 1   # seconds to wait upon second request within time window
 
+    def __init__(self, config, db):
+        Authconn.__init__(self, config, db)
         self.logger = logging.getLogger("nbi.authenticator.internal")
 
         self.db = db
-        self.token_cache = token_cache
+        # self.msg = msg
+        # self.token_cache = token_cache
 
         # To be Confirmed
-        self.auth = None
         self.sess = None
 
     def validate_token(self, token):
@@ -75,19 +77,13 @@ class AuthconnInternal(Authconn):
             if not token:
                 raise AuthException("Needed a token or Authorization HTTP header", http_code=HTTPStatus.UNAUTHORIZED)
 
-            # try to get from cache first
             now = time()
-            token_info = self.token_cache.get(token)
-            if token_info and token_info["expires"] < now:
-                # delete token. MUST be done with care, as another thread maybe already delete it. Do not use del
-                self.token_cache.pop(token, None)
-                token_info = None
 
             # get from database if not in cache
-            if not token_info:
-                token_info = self.db.get_one("tokens", {"_id": token})
-                if token_info["expires"] < now:
-                    raise AuthException("Expired Token or Authorization HTTP header", http_code=HTTPStatus.UNAUTHORIZED)
+            # if not token_info:
+            token_info = self.db.get_one("tokens", {"_id": token})
+            if token_info["expires"] < now:
+                raise AuthException("Expired Token or Authorization HTTP header", http_code=HTTPStatus.UNAUTHORIZED)
 
             return token_info
 
@@ -110,7 +106,7 @@ class AuthconnInternal(Authconn):
         :param token: token to be revoked
         """
         try:
-            self.token_cache.pop(token, None)
+            # self.token_cache.pop(token, None)
             self.db.del_one("tokens", {"_id": token})
             return True
         except DbException as e:
@@ -118,9 +114,9 @@ class AuthconnInternal(Authconn):
                 raise AuthException("Token '{}' not found".format(token), http_code=HTTPStatus.NOT_FOUND)
             else:
                 # raise
-                msg = "Error during token revocation using internal backend"
-                self.logger.exception(msg)
-                raise AuthException(msg, http_code=HTTPStatus.UNAUTHORIZED)
+                exmsg = "Error during token revocation using internal backend"
+                self.logger.exception(exmsg)
+                raise AuthException(exmsg, http_code=HTTPStatus.UNAUTHORIZED)
 
     def authenticate(self, user, password, project=None, token_info=None):
         """
@@ -162,6 +158,13 @@ class AuthconnInternal(Authconn):
         else:
             raise AuthException("Provide credentials: username/password or Authorization Bearer token",
                                 http_code=HTTPStatus.UNAUTHORIZED)
+
+        # Delay upon second request within time window
+        if now - user_content["_admin"].get("last_token_time", 0) < self.token_time_window:
+            sleep(self.token_delay)
+        # user_content["_admin"]["last_token_time"] = now
+        # self.db.replace("users", user_content["_id"], user_content)   # might cause race conditions
+        self.db.set_one("users", {"_id": user_content["_id"]}, {"_admin.last_token_time": now})
 
         token_id = ''.join(random_choice('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789')
                            for _ in range(0, 32))
@@ -216,7 +219,6 @@ class AuthconnInternal(Authconn):
                      "roles": roles_list,
                      }
 
-        self.token_cache[token_id] = new_token
         self.db.create("tokens", new_token)
         return deepcopy(new_token)
 
@@ -249,7 +251,9 @@ class AuthconnInternal(Authconn):
         :param role_id: role identifier.
         :raises AuthconnOperationException: if role deletion failed.
         """
-        return self.db.del_one("roles", {"_id": role_id})
+        rc = self.db.del_one("roles", {"_id": role_id})
+        self.db.del_list("tokens", {"roles.id": role_id})
+        return rc
 
     def update_role(self, role_info):
         """
@@ -260,7 +264,7 @@ class AuthconnInternal(Authconn):
         :raises AuthconnOperationException: if user creation failed.
         """
         rid = role_info["_id"]
-        self.db.set_one("roles", {"_id": rid}, role_info)   # CONFIRM
+        self.db.set_one("roles", {"_id": rid}, role_info)
         return {"_id": rid, "name": role_info["name"]}
 
     def create_user(self, user_info):
@@ -320,8 +324,8 @@ class AuthconnInternal(Authconn):
         idf = BaseTopic.id_field("users", uid)
         self.db.set_one("users", {idf: uid}, user_data)
         if user_info.get("remove_project_role_mappings"):
-            self.db.del_list("tokens", {"user_id" if idf == "_id" else idf: uid})
-            self.token_cache.clear()
+            idf = "user_id" if idf == "_id" else idf
+            self.db.del_list("tokens", {idf: uid})
 
     def delete_user(self, user_id):
         """
@@ -332,7 +336,6 @@ class AuthconnInternal(Authconn):
         """
         self.db.del_one("users", {"_id": user_id})
         self.db.del_list("tokens", {"user_id": user_id})
-        self.token_cache.clear()
         return True
 
     def get_user_list(self, filter_q=None):
@@ -416,8 +419,10 @@ class AuthconnInternal(Authconn):
         :param project_id: project identifier.
         :raises AuthconnOperationException: if project deletion failed.
         """
-        filter_q = {BaseTopic.id_field("projects", project_id): project_id}
-        r = self.db.del_one("projects", filter_q)
+        idf = BaseTopic.id_field("projects", project_id)
+        r = self.db.del_one("projects", {idf: project_id})
+        idf = "project_id" if idf == "_id" else "project_name"
+        self.db.del_list("tokens", {idf: project_id})
         return r
 
     def update_project(self, project_id, project_info):

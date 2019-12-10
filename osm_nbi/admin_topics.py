@@ -1107,11 +1107,12 @@ class RoleTopicAuth(BaseTopic):
             raise EngineException("You cannot delete role '{}'".format(role["name"]), http_code=HTTPStatus.FORBIDDEN)
 
         # If any user is using this role, raise CONFLICT exception
-        for user in self.auth.get_user_list():
-            for prm in user.get("project_role_mappings"):
-                if prm["role"] == _id:
-                    raise EngineException("Role '{}' ({}) is being used by user '{}'"
-                                          .format(role["name"], _id, user["username"]), HTTPStatus.CONFLICT)
+        if not session["force"]:
+            for user in self.auth.get_user_list():
+                for prm in user.get("project_role_mappings"):
+                    if prm["role"] == _id:
+                        raise EngineException("Role '{}' ({}) is being used by user '{}'"
+                                              .format(role["name"], _id, user["username"]), HTTPStatus.CONFLICT)
 
     @staticmethod
     def format_on_new(content, project_id=None, make_public=False):   # TO BE REMOVED ?

@@ -110,7 +110,7 @@ class Authconn:
     Each Auth backend connector plugin must be a subclass of
     Authconn class.
     """
-    def __init__(self, config, db, token_cache):
+    def __init__(self, config, db):
         """
         Constructor of the Authconn class.
 

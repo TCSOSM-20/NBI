@@ -50,7 +50,7 @@ class Test_ProjectTopicAuth(TestCase):
         self.db = Mock(dbbase.DbBase())
         self.fs = Mock(fsbase.FsBase())
         self.msg = Mock(msgbase.MsgBase())
-        self.auth = Mock(authconn.Authconn(None, None, None))
+        self.auth = Mock(authconn.Authconn(None, None))
         self.topic = ProjectTopicAuth(self.db, self.fs, self.msg, self.auth)
         self.fake_session = {"username": self.test_name, "project_id": (test_pid,), "method": None,
                              "admin": True, "force": False, "public": False, "allow_show_user_project_role": True}
@@ -210,7 +210,7 @@ class Test_RoleTopicAuth(TestCase):
         self.db = Mock(dbbase.DbBase())
         self.fs = Mock(fsbase.FsBase())
         self.msg = Mock(msgbase.MsgBase())
-        self.auth = Mock(authconn.Authconn(None, None, None))
+        self.auth = Mock(authconn.Authconn(None, None))
         self.topic = RoleTopicAuth(self.db, self.fs, self.msg, self.auth, self.test_operations)
         self.fake_session = {"username": test_name, "project_id": (test_pid,), "method": None,
                              "admin": True, "force": False, "public": False, "allow_show_user_project_role": True}
@@ -370,7 +370,7 @@ class Test_UserTopicAuth(TestCase):
         self.db = Mock(dbbase.DbBase())
         self.fs = Mock(fsbase.FsBase())
         self.msg = Mock(msgbase.MsgBase())
-        self.auth = Mock(authconn.Authconn(None, None, None))
+        self.auth = Mock(authconn.Authconn(None, None))
         self.topic = UserTopicAuth(self.db, self.fs, self.msg, self.auth)
         self.fake_session = {"username": test_name, "project_id": (test_pid,), "method": None,
                              "admin": True, "force": False, "public": False, "allow_show_user_project_role": True}
@@ -588,7 +588,7 @@ class Test_CommonVimWimSdn(TestCase):
         self.db = Mock(dbbase.DbBase())
         self.fs = Mock(fsbase.FsBase())
         self.msg = Mock(msgbase.MsgBase())
-        self.auth = Mock(authconn.Authconn(None, None, None))
+        self.auth = Mock(authconn.Authconn(None, None))
         self.topic = CommonVimWimSdn(self.db, self.fs, self.msg, self.auth)
         # Use WIM schemas for testing because they are the simplest
         self.topic.topic = "wims"

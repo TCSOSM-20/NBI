@@ -55,7 +55,8 @@ class SubscriptionThread(threading.Thread):
         self.engine = engine
         self.loop = None
         self.logger = logging.getLogger("nbi.subscriptions")
-        self.aiomain_task = None  # asyncio task for receiving kafka bus
+        self.aiomain_task_admin = None  # asyncio task for receiving admin actions from kafka bus
+        self.aiomain_task = None  # asyncio task for receiving normal actions from kafka bus
         self.internal_session = {  # used for a session to the engine methods
             "project_id": (),
             "set_project": (),
@@ -79,11 +80,21 @@ class SubscriptionThread(threading.Thread):
                 if not kafka_working:
                     self.logger.critical("kafka is working again")
                     kafka_working = True
-                await asyncio.sleep(10, loop=self.loop)
-                self.aiomain_task = asyncio.ensure_future(self.msg.aioread(("ns", "nsi"), loop=self.loop,
-                                                                           aiocallback=self._msg_callback),
-                                                          loop=self.loop)
-                await asyncio.wait_for(self.aiomain_task, timeout=None, loop=self.loop)
+                if not self.aiomain_task_admin or self.aiomain_task_admin._state == "FINISHED":
+                    await asyncio.sleep(10, loop=self.loop)
+                    self.logger.debug("Starting admin subscription task")
+                    self.aiomain_task_admin = asyncio.ensure_future(self.msg.aioread(("admin",), loop=self.loop,
+                                                                                     group_id=False,
+                                                                                     aiocallback=self._msg_callback),
+                                                                    loop=self.loop)
+                if not self.aiomain_task or self.aiomain_task._state == "FINISHED":
+                    await asyncio.sleep(10, loop=self.loop)
+                    self.logger.debug("Starting non-admin subscription task")
+                    self.aiomain_task = asyncio.ensure_future(self.msg.aioread(("ns", "nsi"), loop=self.loop,
+                                                                               aiocallback=self._msg_callback),
+                                                              loop=self.loop)
+                await asyncio.wait([self.aiomain_task, self.aiomain_task_admin],
+                                   timeout=None, loop=self.loop, return_when=asyncio.FIRST_COMPLETED)
             except Exception as e:
                 if self.to_terminate:
                     return
@@ -165,8 +176,25 @@ class SubscriptionThread(threading.Thread):
                         self.engine.del_item(self.internal_session, "nsis", _id=params["nsir_id"],
                                              not_send_msg=msg_to_send)
                         self.logger.debug("nsis={} deleted from database".format(params["nsir_id"]))
-
-            # writing to kafka must be done with our own loop. For this reason it is not allowed Engine to do that, 
+            elif topic == "admin":
+                self.logger.debug("received {} {} {}".format(topic, command, params))
+                if command in ["echo", "ping"]:   # ignored commands
+                    pass
+                elif command == "revoke_token":
+                    if params:
+                        if isinstance(params, dict) and "_id" in params:
+                            tid = params.get("_id")
+                            self.engine.authenticator.tokens_cache.pop(tid, None)
+                            self.logger.debug("token '{}' removed from token_cache".format(tid))
+                        else:
+                            self.logger.debug("unrecognized params in command '{} {}': {}"
+                                              .format(topic, command, params))
+                    else:
+                        self.engine.authenticator.tokens_cache.clear()
+                        self.logger.debug("token_cache cleared")
+                else:
+                    self.logger.debug("unrecognized command '{} {}'".format(topic, command))
+            # writing to kafka must be done with our own loop. For this reason it is not allowed Engine to do that,
             # but content to be written is stored at msg_to_send
             for msg in msg_to_send:
                 await self.msg.aiowrite(*msg, loop=self.loop)

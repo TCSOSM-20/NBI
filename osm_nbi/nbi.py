@@ -484,7 +484,7 @@ class Server(object):
     def __init__(self):
         self.instance += 1
         self.authenticator = Authenticator(valid_url_methods, valid_query_string)
-        self.engine = Engine(self.authenticator.tokens_cache)
+        self.engine = Engine(self.authenticator)
 
     def _format_in(self, kwargs):
         try:
@@ -1132,6 +1132,11 @@ class Server(object):
             # if Role information changes, it is needed to reload the information of roles
             if topic == "roles" and method != "GET":
                 self.authenticator.load_operation_to_allowed_roles()
+
+            if topic == "projects" and method == "DELETE" \
+                    or topic in ["users", "roles"] and method in ["PUT", "PATCH", "DELETE"]:
+                self.authenticator.remove_token_from_cache()
+
             return self._format_out(outdata, token_info, _format)
         except Exception as e:
             if isinstance(e, (NbiException, EngineException, DbException, FsException, MsgException, AuthException,

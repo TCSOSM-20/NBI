@@ -68,17 +68,18 @@ class Engine(object):
         # Add new versions here
     }
 
-    def __init__(self, token_cache):
+    def __init__(self, authenticator):
         self.db = None
         self.fs = None
         self.msg = None
-        self.auth = None
+        self.authconn = None
         self.config = None
         self.operations = None
         self.logger = logging.getLogger("nbi.engine")
         self.map_topic = {}
         self.write_lock = None
-        self.token_cache = token_cache
+        # self.token_cache = token_cache
+        self.authenticator = authenticator
 
     def start(self, config):
         """
@@ -123,11 +124,11 @@ class Engine(object):
                 else:
                     raise EngineException("Invalid configuration param '{}' at '[message]':'driver'".format(
                         config["message"]["driver"]))
-            if not self.auth:
+            if not self.authconn:
                 if config["authentication"]["backend"] == "keystone":
-                    self.auth = AuthconnKeystone(config["authentication"], self.db, None)
+                    self.authconn = AuthconnKeystone(config["authentication"], self.db)
                 else:
-                    self.auth = AuthconnInternal(config["authentication"], self.db, self.token_cache)
+                    self.authconn = AuthconnInternal(config["authentication"], self.db)
             if not self.operations:
                 if "resources_to_operations" in config["rbac"]:
                     resources_to_operations_file = config["rbac"]["resources_to_operations"]
@@ -157,11 +158,11 @@ class Engine(object):
             for topic, topic_class in self.map_from_topic_to_class.items():
                 # if self.auth and topic_class in (UserTopicAuth, ProjectTopicAuth):
                 #     self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.auth)
-                if self.auth and topic_class == RoleTopicAuth:
-                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.auth,
+                if self.authconn and topic_class == RoleTopicAuth:
+                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.authconn,
                                                         self.operations)
                 else:
-                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.auth)
+                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.authconn)
             
             self.map_topic["pm_jobs"] = PmJobsTopic(self.db, config["prometheus"].get("host"),
                                                     config["prometheus"].get("port"))

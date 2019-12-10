@@ -41,9 +41,8 @@ from os import path
 
 from osm_nbi.authconn import AuthException, AuthExceptionUnauthorized
 from osm_nbi.authconn_keystone import AuthconnKeystone
-from osm_nbi.authconn_internal import AuthconnInternal   # Comment out for testing&debugging, uncomment when ready
-from osm_common import dbmongo
-from osm_common import dbmemory
+from osm_nbi.authconn_internal import AuthconnInternal
+from osm_common import dbmemory, dbmongo, msglocal, msgkafka
 from osm_common.dbbase import DbException
 from osm_nbi.validation import is_valid_uuid
 from itertools import chain
@@ -60,6 +59,7 @@ class Authenticator:
     """
 
     periodin_db_pruning = 60 * 30  # for the internal backend only. every 30 minutes expired tokens will be pruned
+    token_limit = 500   # when reached, the token cache will be cleared
 
     def __init__(self, valid_methods, valid_query_string):
         """
@@ -69,6 +69,7 @@ class Authenticator:
         self.backend = None
         self.config = None
         self.db = None
+        self.msg = None
         self.tokens_cache = dict()
         self.next_db_prune_time = 0  # time when next cleaning of expired tokens must be done
         self.roles_to_operations_file = None
@@ -101,11 +102,21 @@ class Authenticator:
                 else:
                     raise AuthException("Invalid configuration param '{}' at '[database]':'driver'"
                                         .format(config["database"]["driver"]))
+            if not self.msg:
+                if config["message"]["driver"] == "local":
+                    self.msg = msglocal.MsgLocal()
+                    self.msg.connect(config["message"])
+                elif config["message"]["driver"] == "kafka":
+                    self.msg = msgkafka.MsgKafka()
+                    self.msg.connect(config["message"])
+                else:
+                    raise AuthException("Invalid configuration param '{}' at '[message]':'driver'"
+                                        .format(config["message"]["driver"]))
             if not self.backend:
                 if config["authentication"]["backend"] == "keystone":
-                    self.backend = AuthconnKeystone(self.config["authentication"], self.db, self.tokens_cache)
+                    self.backend = AuthconnKeystone(self.config["authentication"], self.db)
                 elif config["authentication"]["backend"] == "internal":
-                    self.backend = AuthconnInternal(self.config["authentication"], self.db, self.tokens_cache)
+                    self.backend = AuthconnInternal(self.config["authentication"], self.db)
                     self._internal_tokens_prune()
                 else:
                     raise AuthException("Unknown authentication backend: {}"
@@ -354,7 +365,22 @@ class Authenticator:
             if not token:
                 raise AuthException("Needed a token or Authorization http header",
                                     http_code=HTTPStatus.UNAUTHORIZED)
-            token_info = self.backend.validate_token(token)
+
+            # try to get from cache first
+            now = time()
+            token_info = self.tokens_cache.get(token)
+            if token_info and token_info["expires"] < now:
+                # delete token. MUST be done with care, as another thread maybe already delete it. Do not use del
+                self.tokens_cache.pop(token, None)
+                token_info = None
+
+            # get from database if not in cache
+            if not token_info:
+                token_info = self.backend.validate_token(token)
+                # Clear cache if token limit reached
+                if len(self.tokens_cache) > self.token_limit:
+                    self.tokens_cache.clear()
+                self.tokens_cache[token] = token_info
             # TODO add to token info remote host, port
 
             if role_permission:
@@ -396,8 +422,6 @@ class Authenticator:
         elif remote.ip:
             new_token_info["remote_host"] = remote.ip
 
-        self.tokens_cache[new_token_info["_id"]] = new_token_info
-
         # TODO call self._internal_tokens_prune(now) ?
         return deepcopy(new_token_info)
 
@@ -424,7 +448,8 @@ class Authenticator:
     def del_token(self, token):
         try:
             self.backend.revoke_token(token)
-            self.tokens_cache.pop(token, None)
+            # self.tokens_cache.pop(token, None)
+            self.remove_token_from_cache(token)
             return "token '{}' deleted".format(token)
         except KeyError:
             raise AuthException("Token '{}' not found".format(token), http_code=HTTPStatus.NOT_FOUND)
@@ -557,4 +582,11 @@ class Authenticator:
         if not self.next_db_prune_time or self.next_db_prune_time >= now:
             self.db.del_list("tokens", {"expires.lt": now})
             self.next_db_prune_time = self.periodin_db_pruning + now
-            self.tokens_cache.clear()  # force to reload tokens from database
+            # self.tokens_cache.clear()  # not required any more
+
+    def remove_token_from_cache(self, token=None):
+        if token:
+            self.tokens_cache.pop(token, None)
+        else:
+            self.tokens_cache.clear()
+        self.msg.write("admin", "revoke_token", {"_id": token} if token else None)
