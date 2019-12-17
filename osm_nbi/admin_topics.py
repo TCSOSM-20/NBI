@@ -404,6 +404,25 @@ class SdnTopic(CommonVimWimSdn):
     password_to_encrypt = "password"
     config_to_encrypt = {}
 
+    def _obtain_url(self, input, create):
+        if input.get("ip") or input.get("port"):
+            if not input.get("ip") or not input.get("port") or input.get('url'):
+                raise ValidationError("You must provide both 'ip' and 'port' (deprecated); or just 'url' (prefered)")
+            input['url'] = "http://{}:{}/".format(input["ip"], input["port"])
+            del input["ip"]
+            del input["port"]
+        elif create and not input.get('url'):
+            raise ValidationError("You must provide 'url'")
+        return input
+
+    def _validate_input_new(self, input, force=False):
+        input = super()._validate_input_new(input, force)
+        return self._obtain_url(input, True)
+
+    def _validate_input_edit(self, input, force=False):
+        input = super()._validate_input_edit(input, force)
+        return self._obtain_url(input, False)
+
 
 class K8sClusterTopic(CommonVimWimSdn):
     topic = "k8sclusters"

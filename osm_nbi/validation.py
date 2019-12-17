@@ -480,21 +480,24 @@ wim_account_new_schema = {
 
 sdn_properties = {
     "name": name_schema,
+    "type": {"type": "string"},
+    "url": {"type": "string"},
+    "user": shortname_schema,
+    "password": passwd_schema,
+    "config": {"type": "object"},
     "description": description_schema,
+    # The folowing are deprecated. Maintanied for backward compatibility
     "dpid": dpid_Schema,
     "ip": ip_schema,
     "port": port_schema,
-    "type": {"type": "string", "enum": ["opendaylight", "floodlight", "onos"]},
     "version": {"type": "string", "minLength": 1, "maxLength": 12},
-    "user": shortname_schema,
-    "password": passwd_schema
 }
 sdn_new_schema = {
     "title": "sdn controller information schema",
     "$schema": "http://json-schema.org/draft-04/schema#",
     "type": "object",
     "properties": sdn_properties,
-    "required": ["name", "port", 'ip', 'dpid', 'type'],
+    "required": ["name", 'type'],
     "additionalProperties": False
 }
 sdn_edit_schema = {
