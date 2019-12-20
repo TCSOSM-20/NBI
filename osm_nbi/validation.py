@@ -435,7 +435,7 @@ vim_account_new_schema = {
     "additionalProperties": False
 }
 
-wim_type = shortname_schema  # {"enum": ["tapi", "onos", "odl", "dynpac", "fake"]}
+wim_type = shortname_schema  # {"enum": ["ietfl2vpn", "onos", "odl", "dynpac", "fake"]}
 
 wim_account_edit_schema = {
     "title": "wim_account edit input schema",
