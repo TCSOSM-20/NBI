@@ -282,8 +282,8 @@ class Authenticator:
                     self.backend.update_user({"_id": user_admin_id,
                                               "add_project_role_mappings": [{"project": pid, "role": role_id}]})
                     self.logger.info("Added role system admin to user='{}' project=admin".format(user_admin_id))
-            except Exception:
-                pass
+            except Exception as e:
+                self.logger.error("Error in Authorization DataBase initialization: {}: {}".format(type(e).__name__, e))
 
         self.load_operation_to_allowed_roles()
 

@@ -251,8 +251,9 @@ class AuthconnKeystone(Authconn):
             user_id = user_obj.id
             if user_info.get("password") or user_info.get("username") \
                     or user_info.get("add_project_role_mappings") or user_info.get("remove_project_role_mappings"):
+                ctime = user_obj._admin.get("created", 0) if hasattr(user_obj, "_admin") else 0
                 self.keystone.users.update(user_id, password=user_info.get("password"), name=user_info.get("username"),
-                                           _admin={"created": user_obj._admin["created"], "modified": time.time()})
+                                           _admin={"created": ctime, "modified": time.time()})
             for mapping in user_info.get("remove_project_role_mappings", []):
                 self.remove_role_from_user(user_id, mapping["project"], mapping["role"])
             for mapping in user_info.get("add_project_role_mappings", []):
