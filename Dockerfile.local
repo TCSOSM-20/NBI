@@ -13,37 +13,29 @@
 
 # This creates osm/NBI docker from local NBI source code
 
-FROM ubuntu:16.04
+FROM ubuntu:18.04
 
 # Set the working directory to /app
 WORKDIR /app/NBI
 
+RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
+
 RUN apt-get update && apt-get install -y git python3 python3-jsonschema \
     python3-pymongo python3-yaml python3-pip python3-keystoneclient \
-    && pip3 install pip==9.0.3 \
-    && pip3 install aiokafka aiohttp cherrypy==18.1.2 keystoneauth1 requests \
+    && python3 -m pip install pip --upgrade \
+    && python3 -m pip install aiokafka aiohttp cherrypy==18.1.2 keystoneauth1 requests \
     && mkdir -p /app/storage/kafka && mkdir -p /app/log 
 
 # OSM_COMMON
 RUN git -C /app clone https://osm.etsi.org/gerrit/osm/common.git \
-    && pip3 install -e /app/common
+    && python3 -m pip install -e /app/common
 #    && cd common  && python3 setup.py develop && cd ..
 #    && pip3 install -U -r requirements.txt \
 #    && cd ..
 
 # OSM_IM
-RUN pip3 install pyang && mkdir -p /app && cd /app \
-    && git -C /app clone https://github.com/robshakir/pyangbind \
-    && pip3 install -e /app/pyangbind \
-    && git -C /app clone  https://osm.etsi.org/gerrit/osm/IM \
-    && mkdir -p /app/IM/osm_im \
-    && pyang --plugindir /app/pyangbind/pyangbind/plugin -f pybind -p /app/IM/models/yang \
-       -o /app/IM/osm_im/vnfd.py /app/IM/models/yang/vnfd.yang \
-    && pyang --plugindir /app/pyangbind/pyangbind/plugin -f pybind -p /app/IM/models/yang \
-       -o /app/IM/osm_im/nsd.py /app/IM/models/yang/nsd.yang \
-    && pyang --plugindir /app/pyangbind/pyangbind/plugin -f pybind -p /app/IM/models/yang \
-       -o /app/IM/osm_im/nst.py /app/IM/models/yang/nst.yang \
-    && pip3 install -e /app/IM
+RUN git -C /app clone  https://osm.etsi.org/gerrit/osm/IM \
+    && python3 -m pip install /app/IM
 
 EXPOSE 9999
 
