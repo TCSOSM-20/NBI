@@ -268,6 +268,7 @@ ns_instantiate = {
         "additionalParamsForNs": object_schema,
         "additionalParamsForVnf": additional_params_for_vnf,
         "ssh_keys": {"type": "array", "items": {"type": "string"}},
+        "timeout_ns_deploy": integer1_schema,
         "nsr_id": id_schema,
         "vduImage": name_schema,
         "vnf": {
@@ -870,6 +871,7 @@ nsi_instantiate = {
         "nsiDescription": {"oneOf": [description_schema, null_schema]},
         "nstId": string_schema,
         "vimAccountId": id_schema,
+        "timeout_nsi_deploy": integer1_schema,
         "ssh_keys": {"type": "string"},
         "nsi_id": id_schema,
         "additionalParamsForNsi": object_schema,
