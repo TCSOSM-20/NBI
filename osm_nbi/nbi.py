@@ -716,6 +716,10 @@ class Server(object):
 
     @cherrypy.expose
     def test(self, *args, **kwargs):
+        if not cherrypy.config.get("server.enable_test") or (isinstance(cherrypy.config["server.enable_test"], str) and
+                                                             cherrypy.config["server.enable_test"].lower() == "false"):
+            cherrypy.response.status = HTTPStatus.METHOD_NOT_ALLOWED.value
+            return "test URL is disabled"
         thread_info = None
         if args and args[0] == "help":
             return "<html><pre>\ninit\nfile/<name>  download file\ndb-clear/table\nfs-clear[/folder]\nlogin\nlogin2\n"\

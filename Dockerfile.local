@@ -73,6 +73,8 @@ ENV OSMNBI_STATIC_DIR                           /app/NBI/osm_nbi/html_public
 # logs
 # ENV OSMNBI_LOG_FILE                             /app/log/nbi.log
 ENV OSMNBI_LOG_LEVEL                            DEBUG
+# ENV OSMNBI_SERVER_ENABLE_TEST                   False
+
 # message
 ENV OSMNBI_MESSAGE_DRIVER                       kafka
 ENV OSMNBI_MESSAGE_HOST                         kafka
