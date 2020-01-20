@@ -80,7 +80,7 @@ class TestNsLcmOpTopic(unittest.TestCase):
         rollback = []
         headers = {}
 
-        nslcmop_id, _ = self.nslcmop_topic.new(rollback, session, indata=indata, kwargs=None, headers=headers)
+        nslcmop_id, _ = self.nslcmop_topic.new(rollback, session, indata=deepcopy(indata), kwargs=None, headers=headers)
 
         # check nslcmop is created at database
         self.assertEqual(self.db.create.call_count, 1, "database create not called, or called more than once")

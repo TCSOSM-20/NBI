@@ -265,6 +265,8 @@ ns_instantiate = {
         "nsdId": id_schema,
         "vimAccountId": id_schema,
         "wimAccountId": {"OneOf": [id_schema, bool_schema, null_schema]},
+        "placement-engine": string_schema,
+        "placement-constraints": object_schema,
         "additionalParamsForNs": object_schema,
         "additionalParamsForVnf": additional_params_for_vnf,
         "ssh_keys": {"type": "array", "items": {"type": "string"}},
