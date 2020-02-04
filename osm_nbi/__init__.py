@@ -12,6 +12,12 @@
 # under the License.
 ##
 
-version = '7.0.0.post5'
-version_date = '2019-01-14'
+version = '7.0.0.post11'
+version_date = '2019-02-04'
 
+# Obtain installed package version. Ignore if error, e.g. pkg_resources not installed
+try:
+    from pkg_resources import get_distribution
+    version = get_distribution("osm_nbi").version
+except Exception:
+    pass
