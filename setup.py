@@ -47,19 +47,15 @@ setup(
     # data_files=[('/etc/osm/', ['osm_nbi/nbi.cfg']),
     #             ('/etc/systemd/system/', ['osm_nbi/osm-nbi.service']),
     #             ],
-    dependency_links=[
-        "git+https://osm.etsi.org/gerrit/osm/IM.git#egg=osm-im",
-        'git+https://osm.etsi.org/gerrit/osm/common.git#egg=osm-common'
-    ],
     install_requires=[
         'CherryPy==18.1.2',
-        'osm-common',
+        'osm-common @ git+https://osm.etsi.org/gerrit/osm/common.git#egg=osm-common',
         'jsonschema',
         'PyYAML',
-        'osm-im',
+        'osm-im @ git+https://osm.etsi.org/gerrit/osm/IM.git#egg=osm-im',
         'python-keystoneclient',
         'requests',
-        'aiohttp',
+        'aiohttp>=2.3.10',
     ],
     setup_requires=['setuptools-version-command'],
 )
