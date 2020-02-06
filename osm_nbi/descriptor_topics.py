@@ -509,8 +509,17 @@ class VnfdTopic(DescriptorTopic):
                                           http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
 
         for vdu in get_iterable(indata.get("vdu")):
+            icp_refs = []
+            ecp_refs = []
             for interface in get_iterable(vdu.get("interface")):
                 if interface.get("external-connection-point-ref"):
+                    if interface.get("external-connection-point-ref") in ecp_refs:
+                        raise EngineException("vdu[id='{}']:interface[name='{}']:external-connection-point-ref='{}' "
+                                              "is referenced by other interface"
+                                              .format(vdu["id"], interface["name"],
+                                                      interface["external-connection-point-ref"]),
+                                              http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
+                    ecp_refs.append(interface.get("external-connection-point-ref"))
                     for cp in get_iterable(indata.get("connection-point")):
                         if cp["name"] == interface["external-connection-point-ref"]:
                             break
@@ -520,8 +529,14 @@ class VnfdTopic(DescriptorTopic):
                                               .format(vdu["id"], interface["name"],
                                                       interface["external-connection-point-ref"]),
                                               http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
-
                 elif interface.get("internal-connection-point-ref"):
+                    if interface.get("internal-connection-point-ref") in icp_refs:
+                        raise EngineException("vdu[id='{}']:interface[name='{}']:internal-connection-point-ref='{}' "
+                                              "is referenced by other interface"
+                                              .format(vdu["id"], interface["name"],
+                                                      interface["internal-connection-point-ref"]),
+                                              http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
+                    icp_refs.append(interface.get("internal-connection-point-ref"))
                     for internal_cp in get_iterable(vdu.get("internal-connection-point")):
                         if interface["internal-connection-point-ref"] == internal_cp.get("id"):
                             break
