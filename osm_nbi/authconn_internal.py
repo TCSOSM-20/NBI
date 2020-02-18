@@ -118,15 +118,16 @@ class AuthconnInternal(Authconn):
                 self.logger.exception(exmsg)
                 raise AuthException(exmsg, http_code=HTTPStatus.UNAUTHORIZED)
 
-    def authenticate(self, user, password, project=None, token_info=None):
+    def authenticate(self, credentials, token_info=None):
         """
         Authenticate a user using username/password or previous token_info plus project; its creates a new token
 
-        :param user: user: name, id or None
-        :param password: password or None
-        :param project: name, id, or None. If None first found project will be used to get an scope token
+        :param credentials: dictionary that contains:
+            username: name, id or None
+            password: password or None
+            project_id: name, id, or None. If None first found project will be used to get an scope token
+            other items are allowed and ignored
         :param token_info: previous token_info to obtain authorization
-        :param remote: remote host information
         :return: the scoped token info or raises an exception. The token is a dictionary with:
             _id:  token string id,
             username: username,
@@ -137,6 +138,9 @@ class AuthconnInternal(Authconn):
 
         now = time()
         user_content = None
+        user = credentials.get("username")
+        password = credentials.get("password")
+        project = credentials.get("project_id")
 
         # Try using username/password
         if user:

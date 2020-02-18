@@ -404,10 +404,8 @@ class Authenticator:
 
     def new_token(self, token_info, indata, remote):
         new_token_info = self.backend.authenticate(
-            user=indata.get("username"),
-            password=indata.get("password"),
+            credentials=indata,
             token_info=token_info,
-            project=indata.get("project_id")
         )
 
         new_token_info["remote_port"] = remote.port

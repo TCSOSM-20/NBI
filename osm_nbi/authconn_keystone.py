@@ -51,11 +51,18 @@ class AuthconnKeystone(Authconn):
         self.logger = logging.getLogger("nbi.authenticator.keystone")
 
         self.auth_url = "http://{0}:{1}/v3".format(config.get("auth_url", "keystone"), config.get("auth_port", "5000"))
-        self.user_domain_name = config.get("user_domain_name", "default")
+        self.user_domain_name_list = config.get("user_domain_name", "default")
+        self.user_domain_name_list = self.user_domain_name_list.split(",")
         self.admin_project = config.get("service_project", "service")
         self.admin_username = config.get("service_username", "nbi")
         self.admin_password = config.get("service_password", "nbi")
-        self.project_domain_name = config.get("project_domain_name", "default")
+        self.project_domain_name_list = config.get("project_domain_name", "default")
+        self.project_domain_name_list = self.project_domain_name_list.split(",")
+        if len(self.user_domain_name_list) != len(self.project_domain_name_list):
+            raise ValueError("Invalid configuration parameter fo authenticate. 'project_domain_name' and "
+                             "'user_domain_name' must be a comma-separated list with the same size. Revise "
+                             "configuration or/and 'OSMNBI_AUTHENTICATION_PROJECT_DOMAIN_NAME', "
+                             "'OSMNBI_AUTHENTICATION_USER_DOMAIN_NAME'  Variables")
 
         # Waiting for Keystone to be up
         available = None
@@ -70,21 +77,25 @@ class AuthconnKeystone(Authconn):
                 if counter == 0:
                     raise AuthException("Keystone not available after 300s timeout")
 
-        self.auth = v3.Password(user_domain_name=self.user_domain_name,
+        self.auth = v3.Password(user_domain_name=self.user_domain_name_list[0],
                                 username=self.admin_username,
                                 password=self.admin_password,
-                                project_domain_name=self.project_domain_name,
+                                project_domain_name=self.project_domain_name_list[0],
                                 project_name=self.admin_project,
                                 auth_url=self.auth_url)
         self.sess = session.Session(auth=self.auth)
         self.keystone = client.Client(session=self.sess)
 
-    def authenticate(self, user, password, project=None, token_info=None):
+    def authenticate(self, credentials, token_info=None):
         """
         Authenticate a user using username/password or token_info, plus project
-        :param user: user: name, id or None
-        :param password: password or None
-        :param project: name, id, or None. If None first found project will be used to get an scope token
+        :param credentials: dictionary that contains:
+            username: name, id or None
+            password: password or None
+            project_id: name, id, or None. If None first found project will be used to get an scope token
+            project_domain_name: (Optional) To use a concrete domain for the project
+            user_domain_name: (Optional) To use a concrete domain for the project
+            other items are allowed and ignored
         :param token_info: previous token_info to obtain authorization
         :return: the scoped token info or raises an exception. The token is a dictionary with:
             _id:  token string id,
@@ -94,69 +105,83 @@ class AuthconnKeystone(Authconn):
             expires: epoch time when it expires,
 
         """
-        try:
-            username = None
-            user_id = None
-            project_id = None
-            project_name = None
+        username = None
+        user_id = None
+        project_id = None
+        project_name = None
+        if credentials.get("project_domain_name"):
+            project_domain_name_list = (credentials["project_domain_name"], )
+        else:
+            project_domain_name_list = self.project_domain_name_list
+        if credentials.get("user_domain_name"):
+            user_domain_name_list = (credentials["user_domain_name"], )
+        else:
+            user_domain_name_list = self.user_domain_name_list
 
-            if user:
-                if is_valid_uuid(user):
-                    user_id = user
+        for index, project_domain_name in enumerate(project_domain_name_list):
+            user_domain_name = user_domain_name_list[index]
+            try:
+                if credentials.get("username"):
+                    if is_valid_uuid(credentials["username"]):
+                        user_id = credentials["username"]
+                    else:
+                        username = credentials["username"]
+
+                    # get an unscoped token firstly
+                    unscoped_token = self.keystone.get_raw_token_from_identity_service(
+                        auth_url=self.auth_url,
+                        user_id=user_id,
+                        username=username,
+                        password=credentials.get("password"),
+                        user_domain_name=user_domain_name,
+                        project_domain_name=project_domain_name)
+                elif token_info:
+                    unscoped_token = self.keystone.tokens.validate(token=token_info.get("_id"))
                 else:
-                    username = user
+                    raise AuthException("Provide credentials: username/password or Authorization Bearer token",
+                                        http_code=HTTPStatus.UNAUTHORIZED)
 
-                # get an unscoped token firstly
-                unscoped_token = self.keystone.get_raw_token_from_identity_service(
+                if not credentials.get("project_id"):
+                    # get first project for the user
+                    project_list = self.keystone.projects.list(user=unscoped_token["user"]["id"])
+                    if not project_list:
+                        raise AuthException("The user {} has not any project and cannot be used for authentication".
+                                            format(credentials.get("username")), http_code=HTTPStatus.UNAUTHORIZED)
+                    project_id = project_list[0].id
+                else:
+                    if is_valid_uuid(credentials["project_id"]):
+                        project_id = credentials["project_id"]
+                    else:
+                        project_name = credentials["project_id"]
+
+                scoped_token = self.keystone.get_raw_token_from_identity_service(
                     auth_url=self.auth_url,
-                    user_id=user_id,
-                    username=username,
-                    password=password,
-                    user_domain_name=self.user_domain_name,
-                    project_domain_name=self.project_domain_name)
-            elif token_info:
-                unscoped_token = self.keystone.tokens.validate(token=token_info.get("_id"))
-            else:
-                raise AuthException("Provide credentials: username/password or Authorization Bearer token",
-                                    http_code=HTTPStatus.UNAUTHORIZED)
+                    project_name=project_name,
+                    project_id=project_id,
+                    user_domain_name=user_domain_name,
+                    project_domain_name=project_domain_name,
+                    token=unscoped_token["auth_token"])
 
-            if not project:
-                # get first project for the user
-                project_list = self.keystone.projects.list(user=unscoped_token["user"]["id"])
-                if not project_list:
-                    raise AuthException("The user {} has not any project and cannot be used for authentication".
-                                        format(user), http_code=HTTPStatus.UNAUTHORIZED)
-                project_id = project_list[0].id
-            else:
-                if is_valid_uuid(project):
-                    project_id = project
-                else:
-                    project_name = project
+                auth_token = {
+                    "_id": scoped_token.auth_token,
+                    "id": scoped_token.auth_token,
+                    "user_id": scoped_token.user_id,
+                    "username": scoped_token.username,
+                    "project_id": scoped_token.project_id,
+                    "project_name": scoped_token.project_name,
+                    "project_domain_name": scoped_token.project_domain_name,
+                    "user_domain_name": scoped_token.user_domain_name,
+                    "expires": scoped_token.expires.timestamp(),
+                    "issued_at": scoped_token.issued.timestamp()
+                }
 
-            scoped_token = self.keystone.get_raw_token_from_identity_service(
-                auth_url=self.auth_url,
-                project_name=project_name,
-                project_id=project_id,
-                user_domain_name=self.user_domain_name,
-                project_domain_name=self.project_domain_name,
-                token=unscoped_token["auth_token"])
-
-            auth_token = {
-                "_id": scoped_token.auth_token,
-                "id": scoped_token.auth_token,
-                "user_id": scoped_token.user_id,
-                "username": scoped_token.username,
-                "project_id": scoped_token.project_id,
-                "project_name": scoped_token.project_name,
-                "expires": scoped_token.expires.timestamp(),
-                "issued_at": scoped_token.issued.timestamp()
-            }
-
-            return auth_token
-        except ClientException as e:
-            # self.logger.exception("Error during user authentication using keystone. Method: basic: {}".format(e))
-            raise AuthException("Error during user authentication using Keystone: {}".format(e),
-                                http_code=HTTPStatus.UNAUTHORIZED)
+                return auth_token
+            except ClientException as e:
+                if index >= len(user_domain_name_list)-1 or index >= len(project_domain_name_list)-1:
+                    # if last try, launch exception
+                    # self.logger.exception("Error during user authentication using keystone: {}".format(e))
+                    raise AuthException("Error during user authentication using Keystone: {}".format(e),
+                                        http_code=HTTPStatus.UNAUTHORIZED)
 
     def validate_token(self, token):
         """
@@ -219,8 +244,10 @@ class AuthconnKeystone(Authconn):
         :return: returns the id of the user in keystone.
         """
         try:
-            new_user = self.keystone.users.create(user_info["username"], password=user_info["password"],
-                                                  domain=self.user_domain_name, _admin=user_info["_admin"])
+            new_user = self.keystone.users.create(
+                user_info["username"], password=user_info["password"],
+                domain=user_info.get("user_domain_name", self.user_domain_name_list[0]),
+                _admin=user_info["_admin"])
             if "project_role_mappings" in user_info.keys():
                 for mapping in user_info["project_role_mappings"]:
                     self.assign_role_to_user(new_user.id, mapping["project"], mapping["role"])
@@ -444,10 +471,12 @@ class AuthconnKeystone(Authconn):
         :raises AuthconnOperationException: if project creation failed.
         """
         try:
-            result = self.keystone.projects.create(project_info["name"], self.project_domain_name,
-                                                   _admin=project_info["_admin"],
-                                                   quotas=project_info.get("quotas", {})
-                                                   )
+            result = self.keystone.projects.create(
+                project_info["name"],
+                project_info.get("project_domain_name", self.project_domain_name_list[0]),
+                _admin=project_info["_admin"],
+                quotas=project_info.get("quotas", {})
+            )
             return result.id
         except ClientException as e:
             # self.logger.exception("Error during project creation using keystone: {}".format(e))
