@@ -734,7 +734,7 @@ user_new_schema = {
     "type": "object",
     "properties": {
         "username": shortname_schema,
-        "user_domain_name": shortname_schema,
+        "domain_name": shortname_schema,
         "password": passwd_schema,
         "projects": nameshort_list_schema,
         "project_role_mappings": project_role_mappings,
@@ -773,7 +773,7 @@ project_new_schema = {
     "properties": {
         "name": shortname_schema,
         "admin": bool_schema,
-        "project_domain_name": shortname_schema,
+        "domain_name": shortname_schema,
         "quotas": {
             "type": "object",
             "properties": {topic: integer0_schema for topic in topics_with_quota},

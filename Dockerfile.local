@@ -85,7 +85,10 @@ ENV OSMNBI_AUTHENTICATION_BACKEND               internal
 #ENV OSMNBI_AUTHENTICATION_AUTH_URL              keystone
 #ENV OSMNBI_AUTHENTICATION_AUTH_PORT             5000
 
-# DOMAIN_NAME can be a single value or a comma separated list of values
+# DOMAIN_NAME can be a single value or a comma separated list of values. The first value is for internal domain
+# meanwhile the rest ones are external identity services as e.g. LDAP
+# for the case of USER_DOMAIN_NAME each item can be suffixed with ":ro" (read only). In this case NBI will reject any
+# operationi of create/update/delete users in this domain. Do not suffix PROJECT_DOMAIN_NAME
 #ENV OSMNBI_AUTHENTICATION_USER_DOMAIN_NAME      default
 #ENV OSMNBI_AUTHENTICATION_PROJECT_DOMAIN_NAME   default
 #ENV OSMNBI_AUTHENTICATION_SERVICE_USERNAME      nbi

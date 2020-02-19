@@ -660,7 +660,7 @@ class UserTopicAuth(UserTopic):
         :return: dictionary, raise exception if not found.
         """
         # Allow _id to be a name or uuid
-        filter_q = {self.id_field(self.topic, _id): _id}
+        filter_q = {"username": _id}
         # users = self.auth.get_user_list(filter_q)
         users = self.list(session, filter_q)   # To allow default filtering (Bug 853)
         if len(users) == 1:
