@@ -52,3 +52,9 @@ dist
 #vscode
 .vscode
 
+# Unit test / coverage reports
+.coverage
+cover
+coverage.xml
+nosetests.xml
+
