@@ -145,7 +145,7 @@ ip_profile_dhcp_schema = {
 }
 
 ip_profile_schema = {
-    "title": "ip profile validation schame",
+    "title": "ip profile validation schema",
     "$schema": "http://json-schema.org/draft-04/schema#",
     "type": "object",
     "properties": {
@@ -158,7 +158,7 @@ ip_profile_schema = {
 }
 
 ip_profile_update_schema = {
-    "title": "ip profile validation schame",
+    "title": "ip profile validation schema",
     "$schema": "http://json-schema.org/draft-04/schema#",
     "type": "object",
     "properties": {
@@ -173,14 +173,28 @@ ip_profile_update_schema = {
 }
 
 provider_network_schema = {
-    "title": "provider network validation schame",
+    "title": "provider network validation schema",
     "$schema": "http://json-schema.org/draft-04/schema#",
     "type": "object",
     "properties": {
         "physical-network": name_schema,
         "segmentation-id": name_schema,
+        "sdn-ports": {  # external ports to append to the SDN-assist network
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "switch_id": shortname_schema,
+                    "switch_port": shortname_schema,
+                    "mac_address": mac_schema,
+                    "vlan": vlan_schema,
+                },
+                "additionalProperties": True
+            }
+        },
+        "network-type": shortname_schema,
     },
-    "additionalProperties": False
+    "additionalProperties": True
 }
 
 ns_instantiate_internal_vld = {
