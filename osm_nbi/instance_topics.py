@@ -759,7 +759,7 @@ class NsLcmOpTopic(BaseTopic):
                                 vnfr_update[iface_text + ".{}".format(k)] = v
                                 vnfr_update_rollback[iface_text + ".{}".format(k)] = vdur_interface.get(v)
                         if pdu_interface.get("ip-address"):
-                            if vdur_interface.get("mgmt-interface"):
+                            if vdur_interface.get("mgmt-interface") or vdur_interface.get("mgmt-vnf"):
                                 vnfr_update_rollback[vdu_text + ".ip-address"] = vdur.get("ip-address")
                                 vnfr_update[vdu_text + ".ip-address"] = pdu_interface["ip-address"]
                             if vdur_interface.get("mgmt-vnf"):
