@@ -765,6 +765,7 @@ class NsLcmOpTopic(BaseTopic):
                             if vdur_interface.get("mgmt-vnf"):
                                 vnfr_update_rollback["ip-address"] = vnfr.get("ip-address")
                                 vnfr_update["ip-address"] = pdu_interface["ip-address"]
+                                vnfr_update[vdu_text + ".ip-address"] = pdu_interface["ip-address"]
                         if pdu_interface.get("vim-network-name") or pdu_interface.get("vim-network-id"):
                             ifaces_forcing_vim_network.append({
                                 "name": vdur_interface.get("vnf-vld-id") or vdur_interface.get("ns-vld-id"),
