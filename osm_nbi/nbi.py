@@ -266,7 +266,9 @@ valid_url_methods = {
                                   "ROLE_PERMISSION": "k8srepos:id:"
                                   }
                          },
-
+            "domains": {"METHODS": ("GET", ),
+                        "ROLE_PERMISSION": "domains:",
+                        },
         }
     },
     "pdu": {
@@ -657,6 +659,21 @@ class Server(object):
             }
             return self._format_out(problem_details, None)
 
+    def domain(self):
+        try:
+            domains = {
+                "user_domain_name": cherrypy.tree.apps['/osm'].config["authentication"].get("user_domain_name"),
+                "project_domain_name": cherrypy.tree.apps['/osm'].config["authentication"].get("project_domain_name")}
+            return self._format_out(domains)
+        except NbiException as e:
+            cherrypy.response.status = e.http_code.value
+            problem_details = {
+                "code": e.http_code.name,
+                "status": e.http_code.value,
+                "detail": str(e),
+            }
+            return self._format_out(problem_details, None)
+
     @staticmethod
     def _format_login(token_info):
         """
@@ -975,6 +992,8 @@ class Server(object):
             if main_topic == "admin" and topic == "tokens":
                 return self.token(method, _id, kwargs)
             token_info = self.authenticator.authorize(role_permission, query_string_operations, _id)
+            if main_topic == "admin" and topic == "domains":
+                return self.domain()
             engine_session = self._manage_admin_query(token_info, kwargs, method, _id)
             indata = self._format_in(kwargs)
             engine_topic = topic
