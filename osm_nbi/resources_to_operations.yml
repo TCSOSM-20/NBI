@@ -218,6 +218,32 @@ resources_to_operations:
   "PATCH /admin/v1/vim_accounts/<id>": "vim_accounts:id:patch"
 
 ################################################################################
+################################# K8s Clusters ##############################
+################################################################################
+
+  "GET /admin/v1/k8sclusters": "k8sclusters:get"
+
+  "POST /admin/v1/k8sclusters": "k8sclusters:post"
+
+  "GET /admin/v1/k8sclusters/<id>": "k8sclusters:id:get"
+
+  "DELETE /admin/v1/k8sclusters/<id>": "k8sclusters:id:delete"
+
+  "PATCH /admin/v1/k8sclusters/<id>": "k8sclusters:id:patch"
+
+################################################################################
+################################# K8s Repos ##############################
+################################################################################
+
+  "GET /admin/v1/k8srepos": "k8srepos:get"
+
+  "POST /admin/v1/k8srepos": "k8srepos:post"
+
+  "GET /admin/v1/k8srepos/<id>": "k8srepos:id:get"
+
+  "DELETE /admin/v1/k8srepos/<id>": "k8srepos:id:delete"
+
+################################################################################
 ################################# SDN Controllers ##############################
 ################################################################################
 
