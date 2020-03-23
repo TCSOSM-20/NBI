@@ -110,16 +110,16 @@ class Authconn:
     Each Auth backend connector plugin must be a subclass of
     Authconn class.
     """
-    def __init__(self, config, db):
+    def __init__(self, config, db, role_permissions):
         """
         Constructor of the Authconn class.
-
-        Note: each subclass
-
         :param config: configuration dictionary containing all the
         necessary configuration parameters.
+        :param db: internal database classs
+        :param role_permissions: read only role permission list
         """
         self.config = config
+        self.role_permissions = role_permissions
 
     def authenticate(self, credentials, token_info=None):
         """

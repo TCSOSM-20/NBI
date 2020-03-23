@@ -84,7 +84,7 @@ class Test_VnfdTopic(TestCase):
         self.db = Mock(dbbase.DbBase())
         self.fs = Mock(fsbase.FsBase())
         self.msg = Mock(msgbase.MsgBase())
-        self.auth = Mock(authconn.Authconn(None, None))
+        self.auth = Mock(authconn.Authconn(None, None, None))
         self.topic = VnfdTopic(self.db, self.fs, self.msg, self.auth)
 
     def test_new_vnfd(self):
@@ -512,7 +512,7 @@ class Test_NsdTopic(TestCase):
         self.db = Mock(dbbase.DbBase())
         self.fs = Mock(fsbase.FsBase())
         self.msg = Mock(msgbase.MsgBase())
-        self.auth = Mock(authconn.Authconn(None, None))
+        self.auth = Mock(authconn.Authconn(None, None, None))
         self.topic = NsdTopic(self.db, self.fs, self.msg, self.auth)
 
     def test_new_nsd(self):

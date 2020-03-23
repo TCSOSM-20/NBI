@@ -14,7 +14,7 @@
 # limitations under the License.
 
 import logging
-import yaml
+# import yaml
 from osm_common import dbmongo, dbmemory, fslocal, fsmongo, msglocal, msgkafka, version as common_version
 from osm_common.dbbase import DbException
 from osm_common.fsbase import FsException
@@ -31,7 +31,7 @@ from osm_nbi.descriptor_topics import VnfdTopic, NsdTopic, PduTopic, NstTopic, V
 from osm_nbi.instance_topics import NsrTopic, VnfrTopic, NsLcmOpTopic, NsiTopic, NsiLcmOpTopic
 from osm_nbi.pmjobs_topics import PmJobsTopic
 from base64 import b64encode
-from os import urandom, path
+from os import urandom   # , path
 from threading import Lock
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
@@ -75,7 +75,7 @@ class Engine(object):
         self.msg = None
         self.authconn = None
         self.config = None
-        self.operations = None
+        # self.operations = None
         self.logger = logging.getLogger("nbi.engine")
         self.map_topic = {}
         self.write_lock = None
@@ -127,43 +127,42 @@ class Engine(object):
                         config["message"]["driver"]))
             if not self.authconn:
                 if config["authentication"]["backend"] == "keystone":
-                    self.authconn = AuthconnKeystone(config["authentication"], self.db)
+                    self.authconn = AuthconnKeystone(config["authentication"], self.db,
+                                                     self.authenticator.role_permissions)
                 else:
-                    self.authconn = AuthconnInternal(config["authentication"], self.db)
-            if not self.operations:
-                if "resources_to_operations" in config["rbac"]:
-                    resources_to_operations_file = config["rbac"]["resources_to_operations"]
-                else:
-                    possible_paths = (
-                        __file__[:__file__.rfind("engine.py")] + "resources_to_operations.yml",
-                        "./resources_to_operations.yml"
-                    )
-                    for config_file in possible_paths:
-                        if path.isfile(config_file):
-                            resources_to_operations_file = config_file
-                            break
-                    if not resources_to_operations_file:                   
-                        raise EngineException("Invalid permission configuration: resources_to_operations file missing")
-
-                with open(resources_to_operations_file, 'r') as f:
-                    resources_to_operations = yaml.load(f, Loader=yaml.Loader)
-
-                self.operations = []
-
-                for _, value in resources_to_operations["resources_to_operations"].items():
-                    if value not in self.operations:
-                        self.operations += [value]
+                    self.authconn = AuthconnInternal(config["authentication"], self.db,
+                                                     self.authenticator.role_permissions)
+            # if not self.operations:
+            #     if "resources_to_operations" in config["rbac"]:
+            #         resources_to_operations_file = config["rbac"]["resources_to_operations"]
+            #     else:
+            #         possible_paths = (
+            #             __file__[:__file__.rfind("engine.py")] + "resources_to_operations.yml",
+            #             "./resources_to_operations.yml"
+            #         )
+            #         for config_file in possible_paths:
+            #             if path.isfile(config_file):
+            #                 resources_to_operations_file = config_file
+            #                 break
+            #         if not resources_to_operations_file:
+            #             raise EngineException("Invalid permission configuration:"
+            #                 "resources_to_operations file missing")
+            #
+            #     with open(resources_to_operations_file, 'r') as f:
+            #         resources_to_operations = yaml.load(f, Loader=yaml.Loader)
+            #
+            #     self.operations = []
+            #
+            #     for _, value in resources_to_operations["resources_to_operations"].items():
+            #         if value not in self.operations:
+            #             self.operations += [value]
 
             self.write_lock = Lock()
             # create one class per topic
             for topic, topic_class in self.map_from_topic_to_class.items():
                 # if self.auth and topic_class in (UserTopicAuth, ProjectTopicAuth):
                 #     self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.auth)
-                if self.authconn and topic_class == RoleTopicAuth:
-                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.authconn,
-                                                        self.operations)
-                else:
-                    self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.authconn)
+                self.map_topic[topic] = topic_class(self.db, self.fs, self.msg, self.authconn)
             
             self.map_topic["pm_jobs"] = PmJobsTopic(self.db, config["prometheus"].get("host"),
                                                     config["prometheus"].get("port"))

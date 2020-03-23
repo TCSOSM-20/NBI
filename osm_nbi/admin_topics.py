@@ -1027,10 +1027,10 @@ class RoleTopicAuth(BaseTopic):
     schema_edit = roles_edit_schema
     multiproject = False
 
-    def __init__(self, db, fs, msg, auth, ops):
+    def __init__(self, db, fs, msg, auth):
         BaseTopic.__init__(self, db, fs, msg, auth)
         # self.auth = auth
-        self.operations = ops
+        self.operations = auth.role_permissions
         # self.topic = "roles_operations" if isinstance(auth, AuthconnKeystone) else "roles"
 
     @staticmethod

@@ -46,8 +46,8 @@ class AuthconnInternal(Authconn):
     token_time_window = 2   # seconds
     token_delay = 1   # seconds to wait upon second request within time window
 
-    def __init__(self, config, db):
-        Authconn.__init__(self, config, db)
+    def __init__(self, config, db, role_permissions):
+        Authconn.__init__(self, config, db, role_permissions)
         self.logger = logging.getLogger("nbi.authenticator.internal")
 
         self.db = db

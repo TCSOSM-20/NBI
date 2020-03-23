@@ -114,9 +114,9 @@ class Authenticator:
                                         .format(config["message"]["driver"]))
             if not self.backend:
                 if config["authentication"]["backend"] == "keystone":
-                    self.backend = AuthconnKeystone(self.config["authentication"], self.db)
+                    self.backend = AuthconnKeystone(self.config["authentication"], self.db, self.role_permissions)
                 elif config["authentication"]["backend"] == "internal":
-                    self.backend = AuthconnInternal(self.config["authentication"], self.db)
+                    self.backend = AuthconnInternal(self.config["authentication"], self.db, self.role_permissions)
                     self._internal_tokens_prune()
                 else:
                     raise AuthException("Unknown authentication backend: {}"
