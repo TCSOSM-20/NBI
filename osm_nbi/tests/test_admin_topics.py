@@ -592,6 +592,7 @@ class Test_CommonVimWimSdn(TestCase):
         self.auth = Mock(authconn.Authconn(None, None, None))
         self.topic = CommonVimWimSdn(self.db, self.fs, self.msg, self.auth)
         # Use WIM schemas for testing because they are the simplest
+        self.topic._send_msg = Mock()
         self.topic.topic = "wims"
         self.topic.schema_new = validation.wim_account_new_schema
         self.topic.schema_edit = validation.wim_account_edit_schema
@@ -727,10 +728,12 @@ class Test_CommonVimWimSdn(TestCase):
             self.assertEqual(self.db.get_one.call_args[0][1]["_id"], cid, "Wrong CIM identifier")
             self.assertEqual(self.db.set_one.call_args[0][0], self.topic.topic, "Wrong topic")
             self.assertEqual(self.db.set_one.call_args[0][1]["_id"], cid, "Wrong CIM identifier")
-            self.assertEqual(self.db.set_one.call_args[1]["update_dict"]["_admin.projects_read"], [ro_pid, rw_pid],
+            self.assertEqual(self.db.set_one.call_args[1]["update_dict"], None,
                              "Wrong read-only projects update")
-            self.assertEqual(self.db.set_one.call_args[1]["update_dict"]["_admin.projects_write"], [rw_pid],
+            self.assertEqual(self.db.set_one.call_args[1]["pull"], {"_admin.projects_read." + test_pid: None,
+                                                                    "_admin.projects_write." + test_pid: None},
                              "Wrong read/write projects update")
+            self.topic._send_msg.assert_not_called()
         with self.subTest(i=2):
             now = time()
             cvws["_admin"] = {"projects_read": [test_pid], "projects_write": [test_pid], "operations": []}
@@ -741,10 +744,8 @@ class Test_CommonVimWimSdn(TestCase):
             self.assertEqual(self.db.get_one.call_args[0][1]["_id"], cid, "Wrong CIM identifier")
             self.assertEqual(self.db.set_one.call_args[0][0], self.topic.topic, "Wrong topic")
             self.assertEqual(self.db.set_one.call_args[0][1]["_id"], cid, "Wrong user identifier")
-            update_dict = self.db.set_one.call_args[1]["update_dict"]
-            self.assertEqual(update_dict["_admin.projects_read"], [], "Wrong read-only projects update")
-            self.assertEqual(update_dict["_admin.projects_write"], [], "Wrong read/write projects update")
-            self.assertEqual(update_dict["_admin.to_delete"], True, "Wrong deletion mark")
+            self.assertEqual(self.db.set_one.call_args[1]["update_dict"], {"_admin.to_delete": True},
+                             "Wrong _admin.to_delete update")
             operation = self.db.set_one.call_args[1]["push"]["_admin.operations"]
             self.assertEqual(operation["lcmOperationType"], "delete", "Wrong operation type")
             self.assertEqual(operation["operationState"], "PROCESSING", "Wrong operation state")
@@ -752,16 +753,23 @@ class Test_CommonVimWimSdn(TestCase):
             self.assertIsNone(operation["operationParams"], "Wrong operation parameters")
             self.assertGreater(operation["startTime"], now, "Wrong operation start time")
             self.assertGreater(operation["statusEnteredTime"], now, "Wrong operation status enter time")
+            self.topic._send_msg.assert_called_once_with("delete", {"_id": cid, "op_id": cid + ":0"}, not_send_msg=None)
         with self.subTest(i=3):
             cvws["_admin"] = {"projects_read": [], "projects_write": [], "operations": []}
             self.db.get_one.return_value = cvws
+            self.topic._send_msg.reset_mock()
+            self.db.get_one.reset_mock()
+            self.db.del_one.reset_mock()
             self.fake_session["force"] = True   # to force deletion
+            self.fake_session["admin"] = True   # to force deletion
+            self.fake_session["project_id"] = []   # to force deletion
             oid = self.topic.delete(self.fake_session, cid)
             self.assertIsNone(oid, "Wrong operation identifier")
             self.assertEqual(self.db.get_one.call_args[0][0], self.topic.topic, "Wrong topic")
             self.assertEqual(self.db.get_one.call_args[0][1]["_id"], cid, "Wrong CIM identifier")
             self.assertEqual(self.db.del_one.call_args[0][0], self.topic.topic, "Wrong topic")
             self.assertEqual(self.db.del_one.call_args[0][1]["_id"], cid, "Wrong CIM identifier")
+            self.topic._send_msg.assert_called_once_with("deleted", {"_id": cid, "op_id": None}, not_send_msg=None)
 
 
 if __name__ == '__main__':

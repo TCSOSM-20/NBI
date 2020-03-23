@@ -33,13 +33,12 @@ from osm_common.dbbase import DbException
 import yaml
 
 
-test_pid = str(uuid4())
 test_name = "test-user"
-fake_session = {"username": test_name, "project_id": (test_pid,), "method": None,
-                "admin": True, "force": False, "public": False, "allow_show_user_project_role": True}
-
 db_vnfd_content = yaml.load(db_vnfds_text, Loader=yaml.Loader)[0]
 db_nsd_content = yaml.load(db_nsds_text, Loader=yaml.Loader)[0]
+test_pid = db_vnfd_content["_admin"]["projects_read"][0]
+fake_session = {"username": test_name, "project_id": (test_pid,), "method": None,
+                "admin": True, "force": False, "public": False, "allow_show_user_project_role": True}
 
 
 def norm(str):
@@ -443,6 +442,7 @@ class Test_VnfdTopic(TestCase):
     def test_delete_vnfd(self):
         did = db_vnfd_content["_id"]
         self.db.get_one.return_value = db_vnfd_content
+        p_id = db_vnfd_content["_admin"]["projects_read"][0]
         with self.subTest(i=1, t='Normal Deletion'):
             self.db.get_list.return_value = []
             self.db.del_one.return_value = {"deleted": 1}
@@ -454,7 +454,7 @@ class Test_VnfdTopic(TestCase):
             self.assertEqual(msg_args[2], {"_id": did}, "Wrong message content")
             self.assertEqual(db_args[0], self.topic.topic, "Wrong DB topic")
             self.assertEqual(db_args[1]["_id"], did, "Wrong DB ID")
-            self.assertEqual(db_args[1]["_admin.projects_read"], [[], ['ANY']], "Wrong DB filter")
+            self.assertEqual(db_args[1]["_admin.projects_write.cont"], [p_id, 'ANY'], "Wrong DB filter")
             db_g1_args = self.db.get_one.call_args[0]
             self.assertEqual(db_g1_args[0], self.topic.topic, "Wrong DB topic")
             self.assertEqual(db_g1_args[1]["_id"], did, "Wrong DB VNFD ID")
@@ -464,13 +464,8 @@ class Test_VnfdTopic(TestCase):
             self.assertEqual(db_gl_calls[1][0][0], "nsds", "Wrong DB topic")
             self.assertEqual(db_gl_calls[1][0][1]["constituent-vnfd.ANYINDEX.vnfd-id-ref"], db_vnfd_content["id"],
                              "Wrong DB NSD constituent-vnfd id-ref")
-            db_s1_args = self.db.set_one.call_args
-            self.assertEqual(db_s1_args[0][0], self.topic.topic, "Wrong DB topic")
-            self.assertEqual(db_s1_args[0][1]["_id"], did, "Wrong DB ID")
-            self.assertIn(test_pid, db_s1_args[0][1]["_admin.projects_write.cont"], "Wrong DB filter")
-            self.assertIsNone(db_s1_args[1]["update_dict"], "Wrong DB update dictionary")
-            self.assertEqual(db_s1_args[1]["pull"]["_admin.projects_read"]["$in"], fake_session["project_id"],
-                             "Wrong DB pull dictionary")
+
+            self.db.set_one.assert_not_called()
             fs_del_calls = self.fs.file_delete.call_args_list
             self.assertEqual(fs_del_calls[0][0][0], did, "Wrong FS file id")
             self.assertEqual(fs_del_calls[1][0][0], did+'_', "Wrong FS folder id")
@@ -495,6 +490,28 @@ class Test_VnfdTopic(TestCase):
                 self.topic.delete(fake_session, did)
             self.assertEqual(e.exception.http_code, HTTPStatus.NOT_FOUND, "Wrong HTTP status code")
             self.assertIn(norm(excp_msg), norm(str(e.exception)), "Wrong exception text")
+        with self.subTest(i=5, t='No delete because referenced by other project'):
+            db_vnfd_content["_admin"]["projects_read"].append("other_project")
+            self.db.get_one = Mock(return_value=db_vnfd_content)
+            self.db.get_list = Mock(return_value=[])
+            self.msg.write.reset_mock()
+            self.db.del_one.reset_mock()
+            self.fs.file_delete.reset_mock()
+
+            self.topic.delete(fake_session, did)
+            self.db.del_one.assert_not_called()
+            self.msg.write.assert_not_called()
+            db_g1_args = self.db.get_one.call_args[0]
+            self.assertEqual(db_g1_args[0], self.topic.topic, "Wrong DB topic")
+            self.assertEqual(db_g1_args[1]["_id"], did, "Wrong DB VNFD ID")
+            db_s1_args = self.db.set_one.call_args
+            self.assertEqual(db_s1_args[0][0], self.topic.topic, "Wrong DB topic")
+            self.assertEqual(db_s1_args[0][1]["_id"], did, "Wrong DB ID")
+            self.assertIn(p_id, db_s1_args[0][1]["_admin.projects_write.cont"], "Wrong DB filter")
+            self.assertIsNone(db_s1_args[1]["update_dict"], "Wrong DB update dictionary")
+            self.assertIn("_admin.projects_read." + p_id, db_s1_args[1]["pull"], "Wrong DB pull dictionary")
+            self.assertIn("_admin.projects_write." + p_id, db_s1_args[1]["pull"], "Wrong DB pull dictionary")
+            self.fs.file_delete.assert_not_called()
         return
 
 
@@ -756,6 +773,7 @@ class Test_NsdTopic(TestCase):
     def test_delete_nsd(self):
         did = db_nsd_content["_id"]
         self.db.get_one.return_value = db_nsd_content
+        p_id = db_nsd_content["_admin"]["projects_read"][0]
         with self.subTest(i=1, t='Normal Deletion'):
             self.db.get_list.return_value = []
             self.db.del_one.return_value = {"deleted": 1}
@@ -767,7 +785,7 @@ class Test_NsdTopic(TestCase):
             self.assertEqual(msg_args[2], {"_id": did}, "Wrong message content")
             self.assertEqual(db_args[0], self.topic.topic, "Wrong DB topic")
             self.assertEqual(db_args[1]["_id"], did, "Wrong DB ID")
-            self.assertEqual(db_args[1]["_admin.projects_read"], [[], ['ANY']], "Wrong DB filter")
+            self.assertEqual(db_args[1]["_admin.projects_write.cont"], [p_id, 'ANY'], "Wrong DB filter")
             db_g1_args = self.db.get_one.call_args[0]
             self.assertEqual(db_g1_args[0], self.topic.topic, "Wrong DB topic")
             self.assertEqual(db_g1_args[1]["_id"], did, "Wrong DB NSD ID")
@@ -777,17 +795,10 @@ class Test_NsdTopic(TestCase):
             self.assertEqual(db_gl_calls[1][0][0], "nsts", "Wrong DB topic")
             self.assertEqual(db_gl_calls[1][0][1]["netslice-subnet.ANYINDEX.nsd-ref"], db_nsd_content["id"],
                              "Wrong DB NSD netslice-subnet nsd-ref")
-            db_s1_args = self.db.set_one.call_args
-            self.assertEqual(db_s1_args[0][0], self.topic.topic, "Wrong DB topic")
-            self.assertEqual(db_s1_args[0][1]["_id"], did, "Wrong DB ID")
-            self.assertIn(test_pid, db_s1_args[0][1]["_admin.projects_write.cont"], "Wrong DB filter")
-            self.assertIsNone(db_s1_args[1]["update_dict"], "Wrong DB update dictionary")
-            self.assertEqual(db_s1_args[1]["pull"]["_admin.projects_read"]["$in"], fake_session["project_id"],
-                             "Wrong DB pull dictionary")
+            self.db.set_one.assert_not_called()
             fs_del_calls = self.fs.file_delete.call_args_list
             self.assertEqual(fs_del_calls[0][0][0], did, "Wrong FS file id")
             self.assertEqual(fs_del_calls[1][0][0], did+'_', "Wrong FS folder id")
-        return   # TO REMOVE
         with self.subTest(i=2, t='Conflict on Delete - NSD in use by nsr'):
             self.db.get_list.return_value = [{"_id": str(uuid4()), "name": "fake-nsr"}]
             with self.assertRaises(EngineException, msg="Accepted NSD in use by NSR") as e:
@@ -809,6 +820,28 @@ class Test_NsdTopic(TestCase):
                 self.topic.delete(fake_session, did)
             self.assertEqual(e.exception.http_code, HTTPStatus.NOT_FOUND, "Wrong HTTP status code")
             self.assertIn(norm(excp_msg), norm(str(e.exception)), "Wrong exception text")
+        with self.subTest(i=5, t='No delete because referenced by other project'):
+            db_nsd_content["_admin"]["projects_read"].append("other_project")
+            self.db.get_one = Mock(return_value=db_nsd_content)
+            self.db.get_list = Mock(return_value=[])
+            self.msg.write.reset_mock()
+            self.db.del_one.reset_mock()
+            self.fs.file_delete.reset_mock()
+
+            self.topic.delete(fake_session, did)
+            self.db.del_one.assert_not_called()
+            self.msg.write.assert_not_called()
+            db_g1_args = self.db.get_one.call_args[0]
+            self.assertEqual(db_g1_args[0], self.topic.topic, "Wrong DB topic")
+            self.assertEqual(db_g1_args[1]["_id"], did, "Wrong DB VNFD ID")
+            db_s1_args = self.db.set_one.call_args
+            self.assertEqual(db_s1_args[0][0], self.topic.topic, "Wrong DB topic")
+            self.assertEqual(db_s1_args[0][1]["_id"], did, "Wrong DB ID")
+            self.assertIn(p_id, db_s1_args[0][1]["_admin.projects_write.cont"], "Wrong DB filter")
+            self.assertIsNone(db_s1_args[1]["update_dict"], "Wrong DB update dictionary")
+            self.assertIn("_admin.projects_read." + p_id, db_s1_args[1]["pull"], "Wrong DB pull dictionary")
+            self.assertIn("_admin.projects_write." + p_id, db_s1_args[1]["pull"], "Wrong DB pull dictionary")
+            self.fs.file_delete.assert_not_called()
         return
 
 

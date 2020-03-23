@@ -320,26 +320,25 @@ class CommonVimWimSdn(BaseTopic):
         if dry_run:
             return None
 
-        # remove reference from project_read. If not last delete
-        if session["project_id"]:
-            for project_id in session["project_id"]:
-                if project_id in db_content["_admin"]["projects_read"]:
-                    db_content["_admin"]["projects_read"].remove(project_id)
-                if project_id in db_content["_admin"]["projects_write"]:
-                    db_content["_admin"]["projects_write"].remove(project_id)
-        else:
-            db_content["_admin"]["projects_read"].clear()
-            db_content["_admin"]["projects_write"].clear()
+        # remove reference from project_read if there are more projects referencing it. If it last one,
+        # do not remove reference, but order via kafka to delete it
+        if session["project_id"] and session["project_id"]:
+            other_projects_referencing = next((p for p in db_content["_admin"]["projects_read"]
+                                               if p not in session["project_id"]), None)
 
-        update_dict = {"_admin.projects_read": db_content["_admin"]["projects_read"],
-                       "_admin.projects_write": db_content["_admin"]["projects_write"]
-                       }
-
-        # check if there are projects referencing it (apart from ANY that means public)....
-        if db_content["_admin"]["projects_read"] and (len(db_content["_admin"]["projects_read"]) > 1 or
-                                                      db_content["_admin"]["projects_read"][0] != "ANY"):
-            self.db.set_one(self.topic, filter_q, update_dict=update_dict)  # remove references but not delete
-            return None
+            # check if there are projects referencing it (apart from ANY, that means, public)....
+            if other_projects_referencing:
+                # remove references but not delete
+                update_dict_pull = {"_admin.projects_read.{}".format(p): None for p in session["project_id"]}
+                update_dict_pull.update({"_admin.projects_write.{}".format(p): None for p in session["project_id"]})
+                self.db.set_one(self.topic, filter_q, update_dict=None, pull=update_dict_pull)
+                return None
+            else:
+                can_write = next((p for p in db_content["_admin"]["projects_write"] if p == "ANY" or
+                                  p in session["project_id"]), None)
+                if not can_write:
+                    raise EngineException("You have not write permission to delete it",
+                                          http_code=HTTPStatus.UNAUTHORIZED)
 
         # It must be deleted
         if session["force"]:
@@ -347,7 +346,7 @@ class CommonVimWimSdn(BaseTopic):
             op_id = None
             self._send_msg("deleted", {"_id": _id, "op_id": op_id}, not_send_msg=not_send_msg)
         else:
-            update_dict["_admin.to_delete"] = True
+            update_dict = {"_admin.to_delete": True}
             self.db.set_one(self.topic, {"_id": _id},
                             update_dict=update_dict,
                             push={"_admin.operations": self._create_operation("delete")}

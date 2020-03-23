@@ -152,7 +152,7 @@ class BaseTopic:
     def _get_project_filter(session):
         """
         Generates a filter dictionary for querying database, so that only allowed items for this project can be
-        addressed. Only propietary or public can be used. Allowed projects are at _admin.project_read/write. If it is
+        addressed. Only proprietary or public can be used. Allowed projects are at _admin.project_read/write. If it is
         not present or contains ANY mean public.
         :param session: contains:
             project_id: project list this session has rights to access. Can be empty, one or several
@@ -468,30 +468,39 @@ class BaseTopic:
         """
 
         # To allow addressing projects and users by name AS WELL AS by _id
-        filter_q = {BaseTopic.id_field(self.topic, _id): _id}
+        if not self.multiproject:
+            filter_q = {}
+        else:
+            filter_q = self._get_project_filter(session)
+        filter_q[self.id_field(self.topic, _id)] = _id
         item_content = self.db.get_one(self.topic, filter_q)
 
-        # TODO add admin to filter, validate rights
-        # data = self.get_item(topic, _id)
         self.check_conflict_on_del(session, _id, item_content)
         if dry_run:
             return None
         
-        if self.multiproject:
-            filter_q.update(self._get_project_filter(session))
         if self.multiproject and session["project_id"]:
-            # remove reference from project_read. If not last delete
-            # if this topic is not part of session["project_id"] no midification at database is done and an exception
-            # is raised
-            self.db.set_one(self.topic, filter_q, update_dict=None,
-                            pull={"_admin.projects_read": {"$in": session["project_id"]}})
-            # try to delete if there is not any more reference from projects. Ignore if it is not deleted
-            filter_q = {'_id': _id, '_admin.projects_read': [[], ["ANY"]]}
-            v = self.db.del_one(self.topic, filter_q, fail_on_empty=False)
-            if not v or not v["deleted"]:
+            # remove reference from project_read if there are more projects referencing it. If it last one,
+            # do not remove reference, but delete
+            other_projects_referencing = next((p for p in item_content["_admin"]["projects_read"]
+                                               if p not in session["project_id"]), None)
+
+            # check if there are projects referencing it (apart from ANY, that means, public)....
+            if other_projects_referencing:
+                # remove references but not delete
+                update_dict_pull = {"_admin.projects_read.{}".format(p): None for p in session["project_id"]}
+                update_dict_pull.update({"_admin.projects_write.{}".format(p): None for p in session["project_id"]})
+                self.db.set_one(self.topic, filter_q, update_dict=None, pull=update_dict_pull)
                 return None
-        else:
-            self.db.del_one(self.topic, filter_q)
+            else:
+                can_write = next((p for p in item_content["_admin"]["projects_write"] if p == "ANY" or
+                                  p in session["project_id"]), None)
+                if not can_write:
+                    raise EngineException("You have not write permission to delete it",
+                                          http_code=HTTPStatus.UNAUTHORIZED)
+
+        # delete
+        self.db.del_one(self.topic, filter_q)
         self.delete_extra(session, _id, item_content, not_send_msg=not_send_msg)
         self._send_msg("deleted", {"_id": _id}, not_send_msg=not_send_msg)
         return None
