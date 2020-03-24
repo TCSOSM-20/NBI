@@ -350,6 +350,20 @@ ns_instantiate = {
     "additionalProperties": False
 }
 
+ns_terminate = {
+    "title": "ns terminate input schema",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": {
+        "lcmOperationType": string_schema,
+        "nsInstanceId": id_schema,
+        "autoremove": bool_schema,
+        "timeout_ns_terminate": integer1_schema,
+        "skip_terminate_primitives": bool_schema,
+    },
+    "additionalProperties": False
+}
+
 ns_action = {   # TODO for the moment it is only contemplated the vnfd primitive execution
     "title": "ns action input schema",
     "$schema": "http://json-schema.org/draft-04/schema#",

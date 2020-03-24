@@ -19,6 +19,7 @@ from http import HTTPStatus
 from time import time
 from osm_common.dbbase import deep_update_rfc7396
 from osm_nbi.validation import validate_input, ValidationError, is_valid_uuid
+from yaml import safe_load, YAMLError
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
@@ -301,11 +302,12 @@ class BaseTopic:
         pass
 
     @staticmethod
-    def _update_input_with_kwargs(desc, kwargs):
+    def _update_input_with_kwargs(desc, kwargs, yaml_format=False):
         """
         Update descriptor with the kwargs. It contains dot separated keys
         :param desc: dictionary to be updated
         :param kwargs: plain dictionary to be used for updating.
+        :param yaml_format: get kwargs values as yaml format.
         :return: None, 'desc' is modified. It raises EngineException.
         """
         if not kwargs:
@@ -325,7 +327,7 @@ class BaseTopic:
                     else:
                         raise EngineException(
                             "Invalid query string '{}'. Descriptor is not a list nor dict at '{}'".format(k, kitem))
-                update_content[kitem_old] = v
+                update_content[kitem_old] = v if not yaml_format else safe_load(v)
         except KeyError:
             raise EngineException(
                 "Invalid query string '{}'. Descriptor does not contain '{}'".format(k, kitem_old))
@@ -335,6 +337,8 @@ class BaseTopic:
         except IndexError:
             raise EngineException(
                 "Invalid query string '{}'. Index '{}' out of  range".format(k, kitem_old))
+        except YAMLError:
+            raise EngineException("Invalid query string '{}' yaml format".format(k))
 
     def show(self, session, _id):
         """

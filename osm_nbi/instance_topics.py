@@ -18,7 +18,8 @@ from uuid import uuid4
 from http import HTTPStatus
 from time import time
 from copy import copy, deepcopy
-from osm_nbi.validation import validate_input, ValidationError, ns_instantiate, ns_action, ns_scale, nsi_instantiate
+from osm_nbi.validation import validate_input, ValidationError, ns_instantiate, ns_terminate, ns_action, ns_scale,\
+    nsi_instantiate
 from osm_nbi.base_topic import BaseTopic, EngineException, get_iterable, deep_get
 # from descriptor_topics import DescriptorTopic
 from yaml import safe_dump
@@ -485,7 +486,7 @@ class NsLcmOpTopic(BaseTopic):
         "instantiate": ns_instantiate,
         "action": ns_action,
         "scale": ns_scale,
-        "terminate": None,
+        "terminate": ns_terminate,
     }
 
     def __init__(self, db, fs, msg, auth):
@@ -984,7 +985,7 @@ class NsLcmOpTopic(BaseTopic):
 
         try:
             # Override descriptor with query string kwargs
-            self._update_input_with_kwargs(indata, kwargs)
+            self._update_input_with_kwargs(indata, kwargs, yaml_format=True)
             operation = indata["lcmOperationType"]
             nsInstanceId = indata["nsInstanceId"]
 

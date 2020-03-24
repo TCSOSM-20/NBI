@@ -1103,7 +1103,7 @@ class Server(object):
                             "nsInstanceId": _id,
                             "autoremove": True
                         }
-                        opp_id, _ = self.engine.new_item(rollback, engine_session, "nslcmops", nslcmop_desc, None)
+                        opp_id, _ = self.engine.new_item(rollback, engine_session, "nslcmops", nslcmop_desc, kwargs)
                         if opp_id:
                             delete_in_process = True
                             outdata = {"_id": opp_id}
