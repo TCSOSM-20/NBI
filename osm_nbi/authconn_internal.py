@@ -28,12 +28,13 @@ __author__ = "Pedro de la Cruz Ramos <pdelacruzramos@altran.com>, " \
              "Alfonso Tierno <alfonso.tiernosepulveda@telefoncia.com"
 __date__ = "$06-jun-2019 11:16:08$"
 
+import logging
+import re
+
 from osm_nbi.authconn import Authconn, AuthException   # , AuthconnOperationException
 from osm_common.dbbase import DbException
 from osm_nbi.base_topic import BaseTopic
-
-import logging
-import re
+from osm_nbi.validation import is_valid_uuid
 from time import time, sleep
 from http import HTTPStatus
 from uuid import uuid4
@@ -346,13 +347,17 @@ class AuthconnInternal(Authconn):
         """
         Get user list.
 
-        :param filter_q: dictionary to filter user list by name (username is also admited) and/or _id
+        :param filter_q: dictionary to filter user list by:
+            name (username is also admitted).  If a user id is equal to the filter name, it is also provided
+            other
         :return: returns a list of users.
         """
         filt = filter_q or {}
-        if "name" in filt:
-            filt["username"] = filt["name"]
-            del filt["name"]
+        if "name" in filt:  # backward compatibility
+            filt["username"] = filt.pop("name")
+        if filt.get("username") and is_valid_uuid(filt["username"]):
+            # username cannot be a uuid. If this is the case, change from username to _id
+            filt["_id"] = filt.pop("username")
         users = self.db.get_list("users", filt)
         project_id_name = {}
         role_id_name = {}

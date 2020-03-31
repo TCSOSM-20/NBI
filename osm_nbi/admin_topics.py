@@ -655,7 +655,7 @@ class UserTopicAuth(UserTopic):
         Get complete information on an topic
 
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
-        :param _id: server internal id
+        :param _id: server internal id or username
         :return: dictionary, raise exception if not found.
         """
         # Allow _id to be a name or uuid
@@ -665,9 +665,9 @@ class UserTopicAuth(UserTopic):
         if len(users) == 1:
             return users[0]
         elif len(users) > 1:
-            raise EngineException("Too many users found", HTTPStatus.CONFLICT)
+            raise EngineException("Too many users found for '{}'".format(_id), HTTPStatus.CONFLICT)
         else:
-            raise EngineException("User not found", HTTPStatus.NOT_FOUND)
+            raise EngineException("User '{}' not found".format(_id), HTTPStatus.NOT_FOUND)
 
     def edit(self, session, _id, indata=None, kwargs=None, content=None):
         """
