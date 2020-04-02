@@ -377,6 +377,7 @@ ns_action = {   # TODO for the moment it is only contemplated the vnfd primitive
         "vdu_count_index": integer0_schema,
         "kdu_name": name_schema,
         "primitive": name_schema,
+        "timeout_ns_action": integer1_schema,
         "primitive_params": {"type": "object"},
     },
     "required": ["primitive", "primitive_params"],   # TODO add member_vnf_index
@@ -390,6 +391,7 @@ ns_scale = {   # TODO for the moment it is only VDU-scaling
         "lcmOperationType": string_schema,
         "nsInstanceId": id_schema,
         "scaleType": {"enum": ["SCALE_VNF"]},
+        "timeout_ns_scale": integer1_schema,
         "scaleVnfData": {
             "type": "object",
             "properties": {
