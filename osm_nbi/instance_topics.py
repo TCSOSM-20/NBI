@@ -241,7 +241,7 @@ class NsrTopic(BaseTopic):
                 "deploymentStatus": None,
                 "configurationStatus": None,
                 "vcaStatus": None,
-                "nsd": nsd,
+                "nsd": {k: v for k, v in nsd.items() if k in ("vld", "_id", "id", "constituent-vnfd", "name")},
                 "datacenter": ns_request["vimAccountId"],
                 "resource-orchestrator": "osmopenmano",
                 "description": ns_request.get("nsDescription", ""),
@@ -271,10 +271,7 @@ class NsrTopic(BaseTopic):
             ns_request["nsr_id"] = nsr_id
             # Create vld
             if nsd.get("vld"):
-                nsr_descriptor["vld"] = []
-                for nsd_vld in nsd.get("vld"):
-                    nsr_descriptor["vld"].append(
-                        {key: nsd_vld[key] for key in ("id", "vim-network-name", "vim-network-id") if key in nsd_vld})
+                nsr_descriptor["vld"] = nsd["vld"]
 
             # Create VNFR
             needed_vnfds = {}
