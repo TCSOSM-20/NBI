@@ -127,9 +127,10 @@ class NsrTopic(BaseTopic):
         :param ns_request: User instantiation additional parameters
         :param member_vnf_index: None for extract NS params, or member_vnf_index to extract VNF params
         :param descriptor: If not None it check that needed parameters of descriptor are supplied
-        :return: a formatted copy of additional params or None if not supplied
+        :return: tuple with a formatted copy of additional params or None if not supplied, plus other parameters
         """
         additional_params = None
+        other_params = None
         if not member_vnf_index:
             additional_params = copy(ns_request.get("additionalParamsForNs"))
             where_ = "additionalParamsForNs"
@@ -138,12 +139,15 @@ class NsrTopic(BaseTopic):
             item = next((x for x in ns_request["additionalParamsForVnf"] if x["member-vnf-index"] == member_vnf_index),
                         None)
             if item:
+                if not vdu_id and not kdu_name:
+                    other_params = item
                 additional_params = copy(item.get("additionalParams")) or {}
                 if vdu_id and item.get("additionalParamsForVdu"):
                     item_vdu = next((x for x in item["additionalParamsForVdu"] if x["vdu_id"] == vdu_id), None)
                     if item_vdu and item_vdu.get("additionalParams"):
                         where_ += ".additionalParamsForVdu[vdu_id={}]".format(vdu_id)
                         additional_params = item_vdu["additionalParams"]
+                        other_params = item_vdu
                 if kdu_name:
                     additional_params = {}
                     if item.get("additionalParamsForKdu"):
@@ -151,6 +155,7 @@ class NsrTopic(BaseTopic):
                         if item_kdu and item_kdu.get("additionalParams"):
                             where_ += ".additionalParamsForKdu[kdu_name={}]".format(kdu_name)
                             additional_params = item_kdu["additionalParams"]
+                            other_params = item_kdu
 
         if additional_params:
             for k, v in additional_params.items():
@@ -192,7 +197,7 @@ class NsrTopic(BaseTopic):
                                                   format(param["value"], descriptor["id"],
                                                          initial_primitive["name"]))
 
-        return additional_params or None
+        return additional_params or None, other_params or None
 
     def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
@@ -217,7 +222,7 @@ class NsrTopic(BaseTopic):
             self._update_input_with_kwargs(ns_request, kwargs)
             self._validate_input_new(ns_request, session["force"])
 
-            # look for nsr
+            # look for nsd
             step = "getting nsd id='{}' from database".format(ns_request.get("nsdId"))
             _filter = self._get_project_filter(session)
             _filter["_id"] = ns_request["nsdId"]
@@ -228,6 +233,15 @@ class NsrTopic(BaseTopic):
 
             now = time()
             step = "filling nsr from input data"
+            additional_params, _ = self._format_addional_params(ns_request, descriptor=nsd)
+
+            # use for k8s-namespace from ns_request or additionalParamsForNs. By default, the project_id
+            ns_k8s_namespace = session["project_id"][0] if session["project_id"] else None
+            if ns_request and ns_request.get("k8s-namespace"):
+                ns_k8s_namespace = ns_request["k8s-namespace"]
+            if additional_params and additional_params.get("k8s-namespace"):
+                ns_k8s_namespace = additional_params["k8s-namespace"]
+
             nsr_descriptor = {
                 "name": ns_request["nsName"],
                 "name-ref": ns_request["nsName"],
@@ -261,7 +275,7 @@ class NsrTopic(BaseTopic):
                 "nsd-id": nsd["_id"],
                 "vnfd-id": [],
                 "instantiate_params": self._format_ns_request(ns_request),
-                "additionalParamsForNs": self._format_addional_params(ns_request, descriptor=nsd),
+                "additionalParamsForNs": additional_params,
                 "ns-instance-config-ref": nsr_id,
                 "id": nsr_id,
                 "_id": nsr_id,
@@ -292,13 +306,17 @@ class NsrTopic(BaseTopic):
                 step = "filling vnfr  vnfd-id='{}' constituent-vnfd='{}'".format(
                     member_vnf["vnfd-id-ref"], member_vnf["member-vnf-index"])
                 vnfr_id = str(uuid4())
+                additional_params, vnf_params = self._format_addional_params(ns_request, member_vnf["member-vnf-index"],
+                                                                             descriptor=vnfd)
+                vnf_k8s_namespace = ns_k8s_namespace
+                if vnf_params and vnf_params.get("k8s-namespace"):
+                    vnf_k8s_namespace = vnf_params["k8s-namespace"]
                 vnfr_descriptor = {
                     "id": vnfr_id,
                     "_id": vnfr_id,
                     "nsr-id-ref": nsr_id,
                     "member-vnf-index-ref": member_vnf["member-vnf-index"],
-                    "additionalParamsForVnf": self._format_addional_params(ns_request, member_vnf["member-vnf-index"],
-                                                                           descriptor=vnfd),
+                    "additionalParamsForVnf": additional_params,
                     "created-time": now,
                     # "vnfd": vnfd,        # at OSM model.but removed to avoid data duplication TODO: revise
                     "vnfd-ref": vnfd_id,
@@ -354,18 +372,32 @@ class NsrTopic(BaseTopic):
                                 break
                 # update kdus
                 for kdu in get_iterable(vnfd.get("kdu")):
-                    kdur = {x: kdu[x] for x in kdu if x in ("helm-chart", "juju-bundle")}
-                    kdur["kdu-name"] = kdu["name"]
-                    # TODO      "name": ""     Name of the VDU in the VIM
-                    kdur["ip-address"] = None  # mgmt-interface filled by LCM
-                    kdur["k8s-cluster"] = {}
-                    kdur["additionalParams"] = self._format_addional_params(ns_request, member_vnf["member-vnf-index"],
-                                                                            kdu_name=kdu["name"], descriptor=vnfd)
+                    additional_params, kdu_params = self._format_addional_params(ns_request,
+                                                                                 member_vnf["member-vnf-index"],
+                                                                                 kdu_name=kdu["name"], descriptor=vnfd)
+                    kdu_k8s_namespace = vnf_k8s_namespace
+                    kdu_model = kdu_params.get("kdu_model")
+                    if kdu_params and kdu_params.get("k8s-namespace"):
+                        kdu_k8s_namespace = kdu_params["k8s-namespace"]
+
+                    kdur = {
+                        "additionalParams": additional_params,
+                        "k8s-namespace": kdu_k8s_namespace,
+                        "kdu-name": kdu["name"],
+                        # TODO      "name": ""     Name of the VDU in the VIM
+                        "ip-address": None,  # mgmt-interface filled by LCM
+                        "k8s-cluster": {},
+                    }
+                    for k8s_type in ("helm-chart", "juju-bundle"):
+                        if kdu.get(k8s_type):
+                            kdur[k8s_type] = kdu_model or kdu[k8s_type]
                     if not vnfr_descriptor.get("kdur"):
                         vnfr_descriptor["kdur"] = []
                     vnfr_descriptor["kdur"].append(kdur)
 
                 for vdu in vnfd.get("vdu", ()):
+                    additional_params, _ = self._format_addional_params(ns_request, member_vnf["member-vnf-index"],
+                                                                        vdu_id=vdu["id"], descriptor=vnfd)
                     vdur = {
                         "vdu-id-ref": vdu["id"],
                         # TODO      "name": ""     Name of the VDU in the VIM
@@ -373,8 +405,7 @@ class NsrTopic(BaseTopic):
                         # "vim-id", "flavor-id", "image-id", "management-ip" # filled by LCM
                         "internal-connection-point": [],
                         "interfaces": [],
-                        "additionalParams": self._format_addional_params(ns_request, member_vnf["member-vnf-index"],
-                                                                         vdu_id=vdu["id"], descriptor=vnfd)
+                        "additionalParams": additional_params
                     }
                     if vdu.get("pdu-type"):
                         vdur["pdu-type"] = vdu["pdu-type"]

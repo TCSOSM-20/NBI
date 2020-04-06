@@ -235,6 +235,7 @@ additional_params_for_vnf = {
         "properties": {
             "member-vnf-index": name_schema,
             "additionalParams": object_schema,
+            "k8s-namespace": name_schema,
             "additionalParamsForVdu": {
                 "type": "array",
                 "items": {
@@ -254,8 +255,11 @@ additional_params_for_vnf = {
                     "properties": {
                         "kdu_name": name_schema,
                         "additionalParams": object_schema,
+                        "kdu_model": name_schema,
+                        "k8s-namespace": name_schema,
                     },
-                    "required": ["kdu_name", "additionalParams"],
+                    "required": ["kdu_name"],
+                    "minProperties": 2,
                     "additionalProperties": False,
                 },
             },
@@ -283,6 +287,7 @@ ns_instantiate = {
         "placement-constraints": object_schema,
         "additionalParamsForNs": object_schema,
         "additionalParamsForVnf": additional_params_for_vnf,
+        "k8s-namespace": name_schema,
         "ssh_keys": {"type": "array", "items": {"type": "string"}},
         "timeout_ns_deploy": integer1_schema,
         "nsr_id": id_schema,
