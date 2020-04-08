@@ -1115,34 +1115,32 @@ class Server(object):
                     outdata = self.engine.del_item_list(engine_session, engine_topic, kwargs)
                     cherrypy.response.status = HTTPStatus.OK.value
                 else:  # len(args) > 1
-                    delete_in_process = False
+                    # for NS NSI generate an operation
+                    op_id = None
                     if topic == "ns_instances_content" and not engine_session["force"]:
                         nslcmop_desc = {
                             "lcmOperationType": "terminate",
                             "nsInstanceId": _id,
                             "autoremove": True
                         }
-                        opp_id, _ = self.engine.new_item(rollback, engine_session, "nslcmops", nslcmop_desc, kwargs)
-                        if opp_id:
-                            delete_in_process = True
-                            outdata = {"_id": opp_id}
-                            cherrypy.response.status = HTTPStatus.ACCEPTED.value
+                        op_id, _ = self.engine.new_item(rollback, engine_session, "nslcmops", nslcmop_desc, kwargs)
+                        if op_id:
+                            outdata = {"_id": op_id}
                     elif topic == "netslice_instances_content" and not engine_session["force"]:
                         nsilcmop_desc = {
                             "lcmOperationType": "terminate",
                             "netsliceInstanceId": _id,
                             "autoremove": True
                         }
-                        opp_id, _ = self.engine.new_item(rollback, engine_session, "nsilcmops", nsilcmop_desc, None)
-                        if opp_id:
-                            delete_in_process = True
-                            outdata = {"_id": opp_id}
-                            cherrypy.response.status = HTTPStatus.ACCEPTED.value
-                    if not delete_in_process:
-                        self.engine.del_item(engine_session, engine_topic, _id)
-                        cherrypy.response.status = HTTPStatus.NO_CONTENT.value
-                if engine_topic in ("vim_accounts", "wim_accounts", "sdns", "k8sclusters", "k8srepos"):
-                    cherrypy.response.status = HTTPStatus.ACCEPTED.value
+                        op_id, _ = self.engine.new_item(rollback, engine_session, "nsilcmops", nsilcmop_desc, None)
+                        if op_id:
+                            outdata = {"_id": op_id}
+                    # if there is not any deletion in process, delete
+                    if not op_id:
+                        op_id = self.engine.del_item(engine_session, engine_topic, _id)
+                        if op_id:
+                            outdata = {"op_id": op_id}
+                    cherrypy.response.status = HTTPStatus.ACCEPTED.value if op_id else HTTPStatus.NO_CONTENT.value
 
             elif method in ("PUT", "PATCH"):
                 op_id = None
