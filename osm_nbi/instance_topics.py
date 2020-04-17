@@ -144,18 +144,18 @@ class NsrTopic(BaseTopic):
                 additional_params = copy(item.get("additionalParams")) or {}
                 if vdu_id and item.get("additionalParamsForVdu"):
                     item_vdu = next((x for x in item["additionalParamsForVdu"] if x["vdu_id"] == vdu_id), None)
+                    other_params = item_vdu
                     if item_vdu and item_vdu.get("additionalParams"):
                         where_ += ".additionalParamsForVdu[vdu_id={}]".format(vdu_id)
                         additional_params = item_vdu["additionalParams"]
-                        other_params = item_vdu
                 if kdu_name:
                     additional_params = {}
                     if item.get("additionalParamsForKdu"):
                         item_kdu = next((x for x in item["additionalParamsForKdu"] if x["kdu_name"] == kdu_name), None)
+                        other_params = item_kdu
                         if item_kdu and item_kdu.get("additionalParams"):
                             where_ += ".additionalParamsForKdu[kdu_name={}]".format(kdu_name)
                             additional_params = item_kdu["additionalParams"]
-                            other_params = item_kdu
 
         if additional_params:
             for k, v in additional_params.items():
@@ -376,7 +376,7 @@ class NsrTopic(BaseTopic):
                                                                                  member_vnf["member-vnf-index"],
                                                                                  kdu_name=kdu["name"], descriptor=vnfd)
                     kdu_k8s_namespace = vnf_k8s_namespace
-                    kdu_model = kdu_params.get("kdu_model")
+                    kdu_model = kdu_params.get("kdu_model") if kdu_params else None
                     if kdu_params and kdu_params.get("k8s-namespace"):
                         kdu_k8s_namespace = kdu_params["k8s-namespace"]
 
