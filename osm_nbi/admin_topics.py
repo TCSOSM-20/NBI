@@ -471,6 +471,24 @@ class K8sClusterTopic(CommonVimWimSdn):
                 final_content["_admin"][rlist] = []
             final_content["_admin"][rlist] += repos[k]
 
+    def check_conflict_on_del(self, session, _id, db_content):
+        """
+        Check if deletion can be done because of dependencies if it is not force. To override
+        :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
+        :param _id: internal _id
+        :param db_content: The database content of this item _id
+        :return: None if ok or raises EngineException with the conflict
+        """
+        if session["force"]:
+            return
+        # check if used by VNF
+        filter_q = {"kdur.k8s-cluster.id": _id}
+        if session["project_id"]:
+            filter_q["_admin.projects_read.cont"] = session["project_id"]
+        if self.db.get_list("vnfrs", filter_q):
+            raise EngineException("There is at least one VNF using this k8scluster", http_code=HTTPStatus.CONFLICT)
+        super().check_conflict_on_del(session, _id, db_content)
+
 
 class K8sRepoTopic(CommonVimWimSdn):
     topic = "k8srepos"
