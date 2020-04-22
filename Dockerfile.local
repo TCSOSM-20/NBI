@@ -20,10 +20,10 @@ WORKDIR /app/NBI
 
 RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections
 
-RUN apt-get update && apt-get install -y git python3 python3-jsonschema \
+RUN apt-get update && apt-get install -y git python3 \
     python3-pymongo python3-yaml python3-pip python3-keystoneclient \
     && python3 -m pip install pip --upgrade \
-    && python3 -m pip install aiokafka aiohttp cherrypy==18.1.2 keystoneauth1 requests \
+    && python3 -m pip install aiokafka aiohttp cherrypy==18.1.2 keystoneauth1 requests jsonschema==3.2.0 \
     && mkdir -p /app/storage/kafka && mkdir -p /app/log 
 
 # OSM_COMMON

@@ -30,6 +30,7 @@ from osm_nbi.admin_topics import UserTopicAuth, ProjectTopicAuth, RoleTopicAuth
 from osm_nbi.descriptor_topics import VnfdTopic, NsdTopic, PduTopic, NstTopic, VnfPkgOpTopic
 from osm_nbi.instance_topics import NsrTopic, VnfrTopic, NsLcmOpTopic, NsiTopic, NsiLcmOpTopic
 from osm_nbi.pmjobs_topics import PmJobsTopic
+from osm_nbi.subscription_topics import NslcmSubscriptionsTopic
 from base64 import b64encode
 from os import urandom   # , path
 from threading import Lock
@@ -59,6 +60,7 @@ class Engine(object):
         "nsis": NsiTopic,
         "nsilcmops": NsiLcmOpTopic,
         "vnfpkgops": VnfPkgOpTopic,
+        "nslcm_subscriptions": NslcmSubscriptionsTopic,
         # [NEW_TOPIC]: add an entry here
         # "pm_jobs": PmJobsTopic will be added manually because it needs other parameters
     }

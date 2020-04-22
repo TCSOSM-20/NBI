@@ -832,7 +832,7 @@ user_edit_schema = {
 
 # PROJECTS
 topics_with_quota = ["vnfds", "nsds", "slice_templates", "pduds", "ns_instances", "slice_instances", "vim_accounts",
-                     "wim_accounts", "sdn_controllers", "k8sclusters", "k8srepos", "osmrepos"]
+                     "wim_accounts", "sdn_controllers", "k8sclusters", "k8srepos", "osmrepos", "ns_subscriptions"]
 project_new_schema = {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "title": "New project schema for administrators",
@@ -982,6 +982,129 @@ nsi_action = {
 
 nsi_terminate = {
 
+}
+
+nsinstancesubscriptionfilter_schema = {
+    "title": "instance identifier schema",
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "nsdIds": {"type": "array"},
+        "vnfdIds": {"type": "array"},
+        "pnfdIds": {"type": "array"},
+        "nsInstanceIds": {"type": "array"},
+        "nsInstanceNames": {"type": "array"},
+    },
+}
+
+nslcmsub_schema = {
+    "title": "nslcmsubscription input schema",
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "nsInstanceSubscriptionFilter": nsinstancesubscriptionfilter_schema,
+        "notificationTypes": {
+            "type": "array",
+            "items": {
+                "enum": ['NsLcmOperationOccurrenceNotification', 'NsChangeNotification',
+                         'NsIdentifierCreationNotification', 'NsIdentifierDeletionNotification']
+            }
+        },
+        "operationTypes": {
+            "type": "array",
+            "items": {
+                "enum": ['INSTANTIATE', 'SCALE', 'TERMINATE', 'UPDATE', 'HEAL']
+            }
+        },
+        "operationStates": {
+            "type": "array",
+            "items": {
+                "enum": ['PROCESSING', 'COMPLETED', 'PARTIALLY_COMPLETED', 'FAILED',
+                         'FAILED_TEMP', 'ROLLING_BACK', 'ROLLED_BACK']
+            }
+        },
+        "nsComponentTypes": {
+            "type": "array",
+            "items": {
+                "enum": ['VNF', 'NS', 'PNF']
+            }
+        },
+        "lcmOpNameImpactingNsComponent": {
+            "type": "array",
+            "items": {
+                "enum": ['VNF_INSTANTIATE', 'VNF_SCALE', 'VNF_SCALE_TO_LEVEL', 'VNF_CHANGE_FLAVOUR',
+                         'VNF_TERMINATE', 'VNF_HEAL', 'VNF_OPERATE', 'VNF_CHANGE_EXT_CONN', 'VNF_MODIFY_INFO',
+                         'NS_INSTANTIATE', 'NS_SCALE', 'NS_UPDATE', 'NS_TERMINATE', 'NS_HEAL']
+            }
+        },
+        "lcmOpOccStatusImpactingNsComponent": {
+            "type": "array",
+            "items": {
+                "enum": ['START', 'COMPLETED', 'PARTIALLY_COMPLETED', 'FAILED', 'ROLLED_BACK']
+            }
+        },
+    },
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "notificationTypes": {
+                        "contains": {"const": "NsLcmOperationOccurrenceNotification"}
+                    }
+                },
+            },
+            "then": {
+                "anyOf": [
+                    {"required": ["operationTypes"]},
+                    {"required": ["operationStates"]},
+                ]
+            } 
+        },
+        {
+            "if": {
+                "properties": {
+                    "notificationTypes": {
+                        "contains": {"const": "NsChangeNotification"}
+                    }
+                },
+            },
+            "then": {
+                "anyOf": [
+                    {"required": ["nsComponentTypes"]},
+                    {"required": ["lcmOpNameImpactingNsComponent"]},
+                    {"required": ["lcmOpOccStatusImpactingNsComponent"]},
+                ]
+            }
+        }
+    ]
+}
+
+authentication_schema = {
+    "title": "authentication schema for subscription",
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "authType": {"enum": ["basic"]},
+        "paramsBasic": {
+            "type": "object",
+            "properties": {
+                "userName": shortname_schema,
+                "password": passwd_schema,
+            },
+        },
+    },
+}
+
+subscription = {
+    "title": "subscription input schema",
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "filter": nslcmsub_schema,
+        "CallbackUri": description_schema,
+        "authentication": authentication_schema
+    },
+    "required": ["CallbackUri"],
 }
 
 

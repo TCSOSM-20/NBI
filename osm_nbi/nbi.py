@@ -408,6 +408,12 @@ valid_url_methods = {
                                        "ROLE_PERMISSION": "vnf_instances:id:"
                                        }
                               },
+            "subscriptions": {"METHODS": ("GET", "POST"),
+                              "ROLE_PERMISSION": "ns_subscriptions:",
+                              "<ID>": {"METHODS": ("GET", "DELETE"),
+                                       "ROLE_PERMISSION": "ns_subscriptions:id:"
+                                       }
+                              },
         }
     },
     "nst": {
@@ -1006,8 +1012,7 @@ class Server(object):
             engine_session = self._manage_admin_query(token_info, kwargs, method, _id)
             indata = self._format_in(kwargs)
             engine_topic = topic
-            if topic == "subscriptions":
-                engine_topic = main_topic + "_" + topic
+
             if item and topic != "pm_jobs":
                 engine_topic = item
 
@@ -1035,6 +1040,9 @@ class Server(object):
                 engine_topic = "pdus"
             if engine_topic == "vims":   # TODO this is for backward compatibility, it will be removed in the future
                 engine_topic = "vim_accounts"
+
+            if topic == "subscriptions":
+                engine_topic = main_topic + "_" + topic
 
             if method == "GET":
                 if item in ("nsd_content", "package_content", "artifacts", "vnfd", "nsd", "nst", "nst_content"):
@@ -1109,6 +1117,14 @@ class Server(object):
                     self._set_location_header(main_topic, version, "vnfpkg_op_occs", _id)
                     outdata = {"id": _id}
                     cherrypy.response.status = HTTPStatus.ACCEPTED.value
+                elif topic == "subscriptions":
+                    _id, _ = self.engine.new_item(rollback, engine_session, engine_topic, indata, kwargs)
+                    self._set_location_header(main_topic, version, topic, _id)
+                    link = {}
+                    link["self"] = cherrypy.response.headers["Location"]
+                    outdata = {"id": _id, "filter": indata["filter"], "callbackUri": indata["CallbackUri"],
+                               "_links": link}
+                    cherrypy.response.status = HTTPStatus.CREATED.value
                 else:
                     _id, op_id = self.engine.new_item(rollback, engine_session, engine_topic, indata, kwargs,
                                                       cherrypy.request.headers)
@@ -1201,6 +1217,9 @@ class Server(object):
                     if rollback_item.get("operation") == "set":
                         self.engine.db.set_one(rollback_item["topic"], {"_id": rollback_item["_id"]},
                                                rollback_item["content"], fail_on_empty=False)
+                    elif rollback_item.get("operation") == "del_list":
+                        self.engine.db.del_list(rollback_item["topic"], rollback_item["filter"], 
+                                                fail_on_empty=False)
                     else:
                         self.engine.db.del_one(rollback_item["topic"], {"_id": rollback_item["_id"]},
                                                fail_on_empty=False)
