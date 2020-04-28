@@ -24,10 +24,12 @@ import logging
 import threading
 import asyncio
 from http import HTTPStatus
+
 from osm_common import dbmongo, dbmemory, msglocal, msgkafka
 from osm_common.dbbase import DbException
 from osm_common.msgbase import MsgException
 from osm_nbi.engine import EngineException
+from osm_nbi.notifications import NsLcmNotification
 
 __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 
@@ -65,6 +67,7 @@ class SubscriptionThread(threading.Thread):
             "public": None,
             "method": "delete",
         }
+        self.nslcm = None
 
     async def start_kafka(self):
         # timeout_wait_for_kafka = 3*60
@@ -144,7 +147,7 @@ class SubscriptionThread(threading.Thread):
                 else:
                     raise SubscriptionException("Invalid configuration param '{}' at '[message]':'driver'".format(
                         config_msg["driver"]))
-
+            self.nslcm = NsLcmNotification(self.db)
         except (DbException, MsgException) as e:
             raise SubscriptionException(str(e), http_code=e.http_code)
 
@@ -180,6 +183,27 @@ class SubscriptionThread(threading.Thread):
                         self.engine.del_item(self.internal_session, "nsrs", _id=params["nsr_id"],
                                              not_send_msg=msg_to_send)
                         self.logger.debug("ns={} deleted from database".format(params["nsr_id"]))
+                # Check for nslcm notification
+                if isinstance(params, dict):
+                    # Check availability of operationState and command
+                    if (not params.get("operationState")) or (not command) or (not params.get("operationParams")):
+                        self.logger.debug("Message can not be used for notification of nslcm")
+                    else:
+                        nsd_id = params["operationParams"].get("nsdId")
+                        ns_instance_id = params["operationParams"].get("nsInstanceId")
+                        # Any one among nsd_id, ns_instance_id should be present.
+                        if not (nsd_id or ns_instance_id):
+                            self.logger.debug("Message can not be used for notification of nslcm")
+                        else:
+                            op_state = params["operationState"]
+                            event_details = {"topic": topic, "command": command.upper(), "params": params}
+                            subscribers = self.nslcm.get_subscribers(nsd_id, ns_instance_id, command.upper(), op_state,
+                                                                     event_details)
+                            # self.logger.debug("subscribers list: ")
+                            # self.logger.debug(subscribers)
+                            asyncio.ensure_future(self.nslcm.send_notifications(subscribers, loop=self.loop))
+                else:
+                    self.logger.debug("Message can not be used for notification of nslcm")
             elif topic == "nsi":
                 if command == "terminated" and params["operationState"] in ("COMPLETED", "PARTIALLY_COMPLETED"):
                     self.logger.debug("received nsi terminated {}".format(params))
