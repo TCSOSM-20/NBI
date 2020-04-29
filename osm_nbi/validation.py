@@ -236,6 +236,7 @@ additional_params_for_vnf = {
             "member-vnf-index": name_schema,
             "additionalParams": object_schema,
             "k8s-namespace": name_schema,
+            "config-units": integer1_schema,  # number of configuration units of this vnf, by default 1
             "additionalParamsForVdu": {
                 "type": "array",
                 "items": {
@@ -243,8 +244,10 @@ additional_params_for_vnf = {
                     "properties": {
                         "vdu_id": name_schema,
                         "additionalParams": object_schema,
+                        "config-units": integer1_schema,   # number of configuration units of this vdu, by default 1
                     },
-                    "required": ["vdu_id", "additionalParams"],
+                    "required": ["vdu_id"],
+                    "minProperties": 2,
                     "additionalProperties": False,
                 },
             },
@@ -257,6 +260,7 @@ additional_params_for_vnf = {
                         "additionalParams": object_schema,
                         "kdu_model": name_schema,
                         "k8s-namespace": name_schema,
+                        "config-units": integer1_schema,    # number of configuration units of this knf, by default 1
                     },
                     "required": ["kdu_name"],
                     "minProperties": 2,
@@ -287,6 +291,7 @@ ns_instantiate = {
         "placement-constraints": object_schema,
         "additionalParamsForNs": object_schema,
         "additionalParamsForVnf": additional_params_for_vnf,
+        "config-units": integer1_schema,    # number of configuration units of this ns, by default 1
         "k8s-namespace": name_schema,
         "ssh_keys": {"type": "array", "items": {"type": "string"}},
         "timeout_ns_deploy": integer1_schema,
