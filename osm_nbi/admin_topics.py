@@ -22,7 +22,8 @@ from osm_nbi.validation import user_new_schema, user_edit_schema, project_new_sc
     vim_account_new_schema, vim_account_edit_schema, sdn_new_schema, sdn_edit_schema, \
     wim_account_new_schema, wim_account_edit_schema, roles_new_schema, roles_edit_schema, \
     k8scluster_new_schema, k8scluster_edit_schema, k8srepo_new_schema, k8srepo_edit_schema, \
-    validate_input, ValidationError, is_valid_uuid    # To check that User/Project Names don't look like UUIDs
+    osmrepo_new_schema, osmrepo_edit_schema, \
+    validate_input, ValidationError, is_valid_uuid  # To check that User/Project Names don't look like UUIDs
 from osm_nbi.base_topic import BaseTopic, EngineException
 from osm_nbi.authconn import AuthconnNotFoundException, AuthconnConflictException
 from osm_common.dbbase import deep_update_rfc7396
@@ -518,6 +519,15 @@ class K8sRepoTopic(CommonVimWimSdn):
             repo_list = type.replace('-', '_') + "_repos"
             self.db.set_list("k8sclusters", {"_admin."+repo_list: _id}, {}, pull={"_admin."+repo_list: _id})
         return oid
+
+
+class OsmRepoTopic(BaseTopic):
+    topic = "osmrepos"
+    topic_msg = "osmrepos"
+    schema_new = osmrepo_new_schema
+    schema_edit = osmrepo_edit_schema
+    multiproject = True
+    # TODO: Implement user/password
 
 
 class UserTopicAuth(UserTopic):

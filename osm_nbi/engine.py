@@ -25,7 +25,7 @@ from osm_nbi.authconn_keystone import AuthconnKeystone
 from osm_nbi.authconn_internal import AuthconnInternal
 from osm_nbi.base_topic import EngineException, versiontuple
 from osm_nbi.admin_topics import VimAccountTopic, WimAccountTopic, SdnTopic
-from osm_nbi.admin_topics import K8sClusterTopic, K8sRepoTopic
+from osm_nbi.admin_topics import K8sClusterTopic, K8sRepoTopic, OsmRepoTopic
 from osm_nbi.admin_topics import UserTopicAuth, ProjectTopicAuth, RoleTopicAuth
 from osm_nbi.descriptor_topics import VnfdTopic, NsdTopic, PduTopic, NstTopic, VnfPkgOpTopic
 from osm_nbi.instance_topics import NsrTopic, VnfrTopic, NsLcmOpTopic, NsiTopic, NsiLcmOpTopic
@@ -52,6 +52,7 @@ class Engine(object):
         "sdns": SdnTopic,
         "k8sclusters": K8sClusterTopic,
         "k8srepos": K8sRepoTopic,
+        "osmrepos": OsmRepoTopic,
         "users": UserTopicAuth,   # Valid for both internal and keystone authentication backends
         "projects": ProjectTopicAuth,   # Valid for both internal and keystone authentication backends
         "roles": RoleTopicAuth,   # Valid for both internal and keystone authentication backends

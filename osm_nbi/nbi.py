@@ -115,6 +115,8 @@ URL: /osm                                                       GET     POST    
                 /<id>                                           O                       O       O
             /k8srepos                                           O       O
                 /<id>                                           O                               O
+            /osmrepos                                           O       O
+                /<id>                                           O                               O
 
         /nst/v1                                                 O       O
             /netslice_templates_content                         O       O
@@ -264,6 +266,12 @@ valid_url_methods = {
                          "ROLE_PERMISSION": "k8srepos:",
                          "<ID>": {"METHODS": ("GET", "DELETE"),
                                   "ROLE_PERMISSION": "k8srepos:id:"
+                                  }
+                         },
+            "osmrepos": {"METHODS": ("GET", "POST"),
+                         "ROLE_PERMISSION": "osmrepos:",
+                         "<ID>": {"METHODS": ("GET", "DELETE", "PATCH"),
+                                  "ROLE_PERMISSION": "osmrepos:id:"
                                   }
                          },
             "domains": {"METHODS": ("GET", ),
