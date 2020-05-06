@@ -657,6 +657,32 @@ k8srepo_edit_schema = {
     "additionalProperties": False
 }
 
+# OSM Repos
+osmrepo_types = {"enum": ["osm"]}
+osmrepo_properties = {
+    "name": name_schema,
+    "description": description_schema,
+    "type": osmrepo_types,
+    "url": description_schema
+    # "user": shortname_schema,
+    # "password": passwd_schema
+}
+osmrepo_new_schema = {
+    "title": "osm repo creation input schema",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": osmrepo_properties,
+    "required": ["name", "type", "url"],
+    "additionalProperties": False
+}
+osmrepo_edit_schema = {
+    "title": "osm repo edit input schema",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "type": "object",
+    "properties": osmrepo_properties,
+    "additionalProperties": False
+}
+
 # PDUs
 pdu_interface = {
     "type": "object",
