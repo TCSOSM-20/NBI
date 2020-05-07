@@ -12,8 +12,8 @@
 # under the License.
 ##
 
-version = '7.0.1.post23'
-version_date = '2020-04-17'
+version = '7.1.0.post1'
+version_date = '2020-05-05'
 
 # Obtain installed package version. Ignore if error, e.g. pkg_resources not installed
 try:
