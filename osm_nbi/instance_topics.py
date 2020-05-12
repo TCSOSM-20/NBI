@@ -1537,12 +1537,15 @@ class NsiLcmOpTopic(BaseTopic):
 
                 try:
                     service = self.db.get_one("nsrs", {"_id": nsr_item["nsrId"]})
-                    indata_ns = {}
-                    indata_ns = service["instantiate_params"]
-                    indata_ns["lcmOperationType"] = operation
-                    indata_ns["nsInstanceId"] = service["_id"]
-                    # Including netslice_id in the ns instantiate Operation
-                    indata_ns["netsliceInstanceId"] = netsliceInstanceId
+                    indata_ns = {
+                        "lcmOperationType": operation,
+                        "nsInstanceId": service["_id"],
+                        # Including netslice_id in the ns instantiate Operation
+                        "netsliceInstanceId": netsliceInstanceId,
+                    }
+                    if operation == "instantiate":
+                        indata_ns.update(service["instantiate_params"])
+
                     # Creating NS_LCM_OP with the flag slice_object=True to not trigger the service instantiation
                     # message via kafka bus
                     nslcmop, _ = self.nsi_NsLcmOpTopic.new(rollback, session, indata_ns, kwargs, headers,
