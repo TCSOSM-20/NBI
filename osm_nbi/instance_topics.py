@@ -606,7 +606,7 @@ class NsLcmOpTopic(BaseTopic):
                                                       "='{}']:internal-connection-point[id-ref:'{}'] is not present at "
                                                       "vnfd:internal-vld:name/id:internal-connection-point"
                                                       .format(in_vnf["member-vnf-index"], in_ivld["name"],
-                                                              in_icp["id-ref"], vnfd["id"]))
+                                                              in_icp["id-ref"]))
                         break
                 else:
                     raise EngineException("Invalid parameter vnf[member-vnf-index='{}']:internal-vld:name='{}'"
