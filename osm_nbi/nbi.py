@@ -807,8 +807,9 @@ class Server(object):
                         return_text += "  {}: {}\n".format(k, v)
                 elif cherrypy.request.method == 'GET':
                     for k, v in kwargs.items():
-                        self.engine.msg.write(main_topic, k, yaml.load(v), Loader=yaml.SafeLoader)
-                        return_text += "  {}: {}\n".format(k, yaml.load(v), Loader=yaml.SafeLoader)
+                        v_dict = yaml.load(v, Loader=yaml.SafeLoader)
+                        self.engine.msg.write(main_topic, k, v_dict)
+                        return_text += "  {}: {}\n".format(k, v_dict)
             except Exception as e:
                 return_text += "Error: " + str(e)
             return_text += "</pre></html>\n"
