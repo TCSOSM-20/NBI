@@ -370,6 +370,7 @@ ns_terminate = {
         "autoremove": bool_schema,
         "timeout_ns_terminate": integer1_schema,
         "skip_terminate_primitives": bool_schema,
+        "netsliceInstanceId": id_schema,
     },
     "additionalProperties": False
 }
