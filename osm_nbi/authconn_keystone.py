@@ -41,7 +41,7 @@ from keystoneauth1.exceptions.base import ClientException
 from keystoneauth1.exceptions.http import Conflict
 from keystoneclient.v3 import client
 from http import HTTPStatus
-from osm_nbi.validation import is_valid_uuid
+from osm_nbi.validation import is_valid_uuid, validate_input, http_schema
 
 
 class AuthconnKeystone(Authconn):
@@ -52,7 +52,12 @@ class AuthconnKeystone(Authconn):
         self.domains_id2name = {}
         self.domains_name2id = {}
 
-        self.auth_url = "http://{0}:{1}/v3".format(config.get("auth_url", "keystone"), config.get("auth_port", "5000"))
+        self.auth_url = config.get("auth_url")
+        if config.get("auth_url"):
+            validate_input(self.auth_url, http_schema)
+        else:
+            self.auth_url = "http://{0}:{1}/v3".format(config.get("auth_host", "keystone"),
+                                                       config.get("auth_port", "5000"))
         self.user_domain_name_list = config.get("user_domain_name", "default")
         self.user_domain_name_list = self.user_domain_name_list.split(",")
         # read only domain list
@@ -91,7 +96,7 @@ class AuthconnKeystone(Authconn):
                                 project_name=self.admin_project,
                                 auth_url=self.auth_url)
         self.sess = session.Session(auth=self.auth)
-        self.keystone = client.Client(session=self.sess)
+        self.keystone = client.Client(session=self.sess, endpoint_override=self.auth_url)
 
     def authenticate(self, credentials, token_info=None):
         """
