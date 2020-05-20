@@ -82,7 +82,7 @@ ENV OSMNBI_MESSAGE_PORT                         9092
 # authentication
 ENV OSMNBI_AUTHENTICATION_BACKEND               internal
 #ENV OSMNBI_AUTHENTICATION_BACKEND               keystone
-#ENV OSMNBI_AUTHENTICATION_AUTH_URL              keystone
+#ENV OSMNBI_AUTHENTICATION_AUTH_URL              http://keystone:5000/v3
 #ENV OSMNBI_AUTHENTICATION_AUTH_PORT             5000
 
 # DOMAIN_NAME can be a single value or a comma separated list of values. The first value is for internal domain

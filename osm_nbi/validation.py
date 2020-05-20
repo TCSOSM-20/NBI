@@ -43,7 +43,7 @@ time_schema = {"type": "string", "pattern": "^[0-9]{4}-[0-1][0-9]-[0-3][0-9]T[0-
 pci_schema = {"type": "string", "pattern": "^[0-9a-fA-F]{4}(:[0-9a-fA-F]{2}){2}\\.[0-9a-fA-F]$"}
 # allows [] for wildcards. For that reason huge length limit is set
 pci_extended_schema = {"type": "string", "pattern": "^[0-9a-fA-F.:-\\[\\]]{12,40}$"}
-http_schema = {"type": "string", "pattern": "^https?://[^'\"=]+$"}
+http_schema = {"type": "string", "pattern": "^(https?|http)://[^'\"=]+$"}
 bandwidth_schema = {"type": "string", "pattern": "^[0-9]+ *([MG]bps)?$"}
 memory_schema = {"type": "string", "pattern": "^[0-9]+ *([MG]i?[Bb])?$"}
 integer0_schema = {"type": "integer", "minimum": 0}
