@@ -596,7 +596,7 @@ class NsLcmOpTopic(BaseTopic):
 
             for in_ivld in get_iterable(in_vnfd.get("internal-vld")):
                 for ivld in get_iterable(vnfd.get("internal-vld")):
-                    if in_ivld["name"] == ivld["name"] or in_ivld["name"] == ivld["id"]:
+                    if in_ivld["name"] in (ivld["id"], ivld.get("name")):
                         for in_icp in get_iterable(in_ivld.get("internal-connection-point")):
                             for icp in ivld["internal-connection-point"]:
                                 if in_icp["id-ref"] == icp["id-ref"]:
