@@ -1420,7 +1420,9 @@ class NsiLcmOpTopic(BaseTopic):
                 if nstId == netslice_subnet["id"]:
                     nsd_id = netslice_subnet["nsd-ref"]
                     if nsd_id not in nsds:
-                        nsds[nsd_id] = self.db.get_one("nsds", {"id": nsd_id})
+                        _filter = self._get_project_filter(session)
+                        _filter["id"] = nsd_id
+                        nsds[nsd_id] = self.db.get_one("nsds", _filter)
                     return nsds[nsd_id]
             else:
                 raise EngineException("Invalid parameter nstId='{}' is not one of the "
