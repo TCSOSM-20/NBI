@@ -958,7 +958,7 @@ nsi_instantiate = {
         "nstId": string_schema,
         "vimAccountId": id_schema,
         "timeout_nsi_deploy": integer1_schema,
-        "ssh_keys": {"type": "string"},
+        "ssh_keys": {"type": "array", "items": {"type": "string"}},
         "nsi_id": id_schema,
         "additionalParamsForNsi": object_schema,
         "netslice-subnet": {
