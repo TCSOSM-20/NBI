@@ -128,6 +128,14 @@ roles:
         sdn_controllers:        false
         sdn_controllers:get:    true
         sdn_controllers:id:get: true
+        # K8s clusters
+        k8sclusters:        false
+        k8sclusters:get:    true
+        k8sclusters:id:get: true
+        # K8s repos
+        k8srepos:           true
+        # OSM repos
+        osmrepos:           true
         # WIMs
         wims:        false
         wims:get:    true
