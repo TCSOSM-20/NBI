@@ -345,8 +345,14 @@ class AuthconnKeystone(Authconn):
                     or user_info.get("add_project_role_mappings") or user_info.get("remove_project_role_mappings"):
                 # if user_index>0, it is an external domain, that should not be updated
                 ctime = user_obj._admin.get("created", 0) if hasattr(user_obj, "_admin") else 0
-                self.keystone.users.update(user_id, password=user_info.get("password"), name=user_info.get("username"),
-                                           _admin={"created": ctime, "modified": time.time()})
+                try:
+                    self.keystone.users.update(user_id, password=user_info.get("password"),
+                                               name=user_info.get("username"),
+                                               _admin={"created": ctime, "modified": time.time()})
+                except Exception as e:
+                    if user_info.get("username") or user_info.get("password"):
+                        raise AuthconnOperationException("Error during username/password change: {}".format(str(e)))
+                    self.logger.error("Error during updating user profile: {}".format(str(e)))
 
             for mapping in user_info.get("remove_project_role_mappings", []):
                 self.remove_role_from_user(user_obj, mapping["project"], mapping["role"])
