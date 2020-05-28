@@ -114,7 +114,7 @@ class BaseTopic:
             DbException if project not found
             ValidationError if quota exceeded and not overridden
         """
-        if session["force"] or session["admin"]:
+        if session["force"]:
             return
         projects = session["project_id"]
         for project in projects:
@@ -124,7 +124,8 @@ class BaseTopic:
             count = self.db.count(self.topic, {"_admin.projects_read": pid})
             if count >= quota:
                 name = proj["name"]
-                raise ValidationError("{} quota ({}) exceeded for project {} ({})".format(self.topic, quota, name, pid))
+                raise ValidationError("quota ({}={}) exceeded for project {} ({})".format(self.topic, quota, name, pid),
+                                      http_code=HTTPStatus.UNAUTHORIZED)
 
     def _validate_input_new(self, input, force=False):
         """

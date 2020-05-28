@@ -146,29 +146,27 @@ class DescriptorTopic(BaseTopic):
         :return: _id, None: identity of the inserted data; and None as there is not any operation
         """
 
-        try:
-            # Check Quota
-            self.check_quota(session)
+        # No needed to capture exceptions
+        # Check Quota
+        self.check_quota(session)
 
-            # _remove_envelop
-            if indata:
-                if "userDefinedData" in indata:
-                    indata = indata['userDefinedData']
+        # _remove_envelop
+        if indata:
+            if "userDefinedData" in indata:
+                indata = indata['userDefinedData']
 
-            # Override descriptor with query string kwargs
-            self._update_input_with_kwargs(indata, kwargs)
-            # uncomment when this method is implemented.
-            # Avoid override in this case as the target is userDefinedData, but not vnfd,nsd descriptors
-            # indata = DescriptorTopic._validate_input_new(self, indata, project_id=session["force"])
+        # Override descriptor with query string kwargs
+        self._update_input_with_kwargs(indata, kwargs)
+        # uncomment when this method is implemented.
+        # Avoid override in this case as the target is userDefinedData, but not vnfd,nsd descriptors
+        # indata = DescriptorTopic._validate_input_new(self, indata, project_id=session["force"])
 
-            content = {"_admin": {"userDefinedData": indata}}
-            self.format_on_new(content, session["project_id"], make_public=session["public"])
-            _id = self.db.create(self.topic, content)
-            rollback.append({"topic": self.topic, "_id": _id})
-            self._send_msg("created", {"_id": _id})
-            return _id, None
-        except ValidationError as e:
-            raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
+        content = {"_admin": {"userDefinedData": indata}}
+        self.format_on_new(content, session["project_id"], make_public=session["public"])
+        _id = self.db.create(self.topic, content)
+        rollback.append({"topic": self.topic, "_id": _id})
+        self._send_msg("created", {"_id": _id})
+        return _id, None
 
     def upload_content(self, session, _id, indata, kwargs, headers):
         """
