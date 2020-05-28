@@ -54,6 +54,7 @@ class Test_ProjectTopicAuth(TestCase):
         self.topic = ProjectTopicAuth(self.db, self.fs, self.msg, self.auth)
         self.fake_session = {"username": self.test_name, "project_id": (test_pid,), "method": None,
                              "admin": True, "force": False, "public": False, "allow_show_user_project_role": True}
+        self.topic.check_quota = Mock(return_value=None)  # skip quota
 
     def test_new_project(self):
         with self.subTest(i=1):
@@ -215,6 +216,7 @@ class Test_RoleTopicAuth(TestCase):
         self.topic = RoleTopicAuth(self.db, self.fs, self.msg, self.auth)
         self.fake_session = {"username": test_name, "project_id": (test_pid,), "method": None,
                              "admin": True, "force": False, "public": False, "allow_show_user_project_role": True}
+        self.topic.check_quota = Mock(return_value=None)  # skip quota
 
     def test_new_role(self):
         with self.subTest(i=1):
@@ -375,6 +377,7 @@ class Test_UserTopicAuth(TestCase):
         self.topic = UserTopicAuth(self.db, self.fs, self.msg, self.auth)
         self.fake_session = {"username": test_name, "project_id": (test_pid,), "method": None,
                              "admin": True, "force": False, "public": False, "allow_show_user_project_role": True}
+        self.topic.check_quota = Mock(return_value=None)  # skip quota
 
     def test_new_user(self):
         uid1 = str(uuid4())
@@ -598,6 +601,7 @@ class Test_CommonVimWimSdn(TestCase):
         self.topic.schema_edit = validation.wim_account_edit_schema
         self.fake_session = {"username": test_name, "project_id": (test_pid,), "method": None,
                              "admin": True, "force": False, "public": False, "allow_show_user_project_role": True}
+        self.topic.check_quota = Mock(return_value=None)  # skip quota
 
     def test_new_cvws(self):
         test_url = "http://0.0.0.0:0"

@@ -85,6 +85,7 @@ class Test_VnfdTopic(TestCase):
         self.msg = Mock(msgbase.MsgBase())
         self.auth = Mock(authconn.Authconn(None, None, None))
         self.topic = VnfdTopic(self.db, self.fs, self.msg, self.auth)
+        self.topic.check_quota = Mock(return_value=None)  # skip quota
 
     def test_new_vnfd(self):
         did = db_vnfd_content["_id"]
@@ -531,6 +532,7 @@ class Test_NsdTopic(TestCase):
         self.msg = Mock(msgbase.MsgBase())
         self.auth = Mock(authconn.Authconn(None, None, None))
         self.topic = NsdTopic(self.db, self.fs, self.msg, self.auth)
+        self.topic.check_quota = Mock(return_value=None)  # skip quota
 
     def test_new_nsd(self):
         did = db_nsd_content["_id"]
