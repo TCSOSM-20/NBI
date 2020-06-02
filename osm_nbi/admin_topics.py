@@ -398,6 +398,7 @@ class WimAccountTopic(CommonVimWimSdn):
 class SdnTopic(CommonVimWimSdn):
     topic = "sdns"
     topic_msg = "sdn"
+    quota_name = "sdn_controllers"
     schema_new = sdn_new_schema
     schema_edit = sdn_edit_schema
     multiproject = True

@@ -831,8 +831,8 @@ user_edit_schema = {
 }
 
 # PROJECTS
-topics_with_quota = ["vnfds", "nsds", "nsts", "pdus", "nsrs", "nsis", "vim_accounts", "wim_accounts", "sdns",
-                     "k8sclusters", "k8srepos"]
+topics_with_quota = ["vnfds", "nsds", "slice_templates", "pduds", "ns_instances", "slice_instances", "vim_accounts",
+                     "wim_accounts", "sdn_controllers", "k8sclusters", "k8srepos", "osmrepos"]
 project_new_schema = {
     "$schema": "http://json-schema.org/draft-04/schema#",
     "title": "New project schema for administrators",

@@ -856,6 +856,7 @@ class NsdTopic(DescriptorTopic):
 class NstTopic(DescriptorTopic):
     topic = "nsts"
     topic_msg = "nst"
+    quota_name = "slice_templates"
 
     def __init__(self, db, fs, msg, auth):
         DescriptorTopic.__init__(self, db, fs, msg, auth)
@@ -929,6 +930,7 @@ class NstTopic(DescriptorTopic):
 class PduTopic(BaseTopic):
     topic = "pdus"
     topic_msg = "pdu"
+    quota_name = "pduds"
     schema_new = pdu_new_schema
     schema_edit = pdu_edit_schema
 

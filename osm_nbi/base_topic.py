@@ -69,6 +69,7 @@ class BaseTopic:
     # static variables for all instance classes
     topic = None        # to_override
     topic_msg = None    # to_override
+    quota_name = None   # to_override. If not provided topic will be used for quota_name
     schema_new = None   # to_override
     schema_edit = None  # to_override
     multiproject = True  # True if this Topic can be shared by several projects. Then it contains _admin.projects_read
@@ -107,12 +108,12 @@ class BaseTopic:
         """
         Check whether topic quota is exceeded by the given project
         Used by relevant topics' 'new' function to decide whether or not creation of the new item should be allowed
-        :param projects: projects (tuple) for which quota should be checked
-        :param override: boolean. If true, don't raise ValidationError even though quota be exceeded
+        :param session[project_id]: projects (tuple) for which quota should be checked
+        :param session[force]: boolean. If true, skip quota checking
         :return: None
         :raise:
             DbException if project not found
-            ValidationError if quota exceeded and not overridden
+            ValidationError if quota exceeded in one of the projects
         """
         if session["force"]:
             return
@@ -120,11 +121,12 @@ class BaseTopic:
         for project in projects:
             proj = self.auth.get_project(project)
             pid = proj["_id"]
-            quota = proj.get("quotas", {}).get(self.topic, self.default_quota)
+            quota_name = self.quota_name or self.topic
+            quota = proj.get("quotas", {}).get(quota_name, self.default_quota)
             count = self.db.count(self.topic, {"_admin.projects_read": pid})
             if count >= quota:
                 name = proj["name"]
-                raise ValidationError("quota ({}={}) exceeded for project {} ({})".format(self.topic, quota, name, pid),
+                raise ValidationError("quota ({}={}) exceeded for project {} ({})".format(quota_name, quota, name, pid),
                                       http_code=HTTPStatus.UNAUTHORIZED)
 
     def _validate_input_new(self, input, force=False):

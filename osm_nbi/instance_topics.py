@@ -34,6 +34,7 @@ __author__ = "Alfonso Tierno <alfonso.tiernosepulveda@telefonica.com>"
 class NsrTopic(BaseTopic):
     topic = "nsrs"
     topic_msg = "ns"
+    quota_name = "ns_instances"
     schema_new = ns_instantiate
 
     def __init__(self, db, fs, msg, auth):
@@ -1070,6 +1071,7 @@ class NsLcmOpTopic(BaseTopic):
 class NsiTopic(BaseTopic):
     topic = "nsis"
     topic_msg = "nsi"
+    quota_name = "slice_instances"
 
     def __init__(self, db, fs, msg, auth):
         BaseTopic.__init__(self, db, fs, msg, auth)
