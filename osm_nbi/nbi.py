@@ -617,20 +617,14 @@ class Server(object):
             # TODO check that cherrypy close file. If not implement pending things to close  per thread next
             return data
         if accept:
-            if "application/json" in accept:
-                cherrypy.response.headers["Content-Type"] = 'application/json; charset=utf-8'
-                a = json.dumps(data, indent=4) + "\n"
-                return a.encode("utf8")
-            elif "text/html" in accept:
+            if "text/html" in accept:
                 return html.format(data, cherrypy.request, cherrypy.response, token_info)
-
             elif "application/yaml" in accept or "*/*" in accept or "text/plain" in accept:
                 pass
-            # if there is not any valid accept, raise an error. But if response is already an error, format in yaml
-            elif cherrypy.response.status >= 400:
-                raise cherrypy.HTTPError(HTTPStatus.NOT_ACCEPTABLE.value,
-                                         "Only 'Accept' of type 'application/json' or 'application/yaml' "
-                                         "for output format are available")
+            elif "application/json" in accept or (cherrypy.response.status and cherrypy.response.status >= 300):
+                cherrypy.response.headers["Content-Type"] = 'application/json; charset=utf-8'
+                a = json.dumps(data, indent=4) + "\n"
+                return a.encode("utf8") 
         cherrypy.response.headers["Content-Type"] = 'application/yaml'
         return yaml.safe_dump(data, explicit_start=True, indent=4, default_flow_style=False, tags=False,
                               encoding='utf-8', allow_unicode=True)  # , canonical=True, default_style='"'
