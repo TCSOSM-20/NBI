@@ -24,8 +24,7 @@ from osm_nbi.engine import EngineException
 from osm_common.dbmemory import DbMemory
 from osm_nbi.pmjobs_topics import PmJobsTopic
 from osm_nbi.tests.test_db_descriptors import db_nsds_text, db_vnfds_text, db_nsrs_text, db_vnfrs_text
-from osm_nbi.tests.pmjob_mocks.response import show_res, cpu_utilization, users, load, empty
-# from osm_nbi.tests.pmjob_mocks.response import prom_res
+from osm_nbi.tests.pmjob_mocks.response import show_res, prom_res, cpu_utilization, users, load, empty
 
 
 class PmJobsTopicTest(asynctest.TestCase):
@@ -75,17 +74,17 @@ class PmJobsTopicTest(asynctest.TestCase):
             self.assertIn("NS not found with id {}".format(wrong_ns_id),
                           str(e.exception), "Wrong exception text")
 
-    # async def test_prom_metric_request(self):
-    #     with self.subTest("Test case1 failed in test_prom"):
-    #         prom_response = yaml.load(prom_res, Loader=yaml.Loader)
-    #         with aioresponses() as mock_res:
-    #             self.set_get_mock_res(mock_res, self.nsr_id, self.metric_check_list)
-    #             result = await self.pmjobs_topic._prom_metric_request(self.nsr_id, self.metric_check_list)
-    #         self.assertCountEqual(result, prom_response, "Metric Data is valid")
-    #     with self.subTest("Test case2 failed in test_prom"):
-    #         with self.assertRaises(EngineException, msg="Prometheus not reachable") as e:
-    #             await self.pmjobs_topic._prom_metric_request(self.nsr_id, self.metric_check_list)
-    #         self.assertIn("Connection to ", str(e.exception), "Wrong exception text")
+    async def test_prom_metric_request(self):
+        with self.subTest("Test case1 failed in test_prom"):
+            prom_response = yaml.load(prom_res, Loader=yaml.Loader)
+            with aioresponses() as mock_res:
+                self.set_get_mock_res(mock_res, self.nsr_id, self.metric_check_list)
+                result = await self.pmjobs_topic._prom_metric_request(self.nsr_id, self.metric_check_list)
+            self.assertCountEqual(result, prom_response, "Metric Data is valid")
+        with self.subTest("Test case2 failed in test_prom"):
+            with self.assertRaises(EngineException, msg="Prometheus not reachable") as e:
+                await self.pmjobs_topic._prom_metric_request(self.nsr_id, self.metric_check_list)
+            self.assertIn("Connection to ", str(e.exception), "Wrong exception text")
 
     def test_show(self):
         with self.subTest("Test case1 failed in test_show"):
