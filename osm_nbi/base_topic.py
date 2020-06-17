@@ -325,12 +325,23 @@ class BaseTopic:
                         update_content = update_content[kitem_old]
                     if isinstance(update_content, dict):
                         kitem_old = kitem
+                        if not isinstance(update_content.get(kitem_old), (dict, list)):
+                            update_content[kitem_old] = {}
                     elif isinstance(update_content, list):
+                        # key must be an index of the list, must be integer
                         kitem_old = int(kitem)
+                        # if index greater than list, extend the list
+                        if kitem_old >= len(update_content):
+                            update_content += [None] * (kitem_old - len(update_content) + 1)
+                        if not isinstance(update_content[kitem_old], (dict, list)):
+                            update_content[kitem_old] = {}
                     else:
                         raise EngineException(
                             "Invalid query string '{}'. Descriptor is not a list nor dict at '{}'".format(k, kitem))
-                update_content[kitem_old] = v if not yaml_format else safe_load(v)
+                if v is None:
+                    del update_content[kitem_old]
+                else:
+                    update_content[kitem_old] = v if not yaml_format else safe_load(v)
         except KeyError:
             raise EngineException(
                 "Invalid query string '{}'. Descriptor does not contain '{}'".format(k, kitem_old))
