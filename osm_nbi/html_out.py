@@ -129,6 +129,9 @@ html_nsilcmop_body = """
 </form>
 """
 
+html_vnfpackage_body = """<a href="/osm/vnfpkgm/v1/vnf_packages/{id}/artifacts">Artifacts </a>"""
+html_nspackage_body = """<a href="/osm/nsd/v1/ns_descriptors/{id}/artifacts">Artifacts </a>"""
+
 
 def format(data, request, response, toke_info):
     """
@@ -168,16 +171,21 @@ def format(data, request, response, toke_info):
         if "Location" in response.headers:
             body += '<a href="{}"> show </a>'.format(response.headers["Location"])
         else:
+            _id = request.path_info[request.path_info.rfind("/")+1:]
             body += '<a href="/osm/{}?METHOD=DELETE"> <img src="/osm/static/delete.png" height="25" width="25"> </a>'\
                 .format(request.path_info)
             if request.path_info.startswith("/nslcm/v1/ns_instances_content/") or \
                     request.path_info.startswith("/nslcm/v1/ns_instances/"):
-                _id = request.path_info[request.path_info.rfind("/")+1:]
                 body += html_nslcmop_body.format(id=_id)
             elif request.path_info.startswith("/nsilcm/v1/netslice_instances_content/") or \
                     request.path_info.startswith("/nsilcm/v1/netslice_instances/"):
-                _id = request.path_info[request.path_info.rfind("/")+1:]
                 body += html_nsilcmop_body.format(id=_id)
+            elif request.path_info.startswith("/vnfpkgm/v1/vnf_packages/") or \
+                    request.path_info.startswith("/vnfpkgm/v1/vnf_packages_content/"):
+                body += html_vnfpackage_body.format(id=_id)
+            elif request.path_info.startswith("/nsd/v1/ns_descriptors/") or \
+                    request.path_info.startswith("/nsd/v1/ns_descriptors_content/"):
+                body += html_nspackage_body.format(id=_id)
         body += "<pre>" + html_escape(yaml.safe_dump(data, explicit_start=True, indent=4, default_flow_style=False)) + \
                 "</pre>"
     elif data is None:

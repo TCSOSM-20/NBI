@@ -147,7 +147,7 @@ class Authenticator:
                                 self.role_permissions.append(permission)
                     elif k in ("TODO", "METHODS"):
                         continue
-                    else:
+                    elif method_dict[k]:
                         load_role_permissions(method_dict[k])
 
             load_role_permissions(self.valid_methods)

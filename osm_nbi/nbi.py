@@ -307,9 +307,9 @@ valid_url_methods = {
                                         "nsd": {"METHODS": ("GET",),  # descriptor inside package
                                                 "ROLE_PERMISSION": "nsds:id:content:"
                                                 },
-                                        "artifacts": {"*": {"METHODS": ("GET",),
-                                                            "ROLE_PERMISSION": "nsds:id:nsd_artifact:"
-                                                            }
+                                        "artifacts": {"METHODS": ("GET",),
+                                                      "ROLE_PERMISSION": "nsds:id:nsd_artifact:",
+                                                      "*": None,
                                                       }
                                         }
                                },
@@ -344,9 +344,9 @@ valid_url_methods = {
                                       "vnfd": {"METHODS": ("GET", ),  # descriptor inside package
                                                "ROLE_PERMISSION": "vnfds:id:content:"
                                                },
-                                      "artifacts": {"*": {"METHODS": ("GET", ),
-                                                          "ROLE_PERMISSION": "vnfds:id:vnfd_artifact:"
-                                                          }
+                                      "artifacts": {"METHODS": ("GET", ),
+                                                    "ROLE_PERMISSION": "vnfds:id:vnfd_artifact:",
+                                                    "*": None,
                                                     },
                                       "action": {"METHODS": ("POST", ),
                                                  "ROLE_PERMISSION": "vnfds:id:action:"
@@ -434,9 +434,9 @@ valid_url_methods = {
                                             "nst": {"METHODS": ("GET",),  # descriptor inside package
                                                     "ROLE_PERMISSION": "slice_templates:id:content:"
                                                     },
-                                            "artifacts": {"*": {"METHODS": ("GET",),
-                                                                "ROLE_PERMISSION": "slice_templates:id:content:"
-                                                                }
+                                            "artifacts": {"METHODS": ("GET",),
+                                                          "ROLE_PERMISSION": "slice_templates:id:content:",
+                                                          "*": None
                                                           }
                                             }
                                    },
@@ -867,7 +867,9 @@ class Server(object):
             elif "<ID>" in reference:
                 reference = reference["<ID>"]
             elif "*" in reference:
-                reference = reference["*"]
+                # if there is content
+                if reference["*"]:
+                    reference = reference["*"]
                 break
             else:
                 raise NbiException("Unexpected URL item {}".format(arg), HTTPStatus.METHOD_NOT_ALLOWED)
