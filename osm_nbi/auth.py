@@ -80,6 +80,8 @@ class Authenticator:
         self.role_permissions = []
         self.valid_methods = valid_methods
         self.valid_query_string = valid_query_string
+        self.system_admin_role_id = None   # system_role id
+        self.test_project_id = None  # test_project_id
 
     def start(self, config):
         """
@@ -156,6 +158,15 @@ class Authenticator:
                     permission = query_string.lower() + ":" + method
                     if permission not in self.role_permissions:
                         self.role_permissions.append(permission)
+
+            # get ids of role system_admin and test project
+            role_system_admin = self.db.get_one("roles", {"name": "system_admin"}, fail_on_empty=False)
+            if role_system_admin:
+                self.system_admin_role_id = role_system_admin["_id"]
+            test_project_name = self.config["authentication"].get("project_not_authorized", "admin")
+            test_project = self.db.get_one("projects", {"name": test_project_name}, fail_on_empty=False)
+            if test_project:
+                self.test_project_id = test_project["_id"]
 
         except Exception as e:
             raise AuthException(str(e))
@@ -394,12 +405,12 @@ class Authenticator:
                 if cherrypy.session.get('Authorization'):
                     del cherrypy.session['Authorization']
                 cherrypy.response.headers["WWW-Authenticate"] = 'Bearer realm="{}"'.format(e)
-            elif self.config.get("user_not_authorized"):
-                # TODO provide user_id, roles id (not name), project_id
-                return {"id": "fake-token-id-for-test",
-                        "project_id": self.config.get("project_not_authorized", "admin"),
-                        "username": self.config["user_not_authorized"],
-                        "roles": ["system_admin"]}
+            if self.config["authentication"].get("user_not_authorized"):
+                return {"id": "testing-token", "_id": "testing-token",
+                        "project_id": self.test_project_id,
+                        "username": self.config["authentication"]["user_not_authorized"],
+                        "roles": [self.system_admin_role_id],
+                        "admin": True, "allow_show_user_project_role": True}
             raise
 
     def new_token(self, token_info, indata, remote):
