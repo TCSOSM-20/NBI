@@ -276,8 +276,9 @@ class TestNsrTopic(unittest.TestCase):
             self.assertEqual(db_s1_args[0][0], self.nsr_topic.topic, "Wrong DB topic")
             self.assertEqual(db_s1_args[0][1]["_id"], self.nsr_id, "Wrong DB ID")
             self.assertIsNone(db_s1_args[1]["update_dict"], "Wrong DB update dictionary")
-            self.assertIn("_admin.projects_read." + p_other, db_s1_args[1]["pull"], "Wrong DB pull dictionary")
-            self.assertIn("_admin.projects_write." + p_other, db_s1_args[1]["pull"], "Wrong DB pull dictionary")
+            self.assertEqual(db_s1_args[1]["pull_list"],
+                             {"_admin.projects_read": [p_other], "_admin.projects_write": [p_other]},
+                             "Wrong DB pull_list dictionary")
             self.fs.file_delete.assert_not_called()
         with self.subTest(i=4, t='Delete with force and admin'):
             self.db.del_one.reset_mock()

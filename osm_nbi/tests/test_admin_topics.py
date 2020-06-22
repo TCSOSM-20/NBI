@@ -734,8 +734,8 @@ class Test_CommonVimWimSdn(TestCase):
             self.assertEqual(self.db.set_one.call_args[0][1]["_id"], cid, "Wrong CIM identifier")
             self.assertEqual(self.db.set_one.call_args[1]["update_dict"], None,
                              "Wrong read-only projects update")
-            self.assertEqual(self.db.set_one.call_args[1]["pull"], {"_admin.projects_read." + test_pid: None,
-                                                                    "_admin.projects_write." + test_pid: None},
+            self.assertEqual(self.db.set_one.call_args[1]["pull_list"],
+                             {"_admin.projects_read": (test_pid,), "_admin.projects_write": (test_pid,)},
                              "Wrong read/write projects update")
             self.topic._send_msg.assert_not_called()
         with self.subTest(i=2):

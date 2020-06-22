@@ -510,8 +510,9 @@ class Test_VnfdTopic(TestCase):
             self.assertEqual(db_s1_args[0][1]["_id"], did, "Wrong DB ID")
             self.assertIn(p_id, db_s1_args[0][1]["_admin.projects_write.cont"], "Wrong DB filter")
             self.assertIsNone(db_s1_args[1]["update_dict"], "Wrong DB update dictionary")
-            self.assertIn("_admin.projects_read." + p_id, db_s1_args[1]["pull"], "Wrong DB pull dictionary")
-            self.assertIn("_admin.projects_write." + p_id, db_s1_args[1]["pull"], "Wrong DB pull dictionary")
+            self.assertEqual(db_s1_args[1]["pull_list"],
+                             {"_admin.projects_read": (p_id,), "_admin.projects_write": (p_id,)},
+                             "Wrong DB pull_list dictionary")
             self.fs.file_delete.assert_not_called()
         return
 
@@ -841,8 +842,9 @@ class Test_NsdTopic(TestCase):
             self.assertEqual(db_s1_args[0][1]["_id"], did, "Wrong DB ID")
             self.assertIn(p_id, db_s1_args[0][1]["_admin.projects_write.cont"], "Wrong DB filter")
             self.assertIsNone(db_s1_args[1]["update_dict"], "Wrong DB update dictionary")
-            self.assertIn("_admin.projects_read." + p_id, db_s1_args[1]["pull"], "Wrong DB pull dictionary")
-            self.assertIn("_admin.projects_write." + p_id, db_s1_args[1]["pull"], "Wrong DB pull dictionary")
+            self.assertEqual(db_s1_args[1]["pull_list"],
+                             {"_admin.projects_read": (p_id,), "_admin.projects_write": (p_id,)},
+                             "Wrong DB pull_list dictionary")
             self.fs.file_delete.assert_not_called()
         return
 

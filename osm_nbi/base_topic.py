@@ -497,14 +497,14 @@ class BaseTopic:
             # remove reference from project_read if there are more projects referencing it. If it last one,
             # do not remove reference, but delete
             other_projects_referencing = next((p for p in item_content["_admin"]["projects_read"]
-                                               if p not in session["project_id"]), None)
+                                               if p not in session["project_id"] and p != "ANY"), None)
 
             # check if there are projects referencing it (apart from ANY, that means, public)....
             if other_projects_referencing:
                 # remove references but not delete
-                update_dict_pull = {"_admin.projects_read.{}".format(p): None for p in session["project_id"]}
-                update_dict_pull.update({"_admin.projects_write.{}".format(p): None for p in session["project_id"]})
-                self.db.set_one(self.topic, filter_q, update_dict=None, pull=update_dict_pull)
+                update_dict_pull = {"_admin.projects_read": session["project_id"],
+                                    "_admin.projects_write": session["project_id"]}
+                self.db.set_one(self.topic, filter_q, update_dict=None, pull_list=update_dict_pull)
                 return None
             else:
                 can_write = next((p for p in item_content["_admin"]["projects_write"] if p == "ANY" or
