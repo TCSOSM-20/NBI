@@ -1031,7 +1031,7 @@ class NsLcmOpTopic(BaseTopic):
             db_filter["_admin.nsrs-detailed-list.ANYINDEX.nsrId"] = nsr_id
             nsis = self.db.get_one("nsis", db_filter, fail_on_empty=False, fail_on_more=False)
             if nsis:
-                raise EngineException("The NS instance {} cannot be terminate because is used by the slice {}".format(
+                raise EngineException("The NS instance {} cannot be terminated because is used by the slice {}".format(
                                       nsr_id, nsis["_id"]), http_code=HTTPStatus.CONFLICT)
 
         try:
@@ -1269,6 +1269,11 @@ class NsiTopic(BaseTopic):
             _filter = self._get_project_filter(session)
             _filter["_id"] = slice_request["nstId"]
             nstd = self.db.get_one("nsts", _filter)
+            # check NST is not disabled
+            step = "checking NST operationalState"
+            if nstd["_admin"]["operationalState"] == "DISABLED":
+                raise EngineException("nst with id '{}' is DISABLED, and thus cannot be used to create a netslice "
+                                      "instance".format(slice_request["nstId"]), http_code=HTTPStatus.CONFLICT)
             del _filter["_id"]
 
             # check NSD is not disabled
@@ -1518,6 +1523,7 @@ class NsiLcmOpTopic(BaseTopic):
             _filter = self._get_project_filter(session)
             _filter["_id"] = netsliceInstanceId
             nsir = self.db.get_one("nsis", _filter)
+            logging_prefix = "nsi={} {} ".format(netsliceInstanceId, operation)
             del _filter["_id"]
 
             # initial checking
@@ -1539,55 +1545,56 @@ class NsiLcmOpTopic(BaseTopic):
             nslcmops = []
             # nslcmops_item = None
             for index, nsr_item in enumerate(nsrs_list):
-                nsi = None
+                nsr_id = nsr_item["nsrId"]
                 if nsr_item.get("shared"):
                     _filter["_admin.nsrs-detailed-list.ANYINDEX.shared"] = True
-                    _filter["_admin.nsrs-detailed-list.ANYINDEX.nsrId"] = nsr_item["nsrId"]
+                    _filter["_admin.nsrs-detailed-list.ANYINDEX.nsrId"] = nsr_id
                     _filter["_admin.nsrs-detailed-list.ANYINDEX.nslcmop_instantiate.ne"] = None
                     _filter["_id.ne"] = netsliceInstanceId
                     nsi = self.db.get_one("nsis", _filter, fail_on_empty=False, fail_on_more=False)
                     if operation == "terminate":
                         _update = {"_admin.nsrs-detailed-list.{}.nslcmop_instantiate".format(index): None}
                         self.db.set_one("nsis", {"_id": nsir["_id"]}, _update)
-                        
-                    # looks the first nsi fulfilling the conditions but not being the current NSIR
-                    if nsi:
-                        nsi_admin_shared = nsi["_admin"]["nsrs-detailed-list"]
-                        for nsi_nsr_item in nsi_admin_shared:
-                            if nsi_nsr_item["nsd-id"] == nsr_item["nsd-id"] and nsi_nsr_item["shared"]:
-                                self.add_shared_nsr_2vld(nsir, nsr_item)
-                                nslcmops.append(nsi_nsr_item["nslcmop_instantiate"])
-                                _update = {"_admin.nsrs-detailed-list.{}".format(index): nsi_nsr_item}
-                                self.db.set_one("nsis", {"_id": nsir["_id"]}, _update)
-                                break
-                        # continue to not create nslcmop since nsrs is shared and nsrs was created
-                        continue
-                    else:
-                        self.add_shared_nsr_2vld(nsir, nsr_item)
+                        if nsi:  # other nsi is using this nsr and it needs this nsr instantiated
+                            continue  # do not create nsilcmop
+                    else:  # instantiate
+                        # looks the first nsi fulfilling the conditions but not being the current NSIR
+                        if nsi:
+                            nsi_nsr_item = next(n for n in nsi["_admin"]["nsrs-detailed-list"] if
+                                                n["nsrId"] == nsr_id and n["shared"] and
+                                                n["nslcmop_instantiate"])
+                            self.add_shared_nsr_2vld(nsir, nsr_item)
+                            nslcmops.append(nsi_nsr_item["nslcmop_instantiate"])
+                            _update = {"_admin.nsrs-detailed-list.{}".format(index): nsi_nsr_item}
+                            self.db.set_one("nsis", {"_id": nsir["_id"]}, _update)
+                            # continue to not create nslcmop since nsrs is shared and nsrs was created
+                            continue
+                        else:
+                            self.add_shared_nsr_2vld(nsir, nsr_item)
 
+                # create operation
                 try:
-                    service = self.db.get_one("nsrs", {"_id": nsr_item["nsrId"]})
                     indata_ns = {
                         "lcmOperationType": operation,
-                        "nsInstanceId": service["_id"],
+                        "nsInstanceId": nsr_id,
                         # Including netslice_id in the ns instantiate Operation
                         "netsliceInstanceId": netsliceInstanceId,
                     }
                     if operation == "instantiate":
+                        service = self.db.get_one("nsrs", {"_id": nsr_id})
                         indata_ns.update(service["instantiate_params"])
 
                     # Creating NS_LCM_OP with the flag slice_object=True to not trigger the service instantiation
                     # message via kafka bus
-                    nslcmop, _ = self.nsi_NsLcmOpTopic.new(rollback, session, indata_ns, kwargs, headers,
+                    nslcmop, _ = self.nsi_NsLcmOpTopic.new(rollback, session, indata_ns, None, headers,
                                                            slice_object=True)
                     nslcmops.append(nslcmop)
-                    if operation == "terminate":
-                        nslcmop = None
-                    _update = {"_admin.nsrs-detailed-list.{}.nslcmop_instantiate".format(index): nslcmop}
-                    self.db.set_one("nsis", {"_id": nsir["_id"]}, _update)
+                    if operation == "instantiate":
+                        _update = {"_admin.nsrs-detailed-list.{}.nslcmop_instantiate".format(index): nslcmop}
+                        self.db.set_one("nsis", {"_id": nsir["_id"]}, _update)
                 except (DbException, EngineException) as e:
                     if e.http_code == HTTPStatus.NOT_FOUND:
-                        self.logger.info("HTTPStatus.NOT_FOUND")
+                        self.logger.info(logging_prefix + "skipping NS={} because not found".format(nsr_id))
                         pass
                     else:
                         raise
