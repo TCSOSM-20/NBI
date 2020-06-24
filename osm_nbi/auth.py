@@ -39,7 +39,7 @@ from http import HTTPStatus
 from time import time
 from os import path
 
-from osm_nbi.authconn import AuthException, AuthExceptionUnauthorized
+from osm_nbi.authconn import AuthException, AuthconnException, AuthExceptionUnauthorized
 from osm_nbi.authconn_keystone import AuthconnKeystone
 from osm_nbi.authconn_internal import AuthconnInternal
 from osm_common import dbmemory, dbmongo, msglocal, msgkafka
@@ -233,8 +233,8 @@ class Authenticator:
 
         records = self.backend.get_role_list()
 
-        # Loading permissions to MongoDB if there is not any permission.
-        if not records or (len(records) == 1 and records[0]["name"] == "admin"):
+        # Loading permissions to AUTH. At lease system_admin must be present.
+        if not records or not next((r for r in records if r["name"] == "system_admin"), None):
             with open(self.roles_to_operations_file, "r") as stream:
                 roles_to_operations_yaml = yaml.load(stream, Loader=yaml.Loader)
 
@@ -256,7 +256,7 @@ class Authenticator:
                                             .format(permission, role_with_operations["name"],
                                                     self.roles_to_operations_file))
 
-                    # TODO chek permission is ok
+                    # TODO check permission is ok
                     if permission[-1] == ":":
                         raise AuthException("Invalid permission '{}' terminated in ':' for role '{}'; at file {}"
                                             .format(permission, role_with_operations["name"],
@@ -274,8 +274,13 @@ class Authenticator:
                 }
 
                 # self.db.create(self.roles_to_operations_table, role_with_operations)
-                self.backend.create_role(role_with_operations)
-                self.logger.info("Role '{}' created at database".format(role_with_operations["name"]))
+                try:
+                    self.backend.create_role(role_with_operations)
+                    self.logger.info("Role '{}' created".format(role_with_operations["name"]))
+                except (AuthException, AuthconnException) as e:
+                    if role_with_operations["name"] == "system_admin":
+                        raise
+                    self.logger.error("Role '{}' cannot be created: {}".format(role_with_operations["name"], e))
 
         # Create admin project&user if required
         pid = self.create_admin_project()
