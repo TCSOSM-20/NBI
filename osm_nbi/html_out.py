@@ -26,7 +26,8 @@ html_start = """
 <html>
 <head>
   <link href="/osm/static/style.css" rel="stylesheet">
-<title>Welcome to OSM</title>
+  <title>Welcome to OSM</title>
+  <link rel="shortcut icon" href="/osm/static/favicon.ico">
 </head>
 <body>
   <div id="osm_topmenu">
@@ -48,6 +49,7 @@ html_start = """
       <a href="/osm/admin/v1/sdns">SDNs </a>
       <a href="/osm/admin/v1/k8sclusters">K8s_clusters </a>
       <a href="/osm/admin/v1/k8srepos">K8s_repos </a>
+      <a href="/osm/nslcm/v1/subscriptions">NS_Subs </a>
       <a href="/osm/admin/v1/tokens?METHOD=DELETE">logout </a>
     </div>
   </div>
@@ -71,6 +73,7 @@ html_auth2 = """
 <head><META http-equiv="Content-Type" content="text/html; charset=UTF-8">
   <link href="/osm/static/style.css" rel="stylesheet">
   <title>OSM Login</title>
+  <link rel="shortcut icon" href="/osm/static/favicon.ico">
 </head>
 <body>
   <div id="osm_header">
