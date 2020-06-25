@@ -284,6 +284,9 @@ class NsrTopic(BaseTopic):
                 "ssh-authorized-key": ns_request.get("ssh_keys"),  # TODO remove
             }
             ns_request["nsr_id"] = nsr_id
+            if ns_request and ns_request.get("config-units"):
+                nsr_descriptor["config-units"] = ns_request["config-units"]
+
             # Create vld
             if nsd.get("vld"):
                 nsr_descriptor["vld"] = nsd["vld"]
@@ -310,9 +313,6 @@ class NsrTopic(BaseTopic):
                 additional_params, vnf_params = self._format_additional_params(ns_request,
                                                                                member_vnf["member-vnf-index"],
                                                                                descriptor=vnfd)
-                vnf_k8s_namespace = ns_k8s_namespace
-                if vnf_params and vnf_params.get("k8s-namespace"):
-                    vnf_k8s_namespace = vnf_params["k8s-namespace"]
                 vnfr_descriptor = {
                     "id": vnfr_id,
                     "_id": vnfr_id,
@@ -328,6 +328,12 @@ class NsrTopic(BaseTopic):
                     "connection-point": [],
                     "ip-address": None,  # mgmt-interface filled by LCM
                 }
+                vnf_k8s_namespace = ns_k8s_namespace
+                if vnf_params:
+                    if vnf_params.get("k8s-namespace"):
+                        vnf_k8s_namespace = vnf_params["k8s-namespace"]
+                    if vnf_params.get("config-units"):
+                        vnfr_descriptor["config-units"] = vnf_params["config-units"]
 
                 # Create vld
                 if vnfd.get("internal-vld"):
@@ -391,6 +397,8 @@ class NsrTopic(BaseTopic):
                         "ip-address": None,  # mgmt-interface filled by LCM
                         "k8s-cluster": {},
                     }
+                    if kdu_params and kdu_params.get("config-units"):
+                        kdur["config-units"] = kdu_params["config-units"]
                     for k8s_type in ("helm-chart", "juju-bundle"):
                         if kdu.get(k8s_type):
                             kdur[k8s_type] = kdu_model or kdu[k8s_type]
@@ -399,8 +407,8 @@ class NsrTopic(BaseTopic):
                     vnfr_descriptor["kdur"].append(kdur)
 
                 for vdu in vnfd.get("vdu", ()):
-                    additional_params, _ = self._format_additional_params(ns_request, member_vnf["member-vnf-index"],
-                                                                          vdu_id=vdu["id"], descriptor=vnfd)
+                    additional_params, vdu_params = self._format_additional_params(
+                        ns_request, member_vnf["member-vnf-index"], vdu_id=vdu["id"], descriptor=vnfd)
                     vdur = {
                         "vdu-id-ref": vdu["id"],
                         # TODO      "name": ""     Name of the VDU in the VIM
@@ -410,6 +418,10 @@ class NsrTopic(BaseTopic):
                         "interfaces": [],
                         "additionalParams": additional_params
                     }
+                    if vdu_params and vdu_params.get("config-units"):
+                        vdur["config-units"] = vdu_params["config-units"]
+                    if deep_get(vdu, ("supplemental-boot-data", "boot-data-drive")):
+                        vdur["boot-data-drive"] = vdu["supplemental-boot-data"]["boot-data-drive"]
                     if vdu.get("pdu-type"):
                         vdur["pdu-type"] = vdu["pdu-type"]
                     # TODO volumes: name, volume-id
