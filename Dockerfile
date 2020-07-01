@@ -19,14 +19,13 @@
 # Use Dockerfile.fromdeb for running osm/NBI in a docker container from last stable package
 
 
-FROM ubuntu:16.04
+FROM ubuntu:18.04
 
-RUN apt-get update && apt-get -y install wget git make python python3 python-pip \
-    libcurl4-gnutls-dev libgnutls-dev tox python-dev python3-dev \
-    debhelper python-setuptools python-all python3-all apt-utils python-magic \
-    python3-pip python-pip && \
-    DEBIAN_FRONTEND=noninteractive pip3 install -U stdeb setuptools-version-command && \
-    DEBIAN_FRONTEND=noninteractive pip2 install -U stdeb
+RUN apt-get update && apt-get -y install wget git make python python3  \
+    libcurl4-gnutls-dev libgnutls28-dev tox python3-dev python3-pip \
+    debhelper python-setuptools python-all python3-all apt-utils \
+    python-magic && \
+    DEBIAN_FRONTEND=noninteractive pip3 install -U stdeb setuptools-version-command
 
 # Uncomment this block to generate automatically a debian package and show info
 # # Set the working directory to /app
