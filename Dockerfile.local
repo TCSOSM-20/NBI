@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y git python3 \
 
 # OSM_COMMON
 RUN git -C /app clone https://osm.etsi.org/gerrit/osm/common.git \
+    && git -C /app/common checkout v8.0 \
     && python3 -m pip install -e /app/common
 #    && cd common  && python3 setup.py develop && cd ..
 #    && pip3 install -U -r requirements.txt \
@@ -35,7 +36,9 @@ RUN git -C /app clone https://osm.etsi.org/gerrit/osm/common.git \
 
 # OSM_IM
 RUN git -C /app clone  https://osm.etsi.org/gerrit/osm/IM \
+    && git -C /app/IM checkout v8.0 \
     && python3 -m pip install /app/IM
+    # ^ option -e does not work for IM
 
 EXPOSE 9999
 

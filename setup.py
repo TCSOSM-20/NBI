@@ -49,10 +49,10 @@ setup(
     #             ],
     install_requires=[
         'CherryPy==18.1.2',
-        'osm-common @ git+https://osm.etsi.org/gerrit/osm/common.git#egg=osm-common',
+        'osm-common @ git+https://osm.etsi.org/gerrit/osm/common.git@v8.0#egg=osm-common',
         'jsonschema==3.2.0',
         'PyYAML',
-        'osm-im @ git+https://osm.etsi.org/gerrit/osm/IM.git#egg=osm-im',
+        'osm-im @ git+https://osm.etsi.org/gerrit/osm/IM.git@v8.0#egg=osm-im',
         'python-keystoneclient',
         'requests',
         'aiohttp>=2.3.10',
