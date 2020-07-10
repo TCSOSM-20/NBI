@@ -217,29 +217,31 @@ class Engine(object):
         with self.write_lock:
             return self.map_topic[topic].upload_content(session, _id, indata, kwargs, headers)
 
-    def get_item_list(self, session, topic, filter_q=None):
+    def get_item_list(self, session, topic, filter_q=None, api_req=False):
         """
         Get a list of items
         :param session: contains the used login username and working project
         :param topic: it can be: users, projects, vnfds, nsds, ...
         :param filter_q: filter of data to be applied
+        :param api_req: True if this call is serving an external API request. False if serving internal request.
         :return: The list, it can be empty if no one match the filter_q.
         """
         if topic not in self.map_topic:
             raise EngineException("Unknown topic {}!!!".format(topic), HTTPStatus.INTERNAL_SERVER_ERROR)
-        return self.map_topic[topic].list(session, filter_q)
+        return self.map_topic[topic].list(session, filter_q, api_req)
 
-    def get_item(self, session, topic, _id):
+    def get_item(self, session, topic, _id, api_req=False):
         """
         Get complete information on an item
         :param session: contains the used login username and working project
         :param topic: it can be: users, projects, vnfds, nsds,
         :param _id: server id of the item
+        :param api_req: True if this call is serving an external API request. False if serving internal request.
         :return: dictionary, raise exception if not found.
         """
         if topic not in self.map_topic:
             raise EngineException("Unknown topic {}!!!".format(topic), HTTPStatus.INTERNAL_SERVER_ERROR)
-        return self.map_topic[topic].show(session, _id)
+        return self.map_topic[topic].show(session, _id, api_req)
 
     def get_file(self, session, topic, _id, path=None, accept_header=None):
         """

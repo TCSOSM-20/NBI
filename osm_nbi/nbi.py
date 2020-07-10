@@ -1054,12 +1054,12 @@ class Server(object):
                                                          cherrypy.request.headers.get("Accept"))
                     outdata = file
                 elif not _id:
-                    outdata = self.engine.get_item_list(engine_session, engine_topic, kwargs)
+                    outdata = self.engine.get_item_list(engine_session, engine_topic, kwargs, api_req=True)
                 else:
                     if item == "reports":
                         # TODO check that project_id (_id in this context) has permissions
                         _id = args[0]
-                    outdata = self.engine.get_item(engine_session, engine_topic, _id)
+                    outdata = self.engine.get_item(engine_session, engine_topic, _id, True)
 
             elif method == "POST":
                 cherrypy.response.status = HTTPStatus.CREATED.value

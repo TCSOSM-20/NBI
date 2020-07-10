@@ -354,11 +354,16 @@ class BaseTopic:
         except YAMLError:
             raise EngineException("Invalid query string '{}' yaml format".format(k))
 
-    def show(self, session, _id):
+    def sol005_projection(self, data):
+        # Projection was moved to child classes
+        return data
+
+    def show(self, session, _id, api_req=False):
         """
         Get complete information on an topic
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
         :param _id: server internal id
+        :param api_req: True if this call is serving an external API request. False if serving internal request.
         :return: dictionary, raise exception if not found.
         """
         if not self.multiproject:
@@ -367,7 +372,14 @@ class BaseTopic:
             filter_db = self._get_project_filter(session)
         # To allow project&user addressing by name AS WELL AS _id
         filter_db[BaseTopic.id_field(self.topic, _id)] = _id
-        return self.db.get_one(self.topic, filter_db)
+        data = self.db.get_one(self.topic, filter_db)
+
+        # Only perform SOL005 projection if we are serving an external request
+        if api_req:
+            self.sol005_projection(data)
+
+        return data
+        
         # TODO transform data for SOL005 URL requests
         # TODO remove _admin if not admin
 
@@ -382,11 +394,12 @@ class BaseTopic:
         """
         raise EngineException("Method get_file not valid for this topic", HTTPStatus.INTERNAL_SERVER_ERROR)
 
-    def list(self, session, filter_q=None):
+    def list(self, session, filter_q=None, api_req=False):
         """
         Get a list of the topic that matches a filter
         :param session: contains the used login username and working project
         :param filter_q: filter of data to be applied
+        :param api_req: True if this call is serving an external API request. False if serving internal request.
         :return: The list, it can be empty if no one match the filter.
         """
         if not filter_q:
@@ -396,7 +409,13 @@ class BaseTopic:
 
         # TODO transform data for SOL005 URL requests. Transform filtering
         # TODO implement "field-type" query string SOL005
-        return self.db.get_list(self.topic, filter_q)
+        data = self.db.get_list(self.topic, filter_q)
+
+        # Only perform SOL005 projection if we are serving an external request
+        if api_req:
+            data = [self.sol005_projection(inst) for inst in data]
+                
+        return data
 
     def new(self, rollback, session, indata=None, kwargs=None, headers=None):
         """
