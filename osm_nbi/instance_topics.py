@@ -425,6 +425,7 @@ class NsrTopic(BaseTopic):
                         vdur["boot-data-drive"] = vdu["supplemental-boot-data"]["boot-data-drive"]
                     if vdu.get("pdu-type"):
                         vdur["pdu-type"] = vdu["pdu-type"]
+                        vdur["name"] = vdu["pdu-type"]
                     # TODO volumes: name, volume-id
                     for icp in vdu.get("internal-connection-point", ()):
                         vdu_icp = {
