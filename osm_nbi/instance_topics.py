@@ -230,6 +230,12 @@ class NsrTopic(BaseTopic):
             nsd = self.db.get_one("nsds", _filter)
             del _filter["_id"]
 
+            # check NSD is not disabled
+            step = "checking nsdOperationalState"
+            if nsd["_admin"]["operationalState"] == "DISABLED":
+                raise EngineException("nsd with id '{}' is DISABLED, and thus cannot be used to create "
+                                      "a network service".format(ns_request["nsdId"]), http_code=HTTPStatus.CONFLICT)
+
             nsr_id = str(uuid4())
 
             now = time()
@@ -500,7 +506,7 @@ class NsrTopic(BaseTopic):
 
             return nsr_id, None
         except (ValidationError, EngineException, DbException, MsgException, FsException) as e:
-            raise type(e)("{} while '{}".format(e, step), http_code=e.http_code)
+            raise type(e)("{} while '{}'".format(e, step), http_code=e.http_code)
 
     def edit(self, session, _id, indata=None, kwargs=None, content=None):
         raise EngineException("Method edit called directly", HTTPStatus.INTERNAL_SERVER_ERROR)
