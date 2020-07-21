@@ -153,9 +153,11 @@ def format(data, request, response, toke_info):
             return html_auth2.format(error=data)
     if request.path_info in ("/version", "/system"):
         return "<pre>" + yaml.safe_dump(data, explicit_start=False, indent=4, default_flow_style=False) + "</pre>"
-    body = html_body.format(item=request.path_info)
+    body = html_body.format(item=html_escape(request.path_info))
     if response.status and response.status > 202:
-        body += html_body_error.format(yaml.safe_dump(data, explicit_start=True, indent=4, default_flow_style=False))
+        # input request.path_info (URL) can contain XSS that are translated into output error detail
+        body += html_body_error.format(html_escape(
+            yaml.safe_dump(data, explicit_start=True, indent=4, default_flow_style=False)))
     elif isinstance(data, (list, tuple)):
         if request.path_info == "/vnfpkgm/v1/vnf_packages":
             body += html_upload_body.format(request.path_info + "_content", "VNFD")
