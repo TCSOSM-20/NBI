@@ -420,8 +420,8 @@ class SdnTopic(CommonVimWimSdn):
         input = super()._validate_input_new(input, force)
         return self._obtain_url(input, True)
 
-    def _validate_input_edit(self, input, force=False):
-        input = super()._validate_input_edit(input, force)
+    def _validate_input_edit(self, input, content, force=False):
+        input = super()._validate_input_edit(input, content, force)
         return self._obtain_url(input, False)
 
 
@@ -715,10 +715,9 @@ class UserTopicAuth(UserTopic):
         if kwargs:
             BaseTopic._update_input_with_kwargs(indata, kwargs)
         try:
-            indata = self._validate_input_edit(indata, force=session["force"])
-
             if not content:
                 content = self.show(session, _id)
+            indata = self._validate_input_edit(indata, content, force=session["force"])
             self.check_conflict_on_edit(session, content, indata, _id=_id)
             # self.format_on_edit(content, indata)
 
@@ -1035,10 +1034,9 @@ class ProjectTopicAuth(ProjectTopic):
         if kwargs:
             BaseTopic._update_input_with_kwargs(indata, kwargs)
         try:
-            indata = self._validate_input_edit(indata, force=session["force"])
-
             if not content:
                 content = self.show(session, _id)
+            indata = self._validate_input_edit(indata, content, force=session["force"])
             self.check_conflict_on_edit(session, content, indata, _id=_id)
             self.format_on_edit(content, indata)
 
@@ -1099,7 +1097,7 @@ class RoleTopicAuth(BaseTopic):
 
         return input
 
-    def _validate_input_edit(self, input, force=False):
+    def _validate_input_edit(self, input, content, force=False):
         """
         Validates input user content for updating an entry.
 
@@ -1335,9 +1333,9 @@ class RoleTopicAuth(BaseTopic):
         if kwargs:
             self._update_input_with_kwargs(indata, kwargs)
         try:
-            indata = self._validate_input_edit(indata, force=session["force"])
             if not content:
                 content = self.show(session, _id)
+            indata = self._validate_input_edit(indata, content, force=session["force"])
             deep_update_rfc7396(content, indata)
             self.check_conflict_on_edit(session, content, indata, _id=_id)
             self.format_on_edit(content, indata)
