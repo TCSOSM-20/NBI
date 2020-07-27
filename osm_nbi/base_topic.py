@@ -140,7 +140,7 @@ class BaseTopic:
             validate_input(input, self.schema_new)
         return input
 
-    def _validate_input_edit(self, input, force=False):
+    def _validate_input_edit(self, input, content, force=False):
         """
         Validates input user content for an edition. It uses jsonschema. Some overrides will use pyangbind
         :param input: user input content for the new topic
@@ -538,11 +538,13 @@ class BaseTopic:
             if indata and session.get("set_project"):
                 raise EngineException("Cannot edit content and set to project (query string SET_PROJECT) at same time",
                                       HTTPStatus.UNPROCESSABLE_ENTITY)
-            indata = self._validate_input_edit(indata, force=session["force"])
-
+            
             # TODO self._check_edition(session, indata, _id, force)
             if not content:
                 content = self.show(session, _id)
+            
+            indata = self._validate_input_edit(indata, content, force=session["force"])
+            
             deep_update_rfc7396(content, indata)
 
             # To allow project addressing by name AS WELL AS _id. Get the _id, just in case the provided one is a name

@@ -481,6 +481,7 @@ class Test_UserTopicAuth(TestCase):
             new_name = "other-user-name"
             new_prms = [{}]
             self.auth.get_role_list.side_effect = [[user], []]
+            self.auth.get_user_list.side_effect = [[user]]
             with self.assertRaises(EngineException, msg="Accepted wrong project-role mappings") as e:
                 self.topic.edit(self.fake_session, uid, {"username": new_name, "project_role_mappings": new_prms})
             self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")
@@ -698,6 +699,7 @@ class Test_CommonVimWimSdn(TestCase):
             self.assertEqual(operation["detailed-status"], "", "Wrong operation detailed status info")
             self.assertIsNone(operation["operationParams"], "Wrong operation parameters")
         with self.subTest(i=2):
+            self.db.get_one.side_effect = [cvws]
             with self.assertRaises(EngineException, msg="Accepted wrong property") as e:
                 self.topic.edit(self.fake_session, str(uuid4()), {"name": "new-name", "extra_prop": "anything"})
             self.assertEqual(e.exception.http_code, HTTPStatus.UNPROCESSABLE_ENTITY, "Wrong HTTP status code")

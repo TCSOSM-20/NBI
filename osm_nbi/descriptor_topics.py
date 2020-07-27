@@ -418,6 +418,39 @@ class DescriptorTopic(BaseTopic):
             raise EngineException("Error in pyangbind validation: {}".format(str(e)),
                                   http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
 
+    def _validate_input_edit(self, indata, content, force=False):
+        # not needed to validate with pyangbind becuase it will be validated at check_conflict_on_edit
+        if "_id" in indata:
+            indata.pop("_id")
+        if "_admin" not in indata:
+            indata["_admin"] = {}
+
+        if "operationalState" in indata:
+            if indata["operationalState"] in ("ENABLED", "DISABLED"):
+                indata["_admin"]["operationalState"] = indata.pop("operationalState")
+            else:
+                raise EngineException("State '{}' is not a valid operational state"
+                                      .format(indata["operationalState"]),
+                                      http_code=HTTPStatus.BAD_REQUEST)
+
+        # In the case of user defined data, we need to put the data in the root of the object 
+        # to preserve current expected behaviour
+        if "userDefinedData" in indata:
+            data = indata.pop("userDefinedData")
+            if type(data) == dict:
+                indata["_admin"]["userDefinedData"] = data
+            else:
+                raise EngineException("userDefinedData should be an object, but is '{}' instead"
+                                      .format(type(data)),
+                                      http_code=HTTPStatus.BAD_REQUEST)
+        
+        if ("operationalState" in indata["_admin"] and
+                content["_admin"]["operationalState"] == indata["_admin"]["operationalState"]):
+            raise EngineException("operationalState already {}".format(content["_admin"]["operationalState"]),
+                                  http_code=HTTPStatus.CONFLICT)
+
+        return indata
+
 
 class VnfdTopic(DescriptorTopic):
     topic = "vnfds"
@@ -672,10 +705,6 @@ class VnfdTopic(DescriptorTopic):
                                           http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
         return indata
 
-    def _validate_input_edit(self, indata, force=False):
-        # not needed to validate with pyangbind becuase it will be validated at check_conflict_on_edit
-        return indata
-
     def _validate_package_folders(self, storage_params, folder, file=None):
         if not storage_params or not storage_params.get("pkg-dir"):
             return False
@@ -773,8 +802,41 @@ class NsdTopic(DescriptorTopic):
                         http_code=HTTPStatus.UNPROCESSABLE_ENTITY)
         return indata
 
-    def _validate_input_edit(self, indata, force=False):
+    def _validate_input_edit(self, indata, content, force=False):
         # not needed to validate with pyangbind becuase it will be validated at check_conflict_on_edit
+        """
+        indata looks as follows:
+            - In the new case (conformant) 
+                {'nsdOperationalState': 'DISABLED', 'userDefinedData': {'id': 'string23', 
+                '_id': 'c6ddc544-cede-4b94-9ebe-be07b298a3c1', 'name': 'simon46'}}
+            - In the old case (backwards-compatible)
+                {'id': 'string23', '_id': 'c6ddc544-cede-4b94-9ebe-be07b298a3c1', 'name': 'simon46'}
+        """
+        if "_admin" not in indata:
+            indata["_admin"] = {}
+
+        if "nsdOperationalState" in indata:
+            if indata["nsdOperationalState"] in ("ENABLED", "DISABLED"):
+                indata["_admin"]["operationalState"] = indata.pop("nsdOperationalState")
+            else:
+                raise EngineException("State '{}' is not a valid operational state"
+                                      .format(indata["nsdOperationalState"]),
+                                      http_code=HTTPStatus.BAD_REQUEST)
+
+        # In the case of user defined data, we need to put the data in the root of the object 
+        # to preserve current expected behaviour
+        if "userDefinedData" in indata:
+            data = indata.pop("userDefinedData")
+            if type(data) == dict:
+                indata["_admin"]["userDefinedData"] = data
+            else:
+                raise EngineException("userDefinedData should be an object, but is '{}' instead"
+                                      .format(type(data)),
+                                      http_code=HTTPStatus.BAD_REQUEST)
+        if ("operationalState" in indata["_admin"] and
+                content["_admin"]["operationalState"] == indata["_admin"]["operationalState"]):
+            raise EngineException("nsdOperationalState already {}".format(content["_admin"]["operationalState"]),
+                                  http_code=HTTPStatus.CONFLICT)
         return indata
 
     def _check_descriptor_dependencies(self, session, descriptor):
@@ -876,10 +938,6 @@ class NstTopic(DescriptorTopic):
                 raise EngineException("'nst:nst' must be a list only one element")
             clean_indata = clean_indata['nst:nst'][0]
         return clean_indata
-
-    def _validate_input_edit(self, indata, force=False):
-        # TODO validate with pyangbind, serialize
-        return indata
 
     def _validate_input_new(self, indata, storage_params, force=False):
         indata = self.pyangbind_validation("nsts", indata, force)
