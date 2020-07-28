@@ -1271,6 +1271,12 @@ class NsiTopic(BaseTopic):
             nstd = self.db.get_one("nsts", _filter)
             del _filter["_id"]
 
+            # check NSD is not disabled
+            step = "checking operationalState"
+            if nstd["_admin"]["operationalState"] == "DISABLED":
+                raise EngineException("nst with id '{}' is DISABLED, and thus cannot be used to create "
+                                      "a network slice".format(slice_request["nstId"]), http_code=HTTPStatus.CONFLICT)
+
             nstd.pop("_admin", None)
             nstd_id = nstd.pop("_id", None)
             nsi_id = str(uuid4())
