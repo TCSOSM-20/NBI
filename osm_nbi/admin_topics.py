@@ -1078,9 +1078,9 @@ class RoleTopicAuth(BaseTopic):
             if role_def[-1] == ":":
                 raise ValidationError("Operation cannot end with ':'")
 
-            role_def_matches = [op for op in operations if op.startswith(role_def)]
+            match = next((op for op in operations if op == role_def or op.startswith(role_def + ":")), None)
 
-            if len(role_def_matches) == 0:
+            if not match:
                 raise ValidationError("Invalid permission '{}'".format(role_def))
 
     def _validate_input_new(self, input, force=False):
