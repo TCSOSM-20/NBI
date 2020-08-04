@@ -377,10 +377,15 @@ class DescriptorTopic(BaseTopic):
         #                   no   yes     -> error
         # onefile           yes  no      -> zip
         #                   X    yes     -> text
-
-        if accept_text and (not storage.get('pkg-dir') or path == "$DESCRIPTOR"):
+        contain_many_files = False
+        if storage.get('pkg-dir'):
+            # check if there are more than one file in the package, ignoring checksums.txt.
+            pkg_files = self.fs.dir_ls((storage['folder'], storage['pkg-dir']))
+            if len(pkg_files) >= 3 or (len(pkg_files) == 2 and 'checksums.txt' not in pkg_files):
+                contain_many_files = True
+        if accept_text and (not contain_many_files or path == "$DESCRIPTOR"):
             return self.fs.file_open((storage['folder'], storage['descriptor']), "r"), "text/plain"
-        elif storage.get('pkg-dir') and not accept_zip:
+        elif contain_many_files and not accept_zip:
             raise EngineException("Packages that contains several files need to be retrieved with 'application/zip'"
                                   "Accept header", http_code=HTTPStatus.NOT_ACCEPTABLE)
         else:
