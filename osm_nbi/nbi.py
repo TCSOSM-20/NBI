@@ -619,7 +619,7 @@ class Server(object):
         if accept:
             if "text/html" in accept:
                 return html.format(data, cherrypy.request, cherrypy.response, token_info)
-            elif "application/yaml" in accept or "*/*" in accept or "text/plain" in accept:
+            elif "application/yaml" in accept or "*/*" in accept:
                 pass
             elif "application/json" in accept or (cherrypy.response.status and cherrypy.response.status >= 300):
                 cherrypy.response.headers["Content-Type"] = 'application/json; charset=utf-8'
