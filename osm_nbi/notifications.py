@@ -133,11 +133,13 @@ class NotificationBase:
                                   .format(subscriber["subscriptionId"],
                                           subscriber["authentication"]["authType"]))
 
-        tasks = []
-        async with aiohttp.ClientSession(loop=loop) as session:
-            for notification in notifications:
-                tasks.append(asyncio.ensure_future(self.send_notification(session, notification, loop=loop), loop=loop))
-            await asyncio.gather(*tasks, loop=loop)
+        if notifications:
+            tasks = []
+            async with aiohttp.ClientSession(loop=loop) as session:
+                for notification in notifications:
+                    tasks.append(asyncio.ensure_future(self.send_notification(session, notification, loop=loop),
+                                                       loop=loop))
+                await asyncio.gather(*tasks, loop=loop)
 
     async def send_notification(self, session: aiohttp.ClientSession, notification: dict,
                                 loop: asyncio.AbstractEventLoop = None, retry_count: int = 5, timeout: float = 5.0):

@@ -201,7 +201,9 @@ class SubscriptionThread(threading.Thread):
                                                                      event_details)
                             # self.logger.debug("subscribers list: ")
                             # self.logger.debug(subscribers)
-                            asyncio.ensure_future(self.nslcm.send_notifications(subscribers, loop=self.loop))
+                            if subscribers:
+                                asyncio.ensure_future(self.nslcm.send_notifications(subscribers, loop=self.loop),
+                                                      loop=self.loop)
                 else:
                     self.logger.debug("Message can not be used for notification of nslcm")
             elif topic == "nsi":
