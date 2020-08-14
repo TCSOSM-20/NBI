@@ -812,7 +812,7 @@ class UserTopicAuth(UserTopic):
         except ValidationError as e:
             raise EngineException(e, HTTPStatus.UNPROCESSABLE_ENTITY)
 
-    def list(self, session, filter_q=None):
+    def list(self, session, filter_q=None, api_req=False):
         """
         Get a list of the topic that matches a filter
         :param session: contains "username", "admin", "force", "public", "project_id", "set_project"
@@ -982,7 +982,7 @@ class ProjectTopicAuth(ProjectTopic):
         else:
             raise EngineException("Project not found", HTTPStatus.NOT_FOUND)
 
-    def list(self, session, filter_q=None):
+    def list(self, session, filter_q=None, api_req=False):
         """
         Get a list of the topic that matches a filter
 
@@ -1248,7 +1248,7 @@ class RoleTopicAuth(BaseTopic):
             raise AuthconnConflictException("Found more than one role with filter {}".format(filter_q))
         return roles[0]
 
-    def list(self, session, filter_q=None):
+    def list(self, session, filter_q=None, api_req=False):
         """
         Get a list of the topic that matches a filter
 
